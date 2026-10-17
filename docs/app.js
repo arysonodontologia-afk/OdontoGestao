@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.3.0';
+const APP_VERSION='2.3.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -901,7 +901,7 @@ function renderAgendaPrincipal(){
   ${body}`;
 }
 function dentistasDaAgenda(lista){
-  const ds=(state.users||[]).filter(u=>u.tipo==='dentista').map(u=>({id:u.id,nome:u.nomeCompleto}));
+  const ds=(state.users||[]).filter(ehDentista).map(u=>({id:u.id,nome:nomeExibicao(u)}));
   const ids=new Set(ds.map(d=>d.id));
   const outros=lista.filter(a=>!ids.has(a.dentistaId));
   const extras=[]; outros.forEach(a=>{ if(!extras.find(e=>e.id===(a.dentistaId||'?'))) extras.push({id:a.dentistaId||'?',nome:a.dentistaNome||'Sem dentista'}); });
@@ -1051,12 +1051,12 @@ function renderAgendaCelular(){
       </div></div>`;
   });
   if(!linhaFeita && lista.length) itens.push(`<div class="cel-agora"><span>${agoraHHMM()}</span><i></i></div>`);
-  return `${avisosHtml(u)}${faixa}${chips}<div id="agendaFormArea"></div>
+  return `<p class="cel-saudacao">${saudacaoHora()}, ${esc(nomeCumprimento(u))}</p>${avisosHtml(u)}${faixa}${chips}<div id="agendaFormArea"></div>
   <div class="cel-lista">${itens.join('')||'<p class="muted" style="text-align:center;margin:28px 0">Nenhum atendimento neste dia.</p>'}</div>`;
 }
 function openAgendamentoForm(a){
   const isNew=!a;
-  const dentistas=state.users.filter(u=>u.tipo==='dentista');
+  const dentistas=state.users.filter(ehDentista);
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
   <form id="fAgendamento">
@@ -1112,7 +1112,7 @@ function openAgendamentoForm(a){
     const data={
       id: isNew?uid():a.id,
       pacienteId, pacienteNome: paciente?paciente.nome:'',
-      dentistaId, dentistaNome: dentista?dentista.nomeCompleto:'',
+      dentistaId, dentistaNome: dentista?nomeExibicao(dentista):'',
       data: document.getElementById('agDataForm').value,
       horario: document.getElementById('agHorarioForm').value,
       tipo, procedimentoNome, procedimentoRefs, procedimentoRef:procedimentoRefs[0]||null,
@@ -1366,13 +1366,13 @@ function repEvolPendentes(){
   state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{
     if(e.confirmado) return;
     if(!(e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) return;
-    if(repEvolDentista && e.dentistaNome!==repEvolDentista) return;
+    if(repEvolDentista && semTitulo(e.dentistaNome)!==semTitulo(repEvolDentista)) return;
     itens.push({p,e,dias:diasEntre(e.data,hoje)});
   }));
   itens.sort((a,b)=>(a.e.data+(a.e.hora||'')).localeCompare(b.e.data+(b.e.hora||'')));
   const rows=itens.map(({p,e,dias})=>`<tr><td>${fmtDataBR(e.data)} ${esc(e.hora||'')}</td><td>${repPacBtn(p,'evolucao')}</td><td>${esc(e.procedimentoNome)}</td><td>${esc(e.dentistaNome)}</td>
     <td><span class="badge ${dias>2?'b-red':'b-recep'}">${dias===0?'hoje':dias+' dia(s)'}</span></td></tr>`).join('');
-  const dents=state.users.filter(u=>u.tipo==='dentista');
+  const dents=state.users.filter(ehDentista);
   const filtros=`<div><label>Dentista</label><select id="repEvolDent"><option value="">Todos</option>${dents.map(d=>`<option value="${esc(d.nomeCompleto)}" ${repEvolDentista===d.nomeCompleto?'selected':''}>${esc(d.nomeCompleto)}</option>`).join('')}</select></div>`;
   return repCard('Evoluções pendentes de confirmação','Atendimentos que já aconteceram, mas cuja evolução ainda não foi confirmada pelo dentista. O prontuário só fica completo depois da confirmação.',filtros,
     `<strong>Pendentes:</strong> ${itens.length}`,
@@ -1611,7 +1611,7 @@ function renderEvolucao(p){
     return `<div class="card"><h3>Evolução</h3><p class="muted">Nenhuma evolução registrada ainda. Uma entrada é criada automaticamente a cada agendamento deste paciente (avaliação ou procedimento do plano de tratamento).</p></div>`;
   }
   const list=p.evolucao.slice().sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora));
-  const eu=currentUser(), ehDentista=!!eu && eu.tipo==='dentista';
+  const eu=currentUser(), podeConfirmar=ehDentista(eu);
   const items=list.map(e=>{
     if(e.confirmado){
       return `<div class="card">
@@ -1626,7 +1626,7 @@ function renderEvolucao(p){
     <p class="muted" style="margin:4px 0 10px">Dentista: ${esc(e.dentistaNome)}</p>
     <label>Observação do dentista</label>
     <textarea data-evolobs="${e.id}" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit">${esc(e.observacao)}</textarea>
-    <div style="margin-top:10px">${ehDentista?`<button class="btn-p" data-confevol="${e.id}">Confirmar Evolução</button>`:'<span class="muted">Somente um dentista pode confirmar a evolução.</span>'}</div>
+    <div style="margin-top:10px">${podeConfirmar?`<button class="btn-p" data-confevol="${e.id}">Confirmar Evolução</button>`:'<span class="muted">Somente um dentista pode confirmar a evolução.</span>'}</div>
     </div>`;
   }).join('');
   return `<h3 style="margin:0 0 10px 0">Evolução</h3>${items}`;
@@ -1689,7 +1689,7 @@ function renderExameClinico(p){
   ${list.length?`<div class="overflow"><table><thead><tr><th>Data / hora</th><th>Dentista</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum exame clínico registrado ainda.</p>'}</div>`;
 }
 function renderExameClinicoForm(ex){
-  const dentistas=state.users.filter(u=>u.tipo==='dentista');
+  const dentistas=state.users.filter(ehDentista);
   const grupos=EXAME_CLINICO_GRUPOS.map(g=>`<div class="section-title">${g.titulo}</div><div class="row">${g.campos.map(c=>exameCampoHtml(c, ex.dados||{})).join('')}</div>`).join('');
   return `<div class="card"><h3>Exame Clínico</h3>
   ${semDentistaAviso()}
@@ -1747,13 +1747,13 @@ function fmtDataBR(iso){
 }
 function dentistaOptionsHtml(selectedId, comCro){
   if(comCro===undefined) comCro=true;
-  const dentistas=state.users.filter(u=>u.tipo==='dentista');
+  const dentistas=state.users.filter(ehDentista);
   const u=currentUser();
-  const sel=selectedId||(u&&u.tipo==='dentista'?u.id:'');
-  return '<option value="">Selecione</option>'+dentistas.map(d=>`<option value="${d.id}" ${sel===d.id?'selected':''}>${esc(d.nomeCompleto)}${comCro?' — CRO '+esc(d.cro):''}</option>`).join('');
+  const sel=selectedId||(ehDentista(u)?u.id:'');
+  return '<option value="">Selecione</option>'+dentistas.map(d=>`<option value="${d.id}" ${sel===d.id?'selected':''}>${esc(nomeExibicao(d))}${comCro?' — CRO '+esc(d.cro):''}</option>`).join('');
 }
 function semDentistaAviso(){
-  if(state.users.some(u=>u.tipo==='dentista')) return '';
+  if(state.users.some(ehDentista)) return '';
   return '<div style="border:1px solid var(--danger);border-radius:8px;padding:10px 12px;margin:10px 0"><p style="margin:0;color:var(--danger);font-size:14px"><strong>Nenhum dentista cadastrado.</strong> Cadastre um usuário do tipo Dentista, com o CRO, em Usuários para poder usar esta função.</p></div>';
 }
 function renderDocumentoForm(p, tipo){
@@ -2276,6 +2276,8 @@ function renderTelaNuvem(){
         <label>E-mail de acesso</label><input value="${esc(em)}" disabled>
         <label>Nome completo</label><input id="pmNome" value="${esc((au&&au.displayName)||'')}" required>
         <label>Telefone / WhatsApp</label><input id="pmTel" required>
+        <div class="row"><div><label>Sexo</label><select id="pmSexo"><option value="">Não informado</option><option value="F">Feminino</option><option value="M">Masculino</option></select></div>
+        <div><label>CRO, se atende como dentista</label><input id="pmCro" placeholder="Ex.: 10101-AM"></div></div>
         ${msgsNuvem()}
         <button class="btn-p login-btn">Concluir</button>
       </form>`);
@@ -2352,8 +2354,11 @@ function bindNuvemEvents(){
     ev.preventDefault();
     const em=Nuvem.meuEmail();
     const u={id:nuvemAcesso.userId, tipo:'master', username:em.split('@')[0], nomeCompleto:q('pmNome').value.trim(),
-      telefone:q('pmTel').value.trim(), email:em, cro:'', permissions:defaultPerms('master')};
+      telefone:q('pmTel').value.trim(), email:em, cro:q('pmCro').value.trim().toUpperCase(), sexo:q('pmSexo').value, permissions:defaultPerms('master')};
+    u.nomeCompleto=semTitulo(u.nomeCompleto);
     if(!u.nomeCompleto){ nuvemErro='Informe seu nome.'; render(); return; }
+    if(u.cro && !/^\d{3,6}-[A-Z]{2}$/.test(u.cro)){ nuvemErro='Informe o CRO no formato 10101-AM.'; render(); return; }
+    if(u.cro && !u.sexo){ nuvemErro='Informe o sexo, para o sistema usar Dr. ou Dra.'; render(); return; }
     state.users=state.users.filter(x=>x.id!==u.id && normEmail(x.email)!==em);
     state.users.unshift(u); session=u.id; saveData();
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
@@ -2856,7 +2861,7 @@ function renderApp(){
       <div class="sb-marca"><span class="sb-logo">${ICONES.dente}</span><div style="min-width:0"><div class="sb-nome">OdontoGestão</div><div class="sb-clinica" title="${esc(state.clinic.nome)}">${esc(state.clinic.nome)}</div></div></div>
       <nav aria-label="Menu principal">${sidebar}</nav>
       <div class="sb-rodape">${temaSegHtml()}
-        <div class="sb-usuario">${avatarHtml(u.nomeCompleto,u.id)}<div style="min-width:0;flex:1"><div class="sb-usuario-nome">${esc(u.nomeCompleto)}</div><div class="sb-usuario-tipo">${tipoLabel(u.tipo)}</div></div><button id="btnLogout" class="btn-icone peq" aria-label="Sair" title="Sair">${ICONES.sair}</button></div>
+        <div class="sb-usuario">${avatarHtml(u.nomeCompleto,u.id)}<div style="min-width:0;flex:1"><div class="sb-usuario-nome">${esc(nomeExibicao(u))}</div><div class="sb-usuario-tipo">${tipoLabel(u.tipo)}</div></div><button id="btnLogout" class="btn-icone peq" aria-label="Sair" title="Sair">${ICONES.sair}</button></div>
         <div class="sb-versao">Versão ${APP_VERSION}</div>
       </div>
     </aside>
@@ -2874,13 +2879,20 @@ function renderStub(label){
   return `<div class="card"><h2>${label}</h2><p class="muted">⚙️ Esta ferramenta ainda está em fase de produção. Em breve estará disponível.</p></div>`;
 }
 
-function nomeSaudacao(n){ const t=(n||'').trim().split(/\s+/); return (/^(dra?|prof|profa)\.?$/i.test(t[0]) && t[1]) ? t[0]+' '+t[1] : (t[0]||''); }
+// ---- tratamento: Dr./Dra. para dentistas e saudação conforme a hora ----
+function semTitulo(n){ return String(n||'').replace(/^\s*(dr\(a\)|dra|dr|prof[a]?)\.?\s+/i,'').trim(); }
+function ehDentista(u){ return !!u && (u.tipo==='dentista' || (u.tipo==='master' && !!String(u.cro||'').trim())); }
+function tituloDe(u){ if(!ehDentista(u)) return ''; return u.sexo==='F'?'Dra.':u.sexo==='M'?'Dr.':'Dr(a).'; }
+function nomeExibicao(u){ if(!u) return ''; const t=tituloDe(u); return (t?t+' ':'')+semTitulo(u.nomeCompleto); }
+function nomeCumprimento(u){ if(!u) return ''; const t=tituloDe(u), p=semTitulo(u.nomeCompleto).split(/\s+/)[0]||''; return (t?t+' ':'')+p; }
+function saudacaoHora(){ const h=new Date().getHours(); return h>=5&&h<12?'Bom dia':h>=12&&h<18?'Boa tarde':'Boa noite'; }
+function nomeSaudacao(n){ const u=(state.users||[]).find(x=>x.nomeCompleto===n); return u?nomeCumprimento(u):(semTitulo(n).split(/\s+/)[0]||''); }
 let dashDentista='';
 function renderDashboard(){
   const u=currentUser(), perms=permsDe(u), hoje=hojeISO(), agora=agoraHHMM(), agoraM=hhmmParaMin(agora);
   const agHoje=(state.agendamentos||[]).filter(a=>a.data===hoje && statusAg(a)!=='cancelado').sort((x,y)=>x.horario.localeCompare(y.horario));
   const prox=agHoje.find(a=>hhmmParaMin(a.horario)+duracaoDe(a)>agoraM && ['agendado','confirmado','chegou'].includes(statusAgExib(a)));
-  const h=new Date().getHours(), saud=h<12?'Bom dia':h<18?'Boa tarde':'Boa noite';
+  const saud=saudacaoHora();
   let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
   const n=agHoje.length;
   const kpi=(rot,num,sub,go,cor,extra)=>`<button class="kpi" data-dashgo="${go}"><div class="kpi-rot">${rot}</div><div class="kpi-num"${cor?` style="color:${cor}"`:''}>${num}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}${extra||''}</button>`;
@@ -2891,7 +2903,7 @@ function renderDashboard(){
   let evs=[], orcN=0, orcV=0, venc=[];
   if(perms.pacientes){
     state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
-    if(u.tipo==='dentista') evs=evs.filter(e=>e.dentistaNome===u.nomeCompleto);
+    if(u.tipo==='dentista') evs=evs.filter(e=>semTitulo(e.dentistaNome)===semTitulo(u.nomeCompleto));
     state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
   }
   if(perms.financeiro){
@@ -2930,7 +2942,7 @@ function renderDashboard(){
   if(alv) pend.push(`<button class="pend" data-tab="configuracoes"><span><span class="pend-tit">Alvará sanitário</span><span class="pend-sub">${esc(alv.txt)}</span></span><span class="pend-num${alv.ruim?' ruim':''}">!</span></button>`);
   const ult=state.meta&&state.meta.ultimoBackup, dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
   const backup=perms.usuarios?`<p class="nota-rodape">${ult?(dias===0?'Último backup hoje.':'Último backup há '+dias+' dia'+(dias>1?'s':'')+'.'):'Nenhum backup feito ainda.'} <button class="lnk-forte" id="btnGoBackup">Fazer backup agora</button></p>`:'';
-  return `<div class="pg-cab"><div><h1>${saud}, ${esc(nomeSaudacao(u.nomeCompleto))}</h1><p>${dataFmt}. ${n?(n===1?'Há 1 atendimento':'São '+n+' atendimentos')+' na agenda de hoje.':'Nenhum atendimento na agenda de hoje.'}</p></div></div>
+  return `<div class="pg-cab"><div><h1>${saud}, ${esc(nomeCumprimento(u))}</h1><p>${dataFmt}. ${n?(n===1?'Há 1 atendimento':'São '+n+' atendimentos')+' na agenda de hoje.':'Nenhum atendimento na agenda de hoje.'}</p></div></div>
   <div class="kpis">${ks.join('')}</div>
   <div class="painel-cols">
     <div class="col-a">${agendaBloco}</div>
@@ -2955,14 +2967,18 @@ function userFormFields(tipo, u, isNew){
     <div><label>Nome de usuário</label><input id="fUsername" value="${esc(u.username)}" required></div>
     <div><label>Senha${u.id?' (deixe em branco para manter)':' (mínimo 6 caracteres)'}</label><input id="fPassword" type="password" autocomplete="new-password" ${u.id?'':'required'}></div>
   </div>`}
-  <label>Nome completo</label><input id="fNomeCompleto" value="${esc(u.nomeCompleto)}" required>
+  <div class="row">
+    <div style="flex:2 1 260px"><label>Nome completo</label><input id="fNomeCompleto" value="${esc(semTitulo(u.nomeCompleto))}" required placeholder="Sem Dr. ou Dra.: o sistema inclui sozinho"></div>
+    <div style="flex:1 1 160px"><label>Sexo</label><select id="fSexo"><option value="">Não informado</option><option value="F" ${u.sexo==='F'?'selected':''}>Feminino</option><option value="M" ${u.sexo==='M'?'selected':''}>Masculino</option></select></div>
+  </div>
+  <p class="muted" style="margin:6px 0 0">Para dentistas, o sistema usa <strong>Dra.</strong> ou <strong>Dr.</strong> antes do nome conforme o sexo.</p>
   <div class="row">
     <div><label>Telefone / WhatsApp</label><input id="fTelefone" value="${esc(u.telefone)}" required></div>
     <div><label>${NUVEM?'E-mail de acesso (login)':'Email'}</label><input id="fEmail" type="email" value="${esc(u.email)}" required ${NUVEM&&emailTravado(u)?'readonly title="Somente o Master altera o e-mail de acesso"':''}></div>
   </div>
   ${NUVEM?'<p class="muted" style="margin:6px 0 0">A pessoa entra com este e-mail: pelo botão <strong>Entrar com Google</strong> (se for uma conta Google) ou em <strong>Primeiro acesso · criar senha</strong>.</p>':''}
-  <div id="croWrap" style="display:${tipo==='dentista'?'block':'none'}">
-    <label>CRO (ex: 10101-AM)</label><input id="fCro" value="${esc(u.cro)}">
+  <div id="croWrap" style="display:${tipo==='dentista'||tipo==='master'?'block':'none'}">
+    <label>${tipo==='master'?'CRO, se você também atende como dentista (ex: 10101-AM)':'CRO (ex: 10101-AM)'}</label><input id="fCro" value="${esc(u.cro)}">
   </div>
   </div>`;
 }
@@ -2974,7 +2990,7 @@ function podeEditarUsuario(alvo){ const eu=currentUser(); return !!eu && (alvo.t
 function podeExcluirUsuario(alvo){ const eu=currentUser(); return !!eu && alvo.tipo!=='master' && alvo.id!==eu.id; }
 function renderUsuarios(){
   const rows=state.users.map(u=>`<tr>
-    <td>${esc(u.nomeCompleto)}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
+    <td>${esc(nomeExibicao(u))}${ehDentista(u)&&!u.sexo?' <span class="sit sit-nao_vem" title="Edite e informe o sexo">informe o sexo</span>':''}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
     <td><span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span></td>
     <td>${esc(u.telefone)}</td>
     <td>${esc(u.cro||'-')}</td>
@@ -3021,17 +3037,20 @@ function openUserForm(u){
     ev.preventDefault();
     const tipoVal = isNew ? document.getElementById('fTipo').value : u.tipo;
     const cro = document.getElementById('fCro') ? document.getElementById('fCro').value.trim() : '';
-    if(tipoVal==='dentista' && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
+    if((tipoVal==='dentista' || (tipoVal==='master' && cro)) && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
       avisar('Informe um CRO válido, ex: 10101-AM'); return;
     }
+    const sexoVal=document.getElementById('fSexo')?document.getElementById('fSexo').value:'';
+    if((tipoVal==='dentista' || (tipoVal==='master' && cro)) && !sexoVal){ avisar('Informe o sexo do dentista, para o sistema usar Dr. ou Dra. corretamente.'); return; }
     const data = {
       id: isNew? uid() : u.id,
       tipo: tipoVal,
       username: NUVEM ? ((u&&u.username)||normEmail(document.getElementById('fEmail').value).split('@')[0]) : document.getElementById('fUsername').value.trim(),
-      nomeCompleto: document.getElementById('fNomeCompleto').value.trim(),
+      nomeCompleto: semTitulo(document.getElementById('fNomeCompleto').value),
+      sexo: document.getElementById('fSexo')?document.getElementById('fSexo').value:'',
       telefone: document.getElementById('fTelefone').value.trim(),
       email: document.getElementById('fEmail').value.trim(),
-      cro: tipoVal==='dentista'? cro : '',
+      cro: (tipoVal==='dentista'||tipoVal==='master')? cro.toUpperCase() : '',
       permissions: isNew ? defaultPerms(tipoVal) : (isMaster ? {
         usuarios: document.getElementById('pUsuarios').checked,
         pacientes: document.getElementById('pPacientes').checked,
@@ -3624,7 +3643,7 @@ function bindEvents(){
     if(!dentista){ avisar('Selecione o dentista responsável.'); return; }
     const dados={};
     fExame.querySelectorAll('[data-ex]').forEach(el=>{ dados[el.getAttribute('data-ex')]=el.value; });
-    ex.dados=dados; ex.dentistaId=dentista.id; ex.dentistaNome=dentista.nomeCompleto; ex.dentistaCro=dentista.cro;
+    ex.dados=dados; ex.dentistaId=dentista.id; ex.dentistaNome=nomeExibicao(dentista); ex.dentistaCro=dentista.cro;
     ex.data=document.getElementById('exData').value; ex.hora=document.getElementById('exHora').value;
     ex.finalizado=true; saveData(); exameOpenId=null; render();
   });
@@ -3641,7 +3660,7 @@ function bindEvents(){
     if(!dentista){ avisar('Selecione o dentista responsável.'); return; }
     const doc={
       id:uid(), tipo:docFormType, data:docData.value,
-      dentistaId:dentista.id, dentistaNome:dentista.nomeCompleto, dentistaCro:dentista.cro,
+      dentistaId:dentista.id, dentistaNome:nomeExibicao(dentista), dentistaCro:dentista.cro,
       finalidade:docFinalidade.value, apresentacao:docApresentacao.value.trim(),
       horarioEntrada:docEntrada.value, horarioSaida:docSaida.value, local:docLocal.value.trim(),
       criadoEm:hojeISO()
@@ -3847,7 +3866,7 @@ function bindEvents(){
     const p=state.patients.find(x=>x.id===patientDetailId);
     const e=p.evolucao.find(x=>x.id===b.getAttribute('data-confevol'));
     const eu=currentUser();
-    if(!eu || eu.tipo!=='dentista'){ avisar('Somente um dentista pode confirmar a evolução.'); return; }
+    if(!ehDentista(eu)){ avisar('Somente um dentista (com CRO cadastrado) pode confirmar a evolução.'); return; }
     if(e && !e.confirmado){
       const ta=document.querySelector(`[data-evolobs="${e.id}"]`); if(ta) e.observacao=ta.value;
       e.confirmado=true; e.confirmadoEm=hojeISO(); e.confirmadoEmHora=new Date().toISOString();

@@ -572,3 +572,5 @@ table.tv th:nth-child(1){width:52%} table.tv th:nth-child(2){width:16%} table.tv
 .gr-pausa span{font-size:11.5px;color:var(--muted);padding-top:3px}
 .gr-fora{position:absolute;left:0;right:0;background:var(--surface-2);opacity:.7;pointer-events:none}
 .print-tabela .pt-sub{font-size:9pt;color:#333}
+
+.cel-saudacao{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--text)}
