@@ -1,0 +1,426 @@
+// =====================================================================
+// OdontoGestão — camada de nuvem (Firebase Authentication + Firestore)
+// ---------------------------------------------------------------------
+// • Login por e-mail/senha ou Google; só entra quem o Master cadastrou.
+// • Os dados ficam em clinicas/{CLINICA}/... no Firestore (São Paulo).
+// • Coleções grandes são guardadas em "baldes": cada documento reúne
+//   vários itens (pacientes, agendamentos...). Isso reduz muito o número
+//   de leituras cobradas a cada abertura do sistema. Cada item é gravado
+//   como um campo próprio do balde, então duas pessoas editando itens
+//   diferentes ao mesmo tempo não se sobrescrevem.
+// • Usuários e acessos ficam um por documento, porque as regras de
+//   segurança do servidor precisam ler os campos deles.
+// =====================================================================
+(function(){
+'use strict';
+const CFG = window.FIREBASE_CONFIG || {};
+const ATIVA = !!(CFG.apiKey && CFG.projectId);
+const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const CLINICA = window.ODONTO_CLINICA_ID || 'principal';
+
+// Número de baldes por coleção. NÃO altere depois que houver dados.
+const COLS = {
+  patients:         {nome:'pacientes',     baldes:32, perm:'pacientes'},
+  agendamentos:     {nome:'agendamentos',  baldes:16, perm:null},
+  fluxoFinanceiro:  {nome:'fluxo',         baldes:8,  perm:'financeiro'},
+  avisos:           {nome:'avisos',        baldes:4,  perm:null},
+  despesasCatalogo: {nome:'despesas',      baldes:1,  perm:'financeiro'},
+  procedimentos:    {nome:'procedimentos', baldes:2,  perm:null},
+  grupos:           {nome:'grupos',        baldes:1,  perm:null},
+};
+const LIMITE_BALDE = 1000*1000;     // limite do Firestore: ~1 MB por documento
+const ALERTA_BALDE = 800*1000;
+const LIMITE_IMG   = 990*1000;      // imagem comprimida (data URL) por documento
+
+let A=null, F=null, app=null, auth=null, db=null;
+let hooks={}, usuario=null, acesso=null, souMaster=false, pronto=false;
+let pendentes=0, unsubs=[];
+const srv={}, conhecidos={}, lidos={};
+const srvUsers=new Map(), srvAc=new Map(), srvCfg={};
+const cacheImg={};
+
+// ---------- utilidades ----------
+const normEmail = e => String(e||'').trim().toLowerCase();
+function canon(v){
+  if(v===null || typeof v!=='object') return JSON.stringify(v===undefined?null:v);
+  if(Array.isArray(v)) return '['+v.map(canon).join(',')+']';
+  return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
+}
+function balde(id,n){
+  let h=2166136261;
+  for(let i=0;i<id.length;i++){ h^=id.charCodeAt(i); h=Math.imul(h,16777619); }
+  return 'b'+String((h>>>0)%n).padStart(2,'0');
+}
+function novoId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+const ref    = (...p)=>F.doc(db,'clinicas',CLINICA,...p);
+const colRef = n=>F.collection(db,'clinicas',CLINICA,n);
+function limparUsuario(u){
+  const c=JSON.parse(JSON.stringify(u||{}));
+  delete c.senhaHash; delete c.senhaSalt; delete c.senhaIter; delete c.password; delete c._p;
+  if(c.email!==undefined) c.email=normEmail(c.email);
+  return c;
+}
+function meuEmail(){ return usuario?normEmail(usuario.email):''; }
+
+const ERROS={
+  'auth/invalid-credential':'E-mail ou senha incorretos.',
+  'auth/wrong-password':'E-mail ou senha incorretos.',
+  'auth/user-not-found':'E-mail ou senha incorretos.',
+  'auth/invalid-email':'E-mail inválido.',
+  'auth/missing-password':'Digite a senha.',
+  'auth/email-already-in-use':'Este e-mail já tem cadastro. Use "Entrar". Se ele entra pelo Google, use o botão do Google ou "Esqueci minha senha" para criar uma senha.',
+  'auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.',
+  'auth/too-many-requests':'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.',
+  'auth/network-request-failed':'Sem conexão com a internet.',
+  'auth/popup-closed-by-user':'O login com Google foi fechado antes de terminar.',
+  'auth/cancelled-popup-request':'O login com Google foi fechado antes de terminar.',
+  'auth/unauthorized-domain':'Este endereço ainda não foi autorizado no Firebase (LEIAME, passo "Domínios autorizados").',
+  'auth/operation-not-allowed':'Este tipo de login não está ativado no Firebase (LEIAME, passo 1).',
+  'auth/user-disabled':'Esta conta foi desativada.',
+  'auth/requires-recent-login':'Por segurança, saia e entre de novo antes de fazer isso.',
+  'permission-denied':'Sem permissão para esta operação.',
+  'unavailable':'Sem conexão com o servidor. Verifique a internet.',
+  'failed-precondition':'O navegador bloqueou o banco local. Feche outras abas do sistema e recarregue.',
+  'invalid-argument':'Um registro ficou grande demais para a nuvem.',
+  'resource-exhausted':'O limite gratuito do Firebase foi atingido hoje.',
+};
+function mapErro(e){
+  const c=(e&&e.code)||'';
+  if(ERROS[c]) return ERROS[c];
+  return 'Erro: '+((e&&e.message)||String(e));
+}
+
+// ---------- inicialização ----------
+async function carregarSDK(){
+  const [mApp,mAuth,mFs]=await Promise.all([
+    import(SDK+'firebase-app.js'), import(SDK+'firebase-auth.js'), import(SDK+'firebase-firestore.js')]);
+  A=mAuth; F=mFs;
+  app=mApp.initializeApp(CFG);
+  auth=A.getAuth(app); auth.languageCode='pt-BR';
+  try{
+    db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
+  }catch(e){
+    console.warn('Cache local indisponível; usando só memória.',e);
+    db=F.initializeFirestore(app,{localCache:F.memoryLocalCache()});
+  }
+}
+async function iniciar(h){
+  hooks=h||{};
+  await carregarSDK();
+  A.getRedirectResult(auth).catch(e=>{ if(hooks.onErroLogin) hooks.onErroLogin(mapErro(e)); });
+  A.onAuthStateChanged(auth,u=>{ usuario=u; if(hooks.onAuth) hooks.onAuth(u); });
+  window.addEventListener('online',status); window.addEventListener('offline',status);
+}
+
+// ---------- login ----------
+async function entrarGoogle(){
+  const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account'});
+  try{ await A.signInWithPopup(auth,prov); }
+  catch(e){
+    if(e && (e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment')){ await A.signInWithRedirect(auth,prov); return; }
+    throw e;
+  }
+}
+const entrarEmail = (email,senha)=>A.signInWithEmailAndPassword(auth,normEmail(email),senha);
+async function criarConta(email,senha){
+  const cred=await A.createUserWithEmailAndPassword(auth,normEmail(email),senha);
+  try{ await A.sendEmailVerification(cred.user); }catch(e){ console.warn(e); }
+}
+async function reenviarVerificacao(){ if(usuario) await A.sendEmailVerification(usuario); }
+async function verificarDeNovo(){
+  if(!usuario) return false;
+  await usuario.reload(); usuario=auth.currentUser;
+  if(usuario && usuario.emailVerified){ await usuario.getIdToken(true); return true; }
+  return false;
+}
+const redefinirSenha = email=>A.sendPasswordResetEmail(auth,normEmail(email));
+
+async function sair(forcar){
+  if(db && !forcar && pendentes>0){
+    try{ await Promise.race([F.waitForPendingWrites(db), new Promise((_,r)=>setTimeout(()=>r(new Error('pendente')),6000))]); }
+    catch(e){ return 'pendente'; }
+  }
+  unsubs.forEach(f=>{ try{ f(); }catch(_){} }); unsubs=[];
+  try{ await A.signOut(auth); }catch(e){ console.error(e); }
+  // apaga a cópia local dos dados deste navegador (segurança em computador compartilhado)
+  try{ await F.terminate(db); await F.clearIndexedDbPersistence(db); }catch(e){ console.warn(e); }
+  location.reload();
+  return 'ok';
+}
+
+// ---------- acesso ----------
+async function carregarAcesso(){
+  const s=await F.getDoc(ref('acessos',meuEmail()));
+  return s.exists()?s.data():null;
+}
+// Primeiro acesso do responsável (o e-mail dele está nas regras do Firestore).
+async function criarDono(){
+  const ac={userId:novoId(), tipo:'master', ativo:true,
+    perms:{usuarios:true,pacientes:true,clinica:true,procedimentos:true,financeiro:true}};
+  try{ await F.setDoc(ref('acessos',meuEmail()),ac); return ac; }
+  catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
+}
+
+// ---------- leitura em tempo real ----------
+function primeiraVez(nome,assinar){
+  return new Promise(res=>{
+    let feito=false;
+    const fim=()=>{ if(!feito){ feito=true; res(); } };
+    const un=assinar(fim,err=>{
+      console.error('Falha ao ler '+nome,err);
+      if(hooks.onErro && pronto) hooks.onErro(err);
+      fim();
+    });
+    unsubs.push(un);
+  });
+}
+function ouvirBaldes(key){
+  const c=COLS[key]; const m=srv[key]=new Map(); conhecidos[key]=new Set();
+  return primeiraVez(c.nome,(fim,erro)=>F.onSnapshot(colRef(c.nome),snap=>{
+    const mudados=new Set(), removidos=new Set();
+    snap.docChanges().forEach(ch=>{
+      const b=ch.doc.id;
+      const itens=ch.type==='removed'?{}:((ch.doc.data()||{}).i||{});
+      for(const id in itens){
+        const v=itens[id]; if(!v || typeof v.d!=='string') continue;
+        conhecidos[key].add(id);
+        const ant=m.get(id);
+        if(!ant || ant.s!==v.d){ m.set(id,{s:v.d,p:v.p||0,b}); mudados.add(id); }
+      }
+      for(const [id,v] of m) if(v.b===b && !(id in itens)){ m.delete(id); removidos.add(id); }
+    });
+    if(!lidos[key]){ lidos[key]=true; fim(); return; }
+    if(mudados.size||removidos.size) aplicar(key,mudados,removidos);
+  },erro));
+}
+function ouvirUsuarios(){
+  return primeiraVez('usuarios',(fim,erro)=>F.onSnapshot(colRef('usuarios'),snap=>{
+    const mudados=new Set(), removidos=new Set();
+    snap.docChanges().forEach(ch=>{
+      const id=ch.doc.id;
+      if(ch.type==='removed'){ if(srvUsers.has(id)){ srvUsers.delete(id); removidos.add(id); } return; }
+      const d=ch.doc.data()||{}; const p=d._p||0; const u=limparUsuario(d); u.id=id; const s=canon(u);
+      if(srvUsers.get(id)!==s){ srvUsers.set(id,s); posUsers.set(id,p); mudados.add(id); }
+    });
+    if(!lidos.users){ lidos.users=true; fim(); return; }
+    if(mudados.size||removidos.size) aplicar('users',mudados,removidos);
+  },erro));
+}
+const posUsers=new Map();
+function ouvirAcessos(){
+  return primeiraVez('acessos',(fim,erro)=>F.onSnapshot(colRef('acessos'),snap=>{
+    snap.docChanges().forEach(ch=>{
+      if(ch.type==='removed') srvAc.delete(ch.doc.id); else srvAc.set(ch.doc.id,canon(ch.doc.data()));
+    });
+    if(!lidos.acessos){ lidos.acessos=true; fim(); }
+  },erro));
+}
+function ouvirConfig(){
+  return primeiraVez('config',(fim,erro)=>F.onSnapshot(colRef('config'),snap=>{
+    let mudou=false;
+    snap.docChanges().forEach(ch=>{
+      const id=ch.doc.id; const s=ch.type==='removed'?null:((ch.doc.data()||{}).d||null);
+      if(srvCfg[id]!==s){ srvCfg[id]=s; mudou=true;
+        if(lidos.config){ const st=hooks.estado(); if(id==='clinica') st.clinic=s?JSON.parse(s):null; if(id==='meta') st.meta=s?JSON.parse(s):{}; }
+      }
+    });
+    if(!lidos.config){ lidos.config=true; fim(); return; }
+    if(mudou && hooks.onRemoto) hooks.onRemoto();
+  },erro));
+}
+function ouvirMeuAcesso(){
+  let primeiro=true;
+  unsubs.push(F.onSnapshot(ref('acessos',meuEmail()),s=>{
+    if(primeiro){ primeiro=false; return; }
+    if(s.metadata.hasPendingWrites) return;
+    const novo=s.exists()?s.data():null;
+    if(hooks.onAcessoMudou) hooks.onAcessoMudou(novo,acesso);
+    if(novo) acesso=novo;
+  },e=>console.error(e)));
+}
+
+// Aplica no estado do app as mudanças que vieram da nuvem (de outro usuário,
+// ou o servidor desfazendo uma gravação recusada), mantendo os mesmos objetos.
+function posicao(key,id){
+  if(key==='users') return posUsers.has(id)?posUsers.get(id):1e9;
+  const v=srv[key] && srv[key].get(id); return v?v.p:1e9;
+}
+function aplicar(key,mudados,removidos){
+  const st=hooks.estado(); if(!st) return;
+  let arr=Array.isArray(st[key])?st[key]:[];
+  const porId=new Map(arr.map(o=>[String(o&&o.id),o]));
+  for(const id of mudados){
+    let novo;
+    if(key==='users'){ novo=JSON.parse(srvUsers.get(id)); }
+    else { const v=srv[key].get(id); if(!v) continue; novo=JSON.parse(v.s); }
+    const ex=porId.get(id);
+    if(ex){ for(const k of Object.keys(ex)) delete ex[k]; Object.assign(ex,novo); }
+    else { arr.push(novo); porId.set(id,novo); }
+  }
+  if(removidos.size) arr=arr.filter(o=>!removidos.has(String(o&&o.id)));
+  arr.sort((a,b)=>posicao(key,String(a.id))-posicao(key,String(b.id)));
+  st[key]=arr;
+  if(hooks.onRemoto) hooks.onRemoto(key);
+}
+
+async function conectar(ac){
+  acesso=ac; souMaster=ac.tipo==='master';
+  const pode=p=>souMaster || !!(ac.perms&&ac.perms[p]);
+  const t=[ouvirConfig(),ouvirUsuarios()];
+  if(pode('usuarios')) t.push(ouvirAcessos());
+  for(const key in COLS){ const c=COLS[key]; if(!c.perm || pode(c.perm)) t.push(ouvirBaldes(key)); }
+  ouvirMeuAcesso();
+  await Promise.all(t);
+  const st={clinic:srvCfg.clinica?JSON.parse(srvCfg.clinica):null, meta:srvCfg.meta?JSON.parse(srvCfg.meta):{}};
+  st.users=[...srvUsers.keys()].sort((a,b)=>posicao('users',a)-posicao('users',b)).map(id=>JSON.parse(srvUsers.get(id)));
+  for(const key in COLS){
+    const m=srv[key];
+    st[key]=m?[...m.entries()].sort((a,b)=>a[1].p-b[1].p).map(([,v])=>JSON.parse(v.s)):[];
+  }
+  pronto=true; status();
+  return st;
+}
+
+// ---------- gravação: compara com o que está na nuvem e envia só o que mudou ----------
+function podeMexerAcesso(email,obj){
+  if(email===meuEmail() && !souMaster) return false;
+  if(souMaster) return true;
+  const ant=srvAc.get(email);
+  if(obj && obj.tipo==='master') return false;
+  if(ant && JSON.parse(ant).tipo==='master') return false;
+  return true;
+}
+function salvar(st){
+  if(!pronto || !st) return;
+  const ops=[]; const avisosTam=[];
+  // configuração (clínica e meta)
+  for(const [k,id] of [['clinic','clinica'],['meta','meta']]){
+    if(st[k]==null) continue;
+    const s=JSON.stringify(st[k]);
+    if(srvCfg[id]!==s){ ops.push({r:ref('config',id),d:{d:s}}); srvCfg[id]=s; }
+  }
+  // usuários
+  if(lidos.users){
+    const vistos=new Set();
+    (st.users||[]).forEach((u,i)=>{
+      if(!u) return; if(!u.id) u.id=novoId();
+      const id=String(u.id); vistos.add(id);
+      const c=limparUsuario(u); c.id=id; const s=canon(c);
+      if(srvUsers.get(id)!==s){ ops.push({r:ref('usuarios',id),d:Object.assign({},c,{_p:i})}); srvUsers.set(id,s); posUsers.set(id,i); }
+    });
+    for(const id of [...srvUsers.keys()]) if(!vistos.has(id)){ ops.push({r:ref('usuarios',id),del:true}); srvUsers.delete(id); }
+  }
+  // coleções em baldes
+  for(const key in COLS){
+    if(!lidos[key]) continue;
+    const c=COLS[key], m=srv[key], vistos=new Set(), porBalde={};
+    (st[key]||[]).forEach((it,i)=>{
+      if(!it || typeof it!=='object') return; if(it.id==null) it.id=novoId();
+      const id=String(it.id); if(vistos.has(id)) return; vistos.add(id);
+      const s=JSON.stringify(it); const ant=m.get(id);
+      if(!ant || ant.s!==s){
+        const b=ant?ant.b:balde(id,c.baldes);
+        (porBalde[b]=porBalde[b]||{})[id]={d:s,p:i};
+        m.set(id,{s,p:i,b}); conhecidos[key].add(id);
+      }
+    });
+    for(const [id,v] of [...m]) if(!vistos.has(id)){ (porBalde[v.b]=porBalde[v.b]||{})[id]=F.deleteField(); m.delete(id); }
+    for(const b in porBalde){
+      let tam=0; for(const [,v] of m) if(v.b===b) tam+=v.s.length+40;
+      if(tam>ALERTA_BALDE) avisosTam.push(c.nome+'/'+b+' ('+Math.round(tam/1000)+' KB)');
+      ops.push({r:ref(c.nome,b),d:{i:porBalde[b]},merge:true});
+    }
+  }
+  // acessos (derivados do cadastro de usuários)
+  if(lidos.acessos && hooks.acessosDesejados){
+    const des=hooks.acessosDesejados();
+    for(const [e,o] of des){
+      const s=canon(o);
+      if(srvAc.get(e)!==s && podeMexerAcesso(e,o)){ ops.push({r:ref('acessos',e),d:o}); srvAc.set(e,s); }
+    }
+    for(const [e,s] of [...srvAc]){
+      if(!des.has(e) && e!==meuEmail() && podeMexerAcesso(e,JSON.parse(s))){ ops.push({r:ref('acessos',e),del:true}); srvAc.delete(e); }
+    }
+  }
+  if(avisosTam.length && hooks.onAlertaTamanho) hooks.onAlertaTamanho(avisosTam);
+  enviar(ops);
+}
+function enviar(ops){
+  for(let i=0;i<ops.length;i+=400){
+    const wb=F.writeBatch(db);
+    ops.slice(i,i+400).forEach(o=>{ if(o.del) wb.delete(o.r); else if(o.merge) wb.set(o.r,o.d,{merge:true}); else wb.set(o.r,o.d); });
+    acompanhar(wb.commit());
+  }
+}
+function acompanhar(prom){
+  pendentes++; status();
+  return prom.then(()=>{ pendentes--; status(); }).catch(e=>{ pendentes--; status(); console.error(e); if(hooks.onErro) hooks.onErro(e); });
+}
+function status(){ if(hooks.onStatus) hooks.onStatus(pendentes, navigator.onLine!==false); }
+async function aguardarEnvio(){ await F.waitForPendingWrites(db); }
+
+// ---------- imagens (radiografias) ----------
+function carregarImg(src){
+  return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('arquivo de imagem inválido')); i.src=src; });
+}
+async function comprimir(blob){
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=await carregarImg(url);
+    const W=img.naturalWidth, H=img.naturalHeight;
+    let lado=Math.min(2800,Math.max(W,H)), q=0.92;
+    for(let t=0;t<16;t++){
+      const e=Math.min(1,lado/Math.max(W,H)), w=Math.max(1,Math.round(W*e)), h=Math.max(1,Math.round(H*e));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,w,h); cx.drawImage(img,0,0,w,h);
+      const d=cv.toDataURL('image/jpeg',q);
+      if(d.length<=LIMITE_IMG) return d;
+      if(q>0.72) q-=0.06; else lado=Math.round(lado*0.85);
+    }
+    throw new Error('não foi possível reduzir a imagem para caber na nuvem');
+  } finally { URL.revokeObjectURL(url); }
+}
+async function salvarImagem(file){
+  const d=await comprimir(file); const id=novoId();
+  cacheImg[id]=d;
+  acompanhar(F.setDoc(ref('imagens',id),{d,em:Date.now(),por:meuEmail()}));
+  return id;
+}
+async function urlDaImagem(id){
+  if(!id) return '';
+  if(cacheImg[id]) return cacheImg[id];
+  try{ const s=await F.getDoc(ref('imagens',id)); if(!s.exists()) return ''; cacheImg[id]=s.data().d||''; return cacheImg[id]; }
+  catch(e){ console.error(e); return ''; }
+}
+function removerImagem(id){ if(!id) return; delete cacheImg[id]; acompanhar(F.deleteDoc(ref('imagens',id))); }
+function dataUrlParaBlob(d){
+  const [cab,b64]=d.split(','); const mime=(cab.match(/data:([^;]+)/)||[])[1]||'image/jpeg';
+  const bin=atob(b64||''); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+  return new Blob([a],{type:mime});
+}
+async function todasImagens(){
+  const s=await F.getDocs(colRef('imagens'));
+  return s.docs.map(d=>{ const blob=dataUrlParaBlob(d.data().d||''); return {id:d.id,blob,mime:blob.type}; });
+}
+async function enviarImagensBackup(imgs,progresso){
+  let n=0;
+  for(const im of imgs){
+    n++; if(progresso) progresso(n,imgs.length);
+    const d=await comprimir(im.blob); cacheImg[im.id]=d;
+    await F.setDoc(ref('imagens',im.id),{d,em:Date.now(),por:meuEmail()});
+  }
+}
+async function apagarImagensExceto(manter){
+  const s=await F.getDocs(colRef('imagens'));
+  const ops=s.docs.filter(d=>!manter.has(d.id)).map(d=>({r:d.ref,del:true}));
+  enviar(ops);
+}
+
+window.Nuvem={
+  ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, reenviarVerificacao, verificarDeNovo,
+  redefinirSenha, sair, carregarAcesso, criarDono, conectar, salvar, aguardarEnvio,
+  salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
+  meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
+  usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
+};
+})();

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OdontoGestão</title>
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="OdontoGestão">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icones/icone-192.png">
+<link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+<link rel="stylesheet" href="estilo.css?v=2.0.0">
+</head>
+<body>
+<div id="app"><div class="wrap"><div class="card center"><p class="muted">Carregando…</p></div></div></div>
+<div id="printArea"></div>
+<script src="firebase-config.js?v=2.0.0"></script>
+<script src="nuvem.js?v=2.0.0"></script>
+<script src="app.js?v=2.0.0"></script>
+<script>
+if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e)));
+}
+</script>
+</body>
+</html>

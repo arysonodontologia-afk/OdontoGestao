@@ -1,0 +1,93 @@
+rules_version = '2';
+// =====================================================================
+// OdontoGestão — regras de segurança do Firestore
+// ANTES DE PUBLICAR: troque o e-mail abaixo pelo e-mail do responsável
+// pela clínica (o primeiro Master). Use letras minúsculas.
+// =====================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function emailDoDono() { return 'SEU-EMAIL@gmail.com'; }
+
+    function logado() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function meuEmail() { return request.auth.token.email.lower(); }
+
+    function padrao(tipo) {
+      return tipo == 'administrativo'
+        ? {'usuarios': true,  'pacientes': true, 'clinica': false, 'procedimentos': true,  'financeiro': true}
+        : tipo == 'dentista'
+        ? {'usuarios': false, 'pacientes': true, 'clinica': false, 'procedimentos': true,  'financeiro': false}
+        : {'usuarios': false, 'pacientes': true, 'clinica': false, 'procedimentos': false, 'financeiro': false};
+    }
+    function tipoComum(t) { return t in ['administrativo', 'dentista', 'recepcionista']; }
+
+    match /clinicas/{cid} {
+      function caminhoAcesso() { return /databases/$(database)/documents/clinicas/$(cid)/acessos/$(meuEmail()); }
+      function ac() { return get(caminhoAcesso()).data; }
+      function membro() { return logado() && exists(caminhoAcesso()) && ac().ativo == true; }
+      function master() { return membro() && ac().tipo == 'master'; }
+      function pode(p) { return membro() && (ac().tipo == 'master' || ac().perms.get(p, false) == true); }
+
+      // Quem pode entrar. Documento = e-mail. Mantido pelo próprio sistema
+      // a partir do cadastro de Usuários.
+      match /acessos/{email} {
+        allow get: if logado() && (email == meuEmail() || pode('usuarios'));
+        allow list: if pode('usuarios');
+
+        // primeiro acesso do responsável
+        allow create: if logado() && email == meuEmail() && meuEmail() == emailDoDono().lower()
+          && request.resource.data.tipo == 'master' && request.resource.data.ativo == true;
+
+        allow create, update: if master();
+
+        // Administrativo: só usuários comuns, só com as permissões padrão
+        // (ou sem mudar as que o Master definiu), e o e-mail precisa ser o
+        // mesmo do cadastro do usuário.
+        allow create, update: if pode('usuarios')
+          && email != meuEmail()
+          && tipoComum(request.resource.data.tipo)
+          && (resource == null || resource.data.tipo != 'master')
+          && (request.resource.data.perms == padrao(request.resource.data.tipo)
+              || (resource != null && request.resource.data.perms == resource.data.perms
+                  && request.resource.data.tipo == resource.data.tipo))
+          && getAfter(/databases/$(database)/documents/clinicas/$(cid)/usuarios/$(request.resource.data.userId)).data.get('email', '') == email;
+
+        allow delete: if master() && email != meuEmail();
+        allow delete: if pode('usuarios') && email != meuEmail() && resource.data.tipo != 'master';
+      }
+
+      match /usuarios/{uid} {
+        allow read: if membro();
+        allow create, update: if master();
+        allow create, update: if pode('usuarios')
+          && tipoComum(request.resource.data.tipo)
+          && (resource == null || resource.data.tipo != 'master')
+          && (request.resource.data.get('permissions', null) == padrao(request.resource.data.tipo)
+              || (resource != null
+                  && request.resource.data.get('permissions', null) == resource.data.get('permissions', null)
+                  && request.resource.data.tipo == resource.data.tipo))
+          // só o Master troca o e-mail de acesso de quem já tem um
+          && (resource == null || resource.data.get('email', '') == ''
+              || request.resource.data.get('email', '') == resource.data.get('email', ''));
+        allow delete: if master() && uid != ac().userId;
+        allow delete: if pode('usuarios') && uid != ac().userId && resource.data.tipo != 'master';
+      }
+
+      match /config/clinica { allow read: if membro(); allow write: if pode('clinica'); }
+      match /config/meta    { allow read, write: if membro(); }
+
+      match /pacientes/{b}     { allow read, write: if pode('pacientes'); }
+      match /imagens/{id}      { allow read, write: if pode('pacientes'); }
+      match /agendamentos/{b}  { allow read, write: if membro(); }
+      match /avisos/{b}        { allow read, write: if membro(); }
+      match /fluxo/{b}         { allow read, write: if pode('financeiro'); }
+      match /despesas/{b}      { allow read, write: if pode('financeiro'); }
+      match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos'); }
+      match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos'); }
+    }
+  }
+}
