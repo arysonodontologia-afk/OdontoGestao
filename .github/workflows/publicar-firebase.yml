@@ -1,0 +1,39 @@
+# Publica o sistema (Firebase Hosting) e as regras de segurança (Firestore)
+# toda vez que algo é enviado para a branch main.
+name: Publicar no Firebase
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Conferir configuração
+        run: |
+          if grep -q "COLOQUE-O-ID-DO-PROJETO" .firebaserc; then
+            echo "::error::Preencha o ID do projeto no arquivo .firebaserc"; exit 1; fi
+          if grep -q "SEU-EMAIL@gmail.com" firestore.rules; then
+            echo "::error::Troque o e-mail do responsável no arquivo firestore.rules"; exit 1; fi
+          if [ -z "$CHAVE" ]; then
+            echo "::error::Falta o secret FIREBASE_SERVICE_ACCOUNT (veja o LEIAME)"; exit 1; fi
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Publicar
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/chave.json"
+          npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --non-interactive
+      - name: Apagar a chave
+        if: always()
+        run: rm -f "$RUNNER_TEMP/chave.json"
