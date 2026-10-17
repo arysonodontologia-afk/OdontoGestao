@@ -526,3 +526,49 @@ table.tv th:nth-child(1){width:52%} table.tv th:nth-child(2){width:16%} table.tv
 .legenda i.gb-nao_vem{border-color:var(--warn-line)}
 .faixa-aviso{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line);border-radius:10px;padding:10px 16px;margin-bottom:18px;font-size:13.5px}
 .faixa-aviso .lnk-forte{color:var(--warn);text-decoration:underline;margin-left:auto}
+
+/* cadastro da clínica */
+.cl-pagina{max-width:980px;margin:0 auto;padding:28px 24px 60px}
+.cl-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:28px}
+.cl-titulo{margin:0;font-size:26px;font-weight:600;letter-spacing:-.015em}
+.cl-sub{margin:6px 0 20px;color:var(--text-2);max-width:70ch}
+.cl-importar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--primary-tint);border:1px solid var(--primary-soft);border-radius:12px;padding:14px 18px;margin-bottom:20px}
+.cl-importar>div{flex:1 1 320px}
+.cl-form{display:flex;flex-direction:column;gap:16px}
+.cl-secao{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 22px 20px;display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:8px 28px}
+.cl-secao-cab h3{margin:0 0 4px;font-size:15px}
+.cl-secao-cab p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.cl-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px;align-content:start}
+.cl-grade-end{grid-template-columns:repeat(6,minmax(0,1fr))}
+.cl-grade-end .c1{grid-column:span 1}.cl-grade-end .c2{grid-column:span 2}.cl-grade-end .c3{grid-column:span 3}.cl-grade-end .c4{grid-column:span 4}
+.cl-campo{min-width:0}
+.cl-campo label{margin-top:8px}
+.cl-dica{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
+.cl-duplo{display:flex;gap:8px}
+.cl-duplo input{min-width:0}
+.cl-hor{display:flex;flex-direction:column;gap:6px;grid-column:2}
+.cl-hor + .cl-grade{grid-column:2}
+.cl-hor-linha{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cl-hor-linha input[type=time]{width:auto;min-width:110px}
+.cl-hor-dia{display:flex;align-items:center;gap:8px;margin:0;width:120px;color:var(--text);font-size:14px;font-weight:500}
+.cl-hor-fechado{display:none}
+.cl-hor-linha.fechado input[type=time],.cl-hor-linha.fechado>.muted:not(.cl-hor-fechado){display:none}
+.cl-hor-linha.fechado .cl-hor-fechado{display:inline}
+.cl-logo{display:flex;align-items:center;gap:16px;flex-wrap:wrap;grid-column:2}
+.cl-logo-prev{width:180px;height:90px;border:1px dashed var(--border-strong);border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);overflow:hidden}
+.cl-logo-prev img{max-width:100%;max-height:100%;object-fit:contain}
+.cl-rodape{display:flex;align-items:center;justify-content:flex-end;gap:16px;position:sticky;bottom:0;background:linear-gradient(to top,var(--bg) 70%,transparent);padding:16px 0 8px}
+.cl-secao>.cl-grade,.cl-secao>.cl-hor,.cl-secao>.cl-logo{grid-column:2}
+.cl-secao>p.cl-dica{grid-column:2}
+@media (max-width:820px){
+  .cl-pagina{padding:18px 16px 40px}
+  .cl-secao{grid-template-columns:1fr;padding:16px}
+  .cl-secao>*{grid-column:1!important}
+  .cl-grade,.cl-grade-end{grid-template-columns:1fr}
+  .cl-grade-end>.cl-campo{grid-column:auto!important}
+}
+/* agenda: intervalo e fora do horário */
+.gr-pausa{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,var(--hatch-a) 0,var(--hatch-a) 6px,var(--hatch-b) 6px,var(--hatch-b) 12px);pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
+.gr-pausa span{font-size:11.5px;color:var(--muted);padding-top:3px}
+.gr-fora{position:absolute;left:0;right:0;background:var(--surface-2);opacity:.7;pointer-events:none}
+.print-tabela .pt-sub{font-size:9pt;color:#333}

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.2.1';
+const APP_VERSION='2.3.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -652,7 +652,7 @@ function duracaoAgendamento(a,paciente){
     const t=a.procedimentoRefs.reduce((sum,id)=>{ const r=findProcedimentoRecordById(paciente,id); return sum+((r&&r.tempoMin)||0); },0);
     if(t>0) return t;
   }
-  return 30;
+  return (state.clinic&&+state.clinic.duracaoPadrao)||30;
 }
 function duracaoDe(a){ return a.duracaoMin || duracaoAgendamento(a, state.patients.find(x=>x.id===a.pacienteId)); }
 function conflitosAgenda(novo){
@@ -931,7 +931,8 @@ function renderAgendaDia(){
     if(!dents.length) principal=`<section class="bloco"><div class="bloco-cab"><h2>Grade do dia</h2>${modos}</div><div class="bloco-corpo">${semDentistaAviso()}</div></section>`;
     else {
       const its=ativos.map(a=>({a,ini:hhmmParaMin(a.horario),fim:hhmmParaMin(a.horario)+duracaoDe(a)}));
-      let ini=8*60, fim=18*60;
+      const hc=horarioDoDia(agendaViewDate);
+      let ini=hc&&hc.aberto?Math.floor(hhmmParaMin(hc.ini)/60)*60:8*60, fim=hc&&hc.aberto?Math.ceil(hhmmParaMin(hc.fim)/60)*60:18*60;
       its.forEach(i=>{ ini=Math.min(ini,Math.floor(i.ini/60)*60); fim=Math.max(fim,Math.ceil(i.fim/60)*60); });
       ini=Math.max(0,ini); fim=Math.min(24*60,fim);
       const pxMin=SLOT_PX/SLOT_MIN, altura=(fim-ini)*pxMin;
@@ -946,14 +947,18 @@ function renderAgendaDia(){
             :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}</span>`}
           </button>`;
         }).join('');
-        return `<div class="gr-col" data-agcol="${esc(d.id)}" data-agini="${ini}" style="height:${altura}px;background-size:100% ${SLOT_PX}px" title="Clique num horário livre para agendar">${blocos}</div>`;
+        const iv=(state.clinic&&state.clinic.intervalo)||{}; let pausa='';
+        if(iv.ini && iv.fim && (!hc||hc.aberto)){ const a1=Math.max(ini,hhmmParaMin(iv.ini)), a2=Math.min(fim,hhmmParaMin(iv.fim)); if(a2>a1) pausa=`<div class="gr-pausa" style="top:${(a1-ini)*pxMin}px;height:${(a2-a1)*pxMin}px"><span>Intervalo</span></div>`; }
+        let fora='';
+        if(hc && hc.aberto){ const ab=hhmmParaMin(hc.ini), fe=hhmmParaMin(hc.fim); if(ab>ini) fora+=`<div class="gr-fora" style="top:0;height:${(ab-ini)*pxMin}px"></div>`; if(fe<fim) fora+=`<div class="gr-fora" style="top:${(fe-ini)*pxMin}px;height:${(fim-fe)*pxMin}px"></div>`; }
+        return `<div class="gr-col" data-agcol="${esc(d.id)}" data-agini="${ini}" style="height:${altura}px;background-size:100% ${SLOT_PX}px" title="Clique num horário livre para agendar">${fora}${pausa}${blocos}</div>`;
       }).join('');
       const cab=dents.map(d=>{ const n=ativos.filter(a=>(a.dentistaId||'?')===d.id).length; return `<div class="gr-dent">${avatarHtml(d.nome,d.id)}<div><div class="gr-dent-nome">${esc(d.nome)}</div><div class="muted">${n} atendimento${n===1?'':'s'}</div></div></div>`; }).join('');
       let agora='';
       if(agendaViewDate===hojeISO()){ const m=hhmmParaMin(agoraHHMM()); if(m>=ini && m<=fim) agora=`<div class="gr-agora" style="top:${(m-ini)*pxMin}px" aria-hidden="true"></div>`; }
       const tpl=`64px repeat(${dents.length},minmax(200px,1fr))`;
       principal=`<section class="bloco" aria-label="Grade de horários">
-        <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${cancelados?`<button class="lnk-forte" data-agdiamodo="lista">${cancelados} cancelado${cancelados>1?'s':''}, ver na lista</button>`:''}<div style="margin-left:auto">${modos}</div></div>
+        <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${hc&&!hc.aberto?'<span class="sit sit-agendado">Clínica fechada neste dia</span>':''}${cancelados?`<button class="lnk-forte" data-agdiamodo="lista">${cancelados} cancelado${cancelados>1?'s':''}, ver na lista</button>`:''}<div style="margin-left:auto">${modos}</div></div>
         <div class="gr-rolagem"><div class="gr" style="min-width:${64+dents.length*200}px">
           <div class="gr-topo" style="grid-template-columns:${tpl}"><div></div>${cab}</div>
           <div class="gr-corpo" style="grid-template-columns:${tpl}"><div class="gr-horas">${horas.join('')}</div>${cols}${agora}</div>
@@ -975,6 +980,11 @@ function renderAgendaDia(){
     </div></section>
   </aside>`;
   return `<div class="ag-dia">${`<div class="ag-dia-a">${principal}</div>`}${lateral}</div>`;
+}
+function horarioDoDia(iso){
+  const c=state.clinic; if(!c||!c.horarios) return null;
+  const k=['dom','seg','ter','qua','qui','sex','sab'][new Date(iso+'T00:00:00').getDay()];
+  return c.horarios[k]||null;
 }
 function miniCalendarioHtml(iso){
   const mes=iso.slice(0,7), dias=monthDays(mes), hoje=hojeISO();
@@ -1415,7 +1425,7 @@ let tabFiltroGrupo='', tabBusca='';
 function tabelaValoresPrintHtml(blocos){
   const c=state.clinic||{};
   const corpo=blocos.map(b=>`<h3>${esc(b.nome)}</h3><table class="tv"><thead><tr><th>Procedimento</th><th>Cobrança</th><th>Tempo</th><th class="v">Valor</th></tr></thead><tbody>${b.itens.map(pr=>`<tr><td>${esc(pr.nome)}</td><td>${escopoLabel(pr.escopo)}</td><td>${pr.tempoMin} min</td><td class="v">${fmtMoney(pr.valor)}</td></tr>`).join('')}</tbody></table>`).join('');
-  return `<div class="print-tabela"><div class="pt-head"><div class="pt-clinic">${esc(c.nome||'')}</div><div>Tabela de Valores — atualizada em ${fmtDataBR(hojeISO())}</div></div>${corpo}</div>`;
+  return `<div class="print-tabela"><div class="pt-head">${cabecalhoDocHtml(c,'pt-clinic','pt-sub')}<div style="margin-top:2mm">Tabela de valores, atualizada em ${fmtDataBR(hojeISO())}</div></div>${corpo}</div>`;
 }
 function renderTabelaValores(){
   ensureProcedimentos();
@@ -1804,8 +1814,7 @@ function renderDocumentoView(p, d){
   const local=d.local?esc(d.local)+', ':'';
   const titulo=d.tipo==='atestado'?'Atestado Odontológico':'Declaração de Comparecimento';
   const via=(label, comCiente)=>`<div class="via"><div class="via-label">${label}</div>
-    <div class="doc-head"><div class="doc-clinic">${esc(c.nome)}</div>
-    <div class="doc-sub">${esc(c.endereco)}${c.telefone?' · '+esc(c.telefone):''}${c.email?' · '+esc(c.email):''}</div></div>
+    <div class="doc-head">${cabecalhoDocHtml(c,'doc-clinic','doc-sub')}</div>
     <div class="doc-title">${titulo}</div>
     <div class="doc-body">${corpo}</div>
     <p class="doc-date">${local}${fmtDataBR(d.criadoEm||d.data)}</p>
@@ -2382,6 +2391,7 @@ async function aoMudarLogin(u){
     state=st;
     ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     state.meta=state.meta||{};
+    if(!state.clinic){ try{ const ex=await Nuvem.lerClinicaServidor(); if(ex) state.clinic=ex; }catch(e){ console.warn(e); } }
     if(!state.clinic){
       if(ac.tipo!=='master'){ nuvemErro='A clínica ainda não foi configurada pelo responsável. Tente mais tarde.'; view='nuvemSemAcesso'; }
       else view='setupClinic';
@@ -2496,6 +2506,197 @@ async function restaurarBackupNuvem(header,imgs){
   }catch(e){ prog.fechar(); throw e; }
 }
 
+// =====================================================================
+// CADASTRO DA CLÍNICA
+// =====================================================================
+const UFS=['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+const DIAS_CLINICA=[['seg','Segunda'],['ter','Terça'],['qua','Quarta'],['qui','Quinta'],['sex','Sexta'],['sab','Sábado'],['dom','Domingo']];
+function horariosPadrao(){
+  const h={}; DIAS_CLINICA.forEach(([k])=>{ h[k]={aberto:!['sab','dom'].includes(k),ini:'08:00',fim:'18:00'}; });
+  h.sab={aberto:true,ini:'08:00',fim:'12:00'}; return h;
+}
+function dadosClinica(){ const c=state.clinic||{}; return Object.assign({horarios:horariosPadrao(),intervalo:{ini:'12:00',fim:'13:00'},duracaoPadrao:30,end:{},tipoPessoa:'pj'},c,{end:Object.assign({},c.end||{}),horarios:Object.assign(horariosPadrao(),c.horarios||{})}); }
+function soDigitos(v){ return String(v||'').replace(/\D/g,''); }
+function mascaraDoc(v){
+  const d=soDigitos(v).slice(0,14);
+  if(d.length<=11) return d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+  return d.replace(/^(\d{2})(\d)/,'$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d)/,'.$1/$2').replace(/(\d{4})(\d)/,'$1-$2');
+}
+function mascaraTel(v){ const d=soDigitos(v).slice(0,11); if(d.length<=2) return d; if(d.length<=6) return `(${d.slice(0,2)}) ${d.slice(2)}`; if(d.length<=10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`; return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; }
+function mascaraCep(v){ const d=soDigitos(v).slice(0,8); return d.length>5?d.slice(0,5)+'-'+d.slice(5):d; }
+function cpfValido(c){ c=soDigitos(c); if(c.length!==11||/^(\d)\1+$/.test(c)) return false; let s=0; for(let i=0;i<9;i++) s+=+c[i]*(10-i); let r=(s*10)%11%10; if(r!==+c[9]) return false; s=0; for(let i=0;i<10;i++) s+=+c[i]*(11-i); r=(s*10)%11%10; return r===+c[10]; }
+function cnpjValido(c){ c=soDigitos(c); if(c.length!==14||/^(\d)\1+$/.test(c)) return false; const calc=n=>{ let s=0,p=n-7; for(let i=0;i<n;i++){ s+=+c[i]*p--; if(p<2) p=9; } const r=s%11; return r<2?0:11-r; }; return calc(12)===+c[12] && calc(13)===+c[13]; }
+function enderecoTexto(c){
+  const e=(c&&c.end)||{};
+  if(!e.logradouro && !e.cidade) return (c&&c.endereco)||'';
+  const l1=[e.logradouro,e.numero].filter(Boolean).join(', ')+(e.complemento?' - '+e.complemento:'');
+  const l2=[e.bairro,[e.cidade,e.uf].filter(Boolean).join('/')].filter(Boolean).join(', ');
+  return [l1,l2].filter(Boolean).join(' - ')+(e.cep?' - CEP '+e.cep:'');
+}
+function rtTexto(c){ return c&&c.rtNome?`Responsável técnico: ${c.rtNome}${c.rtCro?', CRO '+c.rtCro:''}`:''; }
+function docTexto(c){ if(!c||!c.documento) return ''; return (soDigitos(c.documento).length>11?'CNPJ ':'CPF ')+c.documento; }
+function cabecalhoDocHtml(c,classeNome,classeSub){
+  c=c||{};
+  const l1=[docTexto(c),c.inscricaoCro?'Inscrição CRO '+c.inscricaoCro:''].filter(Boolean).join('   ');
+  const l2=[enderecoTexto(c),c.telefone||c.whatsapp,c.email].filter(Boolean).join('   ');
+  return `${c.logo?`<img src="${c.logo}" alt="" style="max-height:16mm;max-width:50mm;object-fit:contain;display:block;margin:0 auto 2mm">`:''}<div class="${classeNome}">${esc(c.nome||'')}</div>
+    ${l1?`<div class="${classeSub}">${esc(l1)}</div>`:''}${l2?`<div class="${classeSub}">${esc(l2)}</div>`:''}${rtTexto(c)?`<div class="${classeSub}">${esc(rtTexto(c))}</div>`:''}`;
+}
+function camposFaltandoClinica(c){
+  const f=[]; c=c||{};
+  if(!c.documento) f.push('CNPJ ou CPF'); if(!c.rtNome||!c.rtCro) f.push('responsável técnico');
+  if(!(c.end&&c.end.cidade)) f.push('endereço'); if(!c.whatsapp) f.push('WhatsApp');
+  return f;
+}
+function alvaraAviso(c){
+  if(!c||!c.alvaraValidade) return null;
+  const d=diasEntre(hojeISO(),c.alvaraValidade);
+  if(d<0) return {txt:'Alvará sanitário vencido em '+fmtDataBR(c.alvaraValidade),ruim:true};
+  if(d<=45) return {txt:'Alvará sanitário vence em '+d+' dia'+(d===1?'':'s')+' ('+fmtDataBR(c.alvaraValidade)+')',ruim:false};
+  return null;
+}
+function clinicaFormHtml(c,formId,podeEditar,inicial){
+  const d=c, e=d.end||{}, dis=podeEditar?'':' disabled';
+  const inp=(id,rot,val,extra,dica)=>`<div class="cl-campo"><label for="${id}">${rot}</label><input id="${id}" value="${esc(val||'')}"${extra||''}${dis}>${dica?`<div class="cl-dica">${dica}</div>`:''}</div>`;
+  const ufSel=(id,val)=>`<select id="${id}"${dis}><option value="">UF</option>${UFS.map(u=>`<option ${val===u?'selected':''}>${u}</option>`).join('')}</select>`;
+  const dentistas=(state.users||[]).filter(u=>u.tipo==='dentista'||u.tipo==='master');
+  const linhasHor=DIAS_CLINICA.map(([k,n])=>{ const h=d.horarios[k]||{}; return `<div class="cl-hor-linha${h.aberto?'':' fechado'}" data-hordia="${k}">
+      <label class="cl-hor-dia"><input type="checkbox" id="hAb_${k}" ${h.aberto?'checked':''}${dis}> ${n}</label>
+      <input type="time" id="hIni_${k}" value="${esc(h.ini||'08:00')}" aria-label="${n}, abre"${dis}><span class="muted">às</span><input type="time" id="hFim_${k}" value="${esc(h.fim||'18:00')}" aria-label="${n}, fecha"${dis}>
+      <span class="cl-hor-fechado muted">Fechado</span></div>`; }).join('');
+  return `<form id="${formId}" class="cl-form" novalidate>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Identificação</h3><p>Aparece no topo dos atestados, declarações e da tabela de valores.</p></div>
+    <div class="cl-grade">
+      ${inp('clNome','Nome da clínica (nome fantasia) *',d.nome,' required autocomplete="organization"')}
+      ${inp('clRazao','Razão social',d.razaoSocial)}
+      <div class="cl-campo"><label for="clTipo">Tipo</label><select id="clTipo"${dis}><option value="pj" ${d.tipoPessoa!=='pf'?'selected':''}>Empresa (CNPJ)</option><option value="pf" ${d.tipoPessoa==='pf'?'selected':''}>Profissional autônomo (CPF)</option></select></div>
+      ${inp('clDoc',d.tipoPessoa==='pf'?'CPF':'CNPJ',d.documento,' inputmode="numeric" data-mask="doc"')}
+      <div class="cl-campo"><label for="clCroInsc">Inscrição da clínica no CRO</label><input id="clCroInsc" value="${esc(d.inscricaoCro||'')}" placeholder="Ex.: 1234-AM"${dis}><div class="cl-dica">Registro da clínica (pessoa jurídica) no Conselho Regional.</div></div>
+      ${inp('clInscMun','Inscrição municipal',d.inscricaoMunicipal,'','Usada para emitir nota fiscal de serviço.')}
+      ${inp('clCnes','CNES',d.cnes,' inputmode="numeric"','Cadastro Nacional de Estabelecimentos de Saúde, se tiver.')}
+      <div class="cl-campo"><label for="clAlvara">Alvará sanitário</label><div class="cl-duplo"><input id="clAlvara" value="${esc(d.alvaraNumero||'')}" placeholder="Número"${dis}><input type="date" id="clAlvaraVal" value="${esc(d.alvaraValidade||'')}" aria-label="Validade do alvará"${dis}></div><div class="cl-dica">O painel avisa 45 dias antes de vencer.</div></div>
+    </div>
+  </section>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Responsável técnico</h3><p>Pelas normas do CFO, o nome e o CRO do responsável técnico devem constar nos documentos e na divulgação da clínica.</p></div>
+    <div class="cl-grade">
+      <div class="cl-campo"><label for="clRtNome">Nome do responsável técnico</label><input id="clRtNome" value="${esc(d.rtNome||'')}" list="clRtLista"${dis}><datalist id="clRtLista">${dentistas.map(u=>`<option value="${esc(u.nomeCompleto)}" data-cro="${esc(u.cro||'')}"></option>`).join('')}</datalist></div>
+      ${inp('clRtCro','CRO do responsável técnico',d.rtCro,' placeholder="Ex.: 10101-AM"')}
+    </div>
+  </section>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Contato</h3><p>O WhatsApp é o número que os pacientes reconhecem nas mensagens de lembrete.</p></div>
+    <div class="cl-grade">
+      ${inp('clTel','Telefone *',d.telefone,' type="tel" inputmode="tel" data-mask="tel" required')}
+      ${inp('clZap','WhatsApp',d.whatsapp,' type="tel" inputmode="tel" data-mask="tel"')}
+      ${inp('clEmail','E-mail *',d.email,' type="email" required autocomplete="email"')}
+      ${inp('clSite','Site',d.site,' placeholder="www.suaclinica.com.br"')}
+      ${inp('clInsta','Instagram',d.instagram,' placeholder="@suaclinica"')}
+    </div>
+  </section>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Endereço</h3><p>Digite o CEP para preencher o restante.</p></div>
+    <div class="cl-grade cl-grade-end">
+      <div class="cl-campo c2"><label for="clCep">CEP</label><input id="clCep" value="${esc(e.cep||'')}" inputmode="numeric" data-mask="cep" placeholder="00000-000"${dis}><div class="cl-dica" id="clCepMsg"></div></div>
+      <div class="cl-campo c4"><label for="clLogr">Rua / avenida</label><input id="clLogr" value="${esc(e.logradouro||'')}"${dis}></div>
+      <div class="cl-campo c2"><label for="clNum">Número</label><input id="clNum" value="${esc(e.numero||'')}"${dis}></div>
+      <div class="cl-campo c4"><label for="clCompl">Complemento</label><input id="clCompl" value="${esc(e.complemento||'')}" placeholder="Sala, andar"${dis}></div>
+      <div class="cl-campo c3"><label for="clBairro">Bairro</label><input id="clBairro" value="${esc(e.bairro||'')}"${dis}></div>
+      <div class="cl-campo c2"><label for="clCidade">Cidade *</label><input id="clCidade" value="${esc(e.cidade||'')}" required${dis}></div>
+      <div class="cl-campo c1"><label for="clUf">UF *</label>${ufSel('clUf',e.uf||'')}</div>
+    </div>
+    ${!e.logradouro&&d.endereco?`<p class="cl-dica" style="margin-top:8px">Endereço anterior: ${esc(d.endereco)}</p>`:''}
+  </section>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Funcionamento</h3><p>A agenda usa estes horários para montar a grade e sombrear o intervalo.</p></div>
+    <div class="cl-hor">${linhasHor}</div>
+    <div class="cl-grade" style="margin-top:14px">
+      <div class="cl-campo"><label for="clIntIni">Intervalo (almoço)</label><div class="cl-duplo"><input type="time" id="clIntIni" value="${esc((d.intervalo&&d.intervalo.ini)||'')}" aria-label="Início do intervalo"${dis}><input type="time" id="clIntFim" value="${esc((d.intervalo&&d.intervalo.fim)||'')}" aria-label="Fim do intervalo"${dis}></div><div class="cl-dica">Deixe vazio se não houver.</div></div>
+      <div class="cl-campo"><label for="clDur">Duração padrão da consulta</label><select id="clDur"${dis}>${[15,20,30,40,45,60].map(m=>`<option value="${m}" ${+d.duracaoPadrao===m?'selected':''}>${m} minutos</option>`).join('')}</select></div>
+    </div>
+  </section>
+  <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Logotipo</h3><p>Imagem PNG ou JPG. Aparece no topo dos documentos impressos.</p></div>
+    <div class="cl-logo">
+      <div class="cl-logo-prev" id="clLogoPrev">${d.logo?`<img src="${d.logo}" alt="Logotipo da clínica">`:'<span class="muted">Sem logotipo</span>'}</div>
+      ${podeEditar?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn-s" id="clLogoBtn">${d.logo?'Trocar imagem':'Enviar imagem'}</button>${d.logo?'<button type="button" class="btn-s btn-perigo" id="clLogoDel">Remover</button>':''}<input type="file" id="clLogoFile" accept="image/png,image/jpeg,image/webp" hidden></div>`:''}
+    </div>
+  </section>
+  ${podeEditar?`<div class="cl-rodape"><span class="muted">* obrigatório</span><button class="btn-p btn-acao" type="submit">${inicial?'Salvar e continuar':'Salvar dados da clínica'}</button></div>`:'<p class="muted">Somente o usuário Master pode editar os dados da clínica.</p>'}
+  </form>`;
+}
+let logoPendente; // undefined = sem mudança; '' = remover; dataURL = novo
+function bindClinicaForm(formId,aoSalvar){
+  const f=document.getElementById(formId); if(!f) return;
+  const q=id=>document.getElementById(id);
+  logoPendente=undefined;
+  f.querySelectorAll('[data-mask]').forEach(i=>i.addEventListener('input',()=>{ const m=i.getAttribute('data-mask'); const v=m==='doc'?mascaraDoc(i.value):m==='tel'?mascaraTel(i.value):mascaraCep(i.value); if(v!==i.value) i.value=v; }));
+  const tipo=q('clTipo'); if(tipo) tipo.addEventListener('change',()=>{ const l=f.querySelector('label[for="clDoc"]'); if(l) l.textContent=tipo.value==='pf'?'CPF':'CNPJ'; });
+  const rt=q('clRtNome'); if(rt) rt.addEventListener('change',()=>{ const o=[...document.querySelectorAll('#clRtLista option')].find(x=>x.value===rt.value); if(o && o.dataset.cro && !q('clRtCro').value) q('clRtCro').value=o.dataset.cro; });
+  DIAS_CLINICA.forEach(([k])=>{ const cb=q('hAb_'+k); if(cb) cb.addEventListener('change',()=>{ const l=f.querySelector(`[data-hordia="${k}"]`); if(l) l.classList.toggle('fechado',!cb.checked); }); });
+  const cep=q('clCep'), msg=q('clCepMsg');
+  if(cep) cep.addEventListener('input',async()=>{
+    const d=soDigitos(cep.value); if(d.length!==8) return;
+    msg.textContent='Buscando endereço…';
+    try{
+      const r=await fetch('https://viacep.com.br/ws/'+d+'/json/'); const j=await r.json();
+      if(j.erro){ msg.textContent='CEP não encontrado. Preencha o endereço à mão.'; return; }
+      if(j.logradouro) q('clLogr').value=j.logradouro; if(j.bairro) q('clBairro').value=j.bairro;
+      if(j.localidade) q('clCidade').value=j.localidade; if(j.uf) q('clUf').value=j.uf;
+      msg.textContent='Endereço encontrado. Confira e informe o número.'; q('clNum').focus();
+    }catch(e){ msg.textContent='Não foi possível buscar o CEP agora. Preencha o endereço à mão.'; }
+  });
+  const lb=q('clLogoBtn'), lf=q('clLogoFile'), ld=q('clLogoDel'), lp=q('clLogoPrev');
+  if(lb&&lf){ lb.addEventListener('click',()=>lf.click()); lf.addEventListener('change',async()=>{
+    const file=lf.files[0]; if(!file) return;
+    try{ logoPendente=await reduzirLogo(file); lp.innerHTML=`<img src="${logoPendente}" alt="Logotipo da clínica">`; }
+    catch(e){ avisar('Não foi possível usar esta imagem: '+e.message); }
+  }); }
+  if(ld) ld.addEventListener('click',()=>{ logoPendente=''; lp.innerHTML='<span class="muted">Sem logotipo</span>'; ld.remove(); });
+  f.addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const val=id=>(q(id)?q(id).value.trim():'');
+    const c=Object.assign({},state.clinic||{});
+    c.nome=val('clNome'); c.razaoSocial=val('clRazao'); c.tipoPessoa=val('clTipo')||'pj'; c.documento=val('clDoc');
+    c.inscricaoCro=val('clCroInsc').toUpperCase(); c.inscricaoMunicipal=val('clInscMun'); c.cnes=val('clCnes');
+    c.alvaraNumero=val('clAlvara'); c.alvaraValidade=val('clAlvaraVal');
+    c.rtNome=val('clRtNome'); c.rtCro=val('clRtCro').toUpperCase();
+    c.telefone=val('clTel'); c.whatsapp=val('clZap'); c.email=val('clEmail'); c.site=val('clSite'); c.instagram=val('clInsta');
+    c.end={cep:val('clCep'),logradouro:val('clLogr'),numero:val('clNum'),complemento:val('clCompl'),bairro:val('clBairro'),cidade:val('clCidade'),uf:val('clUf')};
+    c.horarios={}; DIAS_CLINICA.forEach(([k])=>{ c.horarios[k]={aberto:q('hAb_'+k).checked,ini:q('hIni_'+k).value||'08:00',fim:q('hFim_'+k).value||'18:00'}; });
+    c.intervalo={ini:val('clIntIni'),fim:val('clIntFim')}; c.duracaoPadrao=parseInt(val('clDur'),10)||30;
+    if(logoPendente!==undefined){ if(logoPendente) c.logo=logoPendente; else delete c.logo; }
+    const erros=[];
+    if(!c.nome) erros.push('o nome da clínica');
+    if(!c.telefone) erros.push('o telefone');
+    if(!emailValido(normEmail(c.email))) erros.push('um e-mail válido');
+    if(!c.end.cidade||!c.end.uf) erros.push('a cidade e a UF');
+    if(erros.length){ avisar('Para salvar, informe '+erros.join(', ')+'.'); return; }
+    if(c.documento){ const ok=c.tipoPessoa==='pf'?cpfValido(c.documento):cnpjValido(c.documento); if(!ok){ avisar('O '+(c.tipoPessoa==='pf'?'CPF':'CNPJ')+' informado não é válido. Confira os números.'); return; } }
+    if(c.rtCro && !/^\d{3,6}-[A-Z]{2}$/.test(c.rtCro)){ avisar('Informe o CRO do responsável técnico no formato 10101-AM.'); return; }
+    if(c.intervalo.ini && c.intervalo.fim && c.intervalo.fim<=c.intervalo.ini){ avisar('O fim do intervalo precisa ser depois do início.'); return; }
+    for(const [k,n] of DIAS_CLINICA){ const h=c.horarios[k]; if(h.aberto && h.fim<=h.ini){ avisar(n+': o horário de fechamento precisa ser depois da abertura.'); return; } }
+    c.endereco=enderecoTexto(c);
+    aoSalvar(c);
+  });
+}
+function reduzirLogo(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{ try{
+      let w=img.naturalWidth,h=img.naturalHeight; const m=Math.min(1,600/Math.max(w,h)); w=Math.round(w*m); h=Math.round(h*m);
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
+      let d=cv.toDataURL('image/png'); if(d.length>250000) d=cv.toDataURL('image/jpeg',0.85);
+      if(d.length>250000) throw new Error('a imagem é grande demais, use uma menor');
+      URL.revokeObjectURL(url); res(d);
+    }catch(e){ URL.revokeObjectURL(url); rej(e); } };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('arquivo de imagem inválido')); };
+    img.src=url;
+  });
+}
+function salvarClinica(c){ state.clinic=c; saveData(); }
+
 let printSheetHtml='';
 function render(){
   const app=document.getElementById('app');
@@ -2515,21 +2716,15 @@ function render(){
 }
 
 function renderSetupClinic(){
-  return `<div class="wrap"><div class="card center">
-  <h2>Cadastro da Clínica</h2>
-  <p class="muted">Antes de começar, informe os dados da clínica. Eles servirão de base para documentos futuros.</p>
-  <form id="fClinic">
-    <label>Nome da clínica</label><input name="nome" required>
-    <label>Endereço</label><input name="endereco" required>
-    <label>Telefone</label><input name="telefone" required>
-    <label>Email</label><input type="email" name="email" required>
-    <button class="btn-p" style="width:100%;margin-top:16px">Salvar e continuar</button>
-  </form>
-  ${NUVEM?`<div class="login-ou"><span>ou</span></div>
-  <p class="muted">Já usava a versão anterior neste computador? Exporte o backup nela (Configurações → Backup) e importe aqui: pacientes, agenda, financeiro e radiografias vão para a nuvem.</p>
-  <button id="btnImportBackup" class="btn-s" style="width:100%">⬆️ Importar backup da versão anterior</button>
-  <input type="file" id="fileImportBackup" accept=".odb" style="display:none">`:''}
-  </div></div>`;
+  return `<div class="cl-pagina">
+  <div class="cl-topo"><div class="sb-marca" style="padding:0"><span class="sb-logo">${ICONES.dente}</span><div><div class="sb-nome">OdontoGestão</div><div class="sb-clinica">Configuração inicial</div></div></div>
+  ${NUVEM?`<div class="muted" style="margin-left:auto;font-size:13px">Conectado como <strong>${esc(Nuvem.meuEmail())}</strong> <button class="lnk" id="nvSair" style="margin-left:8px">Usar outra conta</button></div>`:''}</div>
+  <h1 class="cl-titulo">Cadastro da clínica</h1>
+  <p class="cl-sub">Estes dados aparecem nos documentos e na agenda. Só o nome, telefone, e-mail e cidade são obrigatórios agora; o resto pode ser completado depois em Configurações.</p>
+  ${NUVEM?`<div class="cl-importar"><div><strong>Já usava a versão anterior?</strong><div class="muted">Exporte o backup nela (Configurações, Backup) e importe aqui. Pacientes, agenda, financeiro, radiografias e os dados da clínica vêm juntos.</div></div>
+  <button id="btnImportBackup" class="btn-s">Importar backup</button><input type="file" id="fileImportBackup" accept=".odb" style="display:none"></div>`:''}
+  ${clinicaFormHtml(dadosClinica(),'fClinic',true,true)}
+  </div>`;
 }
 
 function renderSetupUser(){
@@ -2731,6 +2926,8 @@ function renderDashboard(){
     const pacs=new Set(venc.map(e=>e.pacienteId)).size;
     pend.push(`<button class="pend" data-dashgo="rel:inadimplencia"><span><span class="pend-tit">Parcelas vencidas</span><span class="pend-sub">${venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' de '+pacs+' paciente'+(pacs>1?'s':''):'Nenhuma em atraso'}</span></span><span class="pend-num${venc.length?' ruim':''}">${venc.length}</span></button>`);
   }
+  const alv=(u.tipo==='master'||perms.clinica)?alvaraAviso(state.clinic):null;
+  if(alv) pend.push(`<button class="pend" data-tab="configuracoes"><span><span class="pend-tit">Alvará sanitário</span><span class="pend-sub">${esc(alv.txt)}</span></span><span class="pend-num${alv.ruim?' ruim':''}">!</span></button>`);
   const ult=state.meta&&state.meta.ultimoBackup, dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
   const backup=perms.usuarios?`<p class="nota-rodape">${ult?(dias===0?'Último backup hoje.':'Último backup há '+dias+' dia'+(dias>1?'s':'')+'.'):'Nenhum backup feito ainda.'} <button class="lnk-forte" id="btnGoBackup">Fazer backup agora</button></p>`:'';
   return `<div class="pg-cab"><div><h1>${saud}, ${esc(nomeSaudacao(u.nomeCompleto))}</h1><p>${dataFmt}. ${n?(n===1?'Há 1 atendimento':'São '+n+' atendimentos')+' na agenda de hoje.':'Nenhum atendimento na agenda de hoje.'}</p></div></div>
@@ -3309,25 +3506,20 @@ function openGrupoForm(g){
 }
 
 function renderClinica(){
-  const c=state.clinic; const canEdit = currentUser().tipo==='master';
-  return `<div class="card"><h2>Dados da Clínica</h2>
-  <form id="fClinicEdit">
-  <label>Nome</label><input id="cNome" value="${esc(c.nome)}" ${canEdit?'':'disabled'}>
-  <label>Endereço</label><input id="cEndereco" value="${esc(c.endereco)}" ${canEdit?'':'disabled'}>
-  <div class="row">
-    <div><label>Telefone</label><input id="cTelefone" value="${esc(c.telefone)}" ${canEdit?'':'disabled'}></div>
-    <div><label>Email</label><input id="cEmail" value="${esc(c.email)}" ${canEdit?'':'disabled'}></div>
-  </div>
-  ${canEdit?'<button class="btn-p" style="margin-top:14px">Salvar</button>':'<p class="muted" style="margin-top:10px">Somente o usuário Master pode editar os dados da clínica.</p>'}
-  </form></div>`;
+  const c=dadosClinica(); const u=currentUser(); const canEdit=u.tipo==='master'||permsDe(u).clinica;
+  const falta=camposFaltandoClinica(state.clinic);
+  return `<div class="pg-cab" style="margin-bottom:12px"><div><h1 style="font-size:22px">Dados da clínica</h1>
+  ${falta.length?`<p>Para documentos completos, falta informar: ${esc(falta.join(', '))}.</p>`:'<p>Cadastro completo.</p>'}</div></div>
+  ${clinicaFormHtml(c,'fClinicEdit',canEdit,false)}`;
 }
 
 function bindEvents(){
-  const fClinic=document.getElementById('fClinic');
-  if(fClinic) fClinic.addEventListener('submit',e=>{
-    e.preventDefault();
-    state.clinic={nome:fClinic.nome.value.trim(),endereco:fClinic.endereco.value.trim(),telefone:fClinic.telefone.value.trim(),email:fClinic.email.value.trim()};
-    saveData();
+  if(document.getElementById('fClinic')) bindClinicaForm('fClinic',async c=>{
+    if(NUVEM){
+      // proteção: se a clínica já existir no servidor, não sobrescreve
+      try{ const ex=await Nuvem.lerClinicaServidor(); if(ex){ state.clinic=ex; avisar('Esta clínica já estava cadastrada. Os dados existentes foram carregados.'); view=currentUser()?'home':'nuvemPerfil'; render(); return; } }catch(e){ console.warn(e); }
+    }
+    salvarClinica(c);
     if(NUVEM){ view=currentUser()?'home':'nuvemPerfil'; if(view==='home') try{ ensureProcedimentos(); }catch(err){ console.error(err); } }
     else view='setupUser';
     render();
@@ -4046,12 +4238,7 @@ function bindEvents(){
     if(n){ avisar(`O grupo "${g.nome}" ainda tem ${n} procedimento(s). Exclua ou mova esses procedimentos para outro grupo (pelo botão Editar) antes de excluir o grupo.`); return; }
     customConfirm(`Excluir o grupo "${g.nome}"?`, ()=>{ state.grupos=state.grupos.filter(x=>x.id!==g.id); if(procFiltroGrupo===g.nome) procFiltroGrupo=''; saveData(); render(); });
   }));
-  const fClinicEdit=document.getElementById('fClinicEdit');
-  if(fClinicEdit && currentUser().tipo==='master') fClinicEdit.addEventListener('submit',e=>{
-    e.preventDefault();
-    state.clinic={nome:cNome.value.trim(),endereco:cEndereco.value.trim(),telefone:cTelefone.value.trim(),email:cEmail.value.trim()};
-    saveData(); avisar('Dados da clínica atualizados.'); render();
-  });
+  if(document.getElementById('fClinicEdit')) bindClinicaForm('fClinicEdit',c=>{ salvarClinica(c); avisar('Dados da clínica salvos.'); render(); });
 }
 
 async function boot(){

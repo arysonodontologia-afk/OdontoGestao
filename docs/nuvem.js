@@ -166,6 +166,15 @@ async function criarDono(){
   }catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
 }
 
+// Lê os dados da clínica direto do servidor (ignora a cópia local do aparelho).
+async function lerClinicaServidor(){
+  try{
+    const s=await F.getDocFromServer(ref('config','clinica'));
+    if(!s.exists() || !s.data().d) return null;
+    srvCfg.clinica=s.data().d; return JSON.parse(s.data().d);
+  }catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
+}
+
 // ---------- leitura em tempo real ----------
 // Só considera uma coleção "carregada" quando a resposta vem do servidor.
 // (Num aparelho novo, a primeira resposta pode vir vazia da memória local.)
@@ -429,7 +438,7 @@ async function apagarImagensExceto(manter){
 
 window.Nuvem={
   ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, reenviarVerificacao, verificarDeNovo,
-  redefinirSenha, sair, carregarAcesso, criarDono, conectar, salvar, aguardarEnvio,
+  redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
