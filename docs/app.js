@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.0.1';
+const APP_VERSION='2.1.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -42,7 +42,7 @@ function atualizarBannerSalvar(){
   if(!saveErro){ if(b) b.remove(); return; }
   if(!b){
     b=document.createElement('div'); b.id='saveBanner';
-    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:60;background:#b91c1c;color:#fff;padding:12px 16px;font-size:14px;text-align:center';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--danger);color:#fff;padding:12px 16px;font-size:14px;text-align:center';
     document.body.appendChild(b);
   }
   b.textContent=NUVEM?('⚠️ ATENÇÃO: '+saveErro):('⚠️ ATENÇÃO: não foi possível salvar as últimas alterações ('+saveErro+'). Exporte um backup agora (Configurações → Backup) e libere espaço no navegador.');
@@ -332,7 +332,7 @@ function lembreteBackupHtml(){
   const ult=state.meta&&state.meta.ultimoBackup;
   const dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
   if(ult && dias<7) return '';
-  return `<div class="card" style="border-color:#d97706;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+  return `<div class="card" style="border-color:var(--warn);display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span>💾 ${ult?'Seu último backup foi há '+dias+' dia(s).':'Você ainda não fez nenhum backup.'} Faça um backup para não perder os dados.</span>
     <button class="btn-p" id="btnGoBackup">Fazer backup agora</button></div>`;
 }
@@ -341,7 +341,7 @@ function renderBackup(){
   const dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
   return `<div class="card"><h3>Backup dos dados</h3>
   <p class="muted">${NUVEM?'Os dados ficam na nuvem (Firebase, servidor em São Paulo) e aparecem em todos os computadores e celulares. O backup gera um arquivo com TUDO (pacientes, radiografias, agenda, financeiro) para você guardar fora da nuvem.':'Os dados ficam guardados neste computador, dentro do navegador. O backup gera um arquivo com TUDO (pacientes, radiografias, agenda, financeiro) para você guardar em outro lugar.'}</p>
-  <p><strong>Último backup:</strong> ${ult?esc(fmtDataHoraBR(ult))+' ('+(dias===0?'hoje':'há '+dias+' dia(s)')+')':'<span style="color:#dc2626;font-weight:700">nunca feito</span>'}</p>
+  <p><strong>Último backup:</strong> ${ult?esc(fmtDataHoraBR(ult))+' ('+(dias===0?'hoje':'há '+dias+' dia(s)')+')':'<span style="color:var(--danger);font-weight:700">nunca feito</span>'}</p>
   <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:10px 0">
     <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text);font-size:14px;margin:0"><input type="checkbox" id="bkCripto" style="width:auto;margin-top:3px" ${temCripto()?'checked':'disabled'}><span><strong>Proteger o backup com senha (recomendado)</strong> — sem a senha, ninguém consegue ler o arquivo.${temCripto()?'':' <em>Este navegador não permite criptografar; use o Google Chrome.</em>'}</span></label>
     <div id="bkSenhaBox" style="display:${temCripto()?'block':'none'}">
@@ -641,7 +641,7 @@ function procedimentoChecksHtml(pacienteId, selectedIds){
   if(!items.length) return '<p class="muted" style="margin:4px 0">Nenhum procedimento pendente no plano de tratamento deste paciente</p>';
   return items.map(it=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;color:var(--text);font-size:14px"><input type="checkbox" data-agproc="${it.id}" data-aglabel="${esc(it.nome+' ('+it.ref+')')}" ${selectedIds.includes(it.id)?'checked':''} style="width:auto;margin-top:3px"><span>${esc(it.especialidade)} — ${esc(it.nome)} (${esc(it.ref)})</span></label>`).join('');
 }
-const AG_PALETTE=[['#ede9fe','#6d28d9'],['#dbeafe','#1d4ed8'],['#dcfce7','#15803d'],['#fef3c7','#b45309'],['#fce7f3','#be185d'],['#e0f2fe','#0369a1']];
+const AG_PALETTE=[1,2,3,4,5,6].map(n=>[`var(--dc${n}-bg)`,`var(--dc${n}-fg)`]);
 function dentistColor(id){
   let h=0; for(const c of (id||'')) h=(h*31+c.charCodeAt(0))%AG_PALETTE.length;
   return AG_PALETTE[h];
@@ -702,7 +702,7 @@ function avisosPendentes(u){
 }
 function bellHtml(u){
   const n=avisosPendentes(u).length;
-  return `<button class="btn-s" data-dashgo="inicio" title="Respostas dos pacientes" style="margin-left:10px">🔔${n?' <strong style="color:#dc2626">'+n+'</strong>':''}</button>`;
+  return `<button class="btn-s" data-dashgo="inicio" title="Respostas dos pacientes" style="margin-left:10px">🔔${n?' <strong style="color:var(--danger)">'+n+'</strong>':''}</button>`;
 }
 function abrirWhatsApp(pc,msg,aoAbrir){
   const fone=telefoneWhatsApp(pc&&pc.telefone);
@@ -1155,7 +1155,7 @@ function repInadimplencia(){
   const rows=itens.map(({e,dias,pac})=>`<tr><td>${pac?repPacBtn(pac,'financeiro'):esc(e.pacienteNome||'-')}</td><td>${pac?esc(pac.telefone||'-'):'-'}</td>
     <td>${esc(e.label)}</td><td>${fmtDataBR(e.vencimento)}</td><td><span class="badge ${dias>30?'b-red':'b-recep'}">${dias} dia(s)</span></td><td>${fmtMoney(e.valor)}</td></tr>`).join('');
   return repCard('Contas a receber vencidas','Parcelas cujo vencimento já passou e cujo pagamento ainda não foi confirmado no Fluxo Financeiro. Clique no nome para abrir o financeiro do paciente.','',
-    `<strong>Total em atraso:</strong> <span style="color:#dc2626;font-weight:700">${fmtMoney(total)}</span> &nbsp;·&nbsp; <strong>Pacientes:</strong> ${nPac} &nbsp;·&nbsp; <strong>Parcelas:</strong> ${itens.length}`,
+    `<strong>Total em atraso:</strong> <span style="color:var(--danger);font-weight:700">${fmtMoney(total)}</span> &nbsp;·&nbsp; <strong>Pacientes:</strong> ${nPac} &nbsp;·&nbsp; <strong>Parcelas:</strong> ${itens.length}`,
     itens.length?`<div class="overflow"><table><thead><tr><th>Paciente</th><th>Telefone</th><th>Parcela</th><th>Vencimento</th><th>Atraso</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhuma parcela vencida em aberto.</p>');
 }
 function repFluxoProjetado(){
@@ -1166,7 +1166,7 @@ function repFluxoProjetado(){
   const rotulos=['Próximos 30 dias','De 31 a 60 dias','De 61 a 90 dias'];
   for(let i=0;i<repFluxoHorizonte/30;i++) faixas.push({rot:rotulos[i], ok:d=>d>=i*30 && d<(i+1)*30});
   let acum=0, totEnt=0, totSai=0;
-  const cor=v=>`color:${v<0?'#dc2626':'#16a34a'};font-weight:700`;
+  const cor=v=>`color:${v<0?'var(--danger)':'var(--ok)'};font-weight:700`;
   const rows=faixas.map(f=>{
     const itens=pend.filter(e=>f.ok(diasEntre(hoje,e.vencimento)));
     const ent=itens.filter(e=>e.tipo==='receita').reduce((sum,e)=>sum+(e.valor||0),0);
@@ -1385,7 +1385,7 @@ function renderFluxoFinanceiro(){
   <div class="card"><h3 style="margin:0 0 8px 0">Resumo</h3>
   <p><strong>Entrada Realizada:</strong> ${fmtMoney(entradaReal)} &nbsp;·&nbsp; <strong>Entrada Prevista:</strong> ${fmtMoney(entradaPrevista)}</p>
   <p><strong>Saída Realizada:</strong> ${fmtMoney(saidaReal)} &nbsp;·&nbsp; <strong>Despesa Pendente:</strong> ${fmtMoney(saidaPendente)}</p>
-  <p><strong>Saldo Realizado:</strong> <span style="color:${saldoRealizado<0?'#dc2626':'#16a34a'};font-weight:700">${fmtMoney(saldoRealizado)}</span></p>
+  <p><strong>Saldo Realizado:</strong> <span style="color:${saldoRealizado<0?'var(--danger)':'var(--ok)'};font-weight:700">${fmtMoney(saldoRealizado)}</span></p>
   </div>`;
 }
 function renderLancarDespesa(){
@@ -1598,7 +1598,7 @@ function dentistaOptionsHtml(selectedId, comCro){
 }
 function semDentistaAviso(){
   if(state.users.some(u=>u.tipo==='dentista')) return '';
-  return '<div style="border:1px solid #dc2626;border-radius:8px;padding:10px 12px;margin:10px 0"><p style="margin:0;color:#b91c1c;font-size:14px"><strong>Nenhum dentista cadastrado.</strong> Cadastre um usuário do tipo Dentista, com o CRO, em Usuários para poder usar esta função.</p></div>';
+  return '<div style="border:1px solid var(--danger);border-radius:8px;padding:10px 12px;margin:10px 0"><p style="margin:0;color:var(--danger);font-size:14px"><strong>Nenhum dentista cadastrado.</strong> Cadastre um usuário do tipo Dentista, com o CRO, em Usuários para poder usar esta função.</p></div>';
 }
 function renderDocumentoForm(p, tipo){
   const isAtestado=tipo==='atestado';
@@ -1724,13 +1724,13 @@ function renderOdontograma(p){
   const age=calcAge(p.nascimento);
   const dentesMap=p.odonto.dentes||{};
   let html=`<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-  <h4 style="margin:0;font-weight:500">Legenda: <span style="color:#1d4ed8;font-weight:700">A</span> = Ausente &nbsp;·&nbsp; <span style="color:#1d4ed8;font-weight:700">X</span> = Extração anterior &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:700">Vermelho</span> = a executar &nbsp;·&nbsp; <span style="color:#1d4ed8;font-weight:700">Azul</span> = realizado (anterior ou concluído)</h4>
+  <h4 style="margin:0;font-weight:500">Legenda: <span style="color:var(--info);font-weight:700">A</span> = Ausente &nbsp;·&nbsp; <span style="color:var(--info);font-weight:700">X</span> = Extração anterior &nbsp;·&nbsp; <span style="color:var(--danger);font-weight:700">Vermelho</span> = a executar &nbsp;·&nbsp; <span style="color:var(--info);font-weight:700">Azul</span> = realizado (anterior ou concluído)</h4>
   <button id="btnEditMarks" class="btn-s">Editar ausências/extrações</button></div>`;
   html+=renderOdontogramChart('Odontograma Permanente', PERM_UPPER, PERM_LOWER, 8, dentesMap);
   if(age!==null && age<13){
     html+=renderOdontogramChart('Odontograma Decíduo', DECID_UPPER, DECID_LOWER, 5, dentesMap);
   }
-  html+='<p class="muted">Dentes marcados como Ausente/Extração só aceitam procedimentos de Prótese/Implante. O dente fica em <strong style="color:#dc2626">vermelho</strong> enquanto houver procedimento a executar e em <strong style="color:#1d4ed8">azul</strong> quando tudo já foi realizado (anteriormente ou com a evolução confirmada); os números nos selos indicam a quantidade de cada tipo. Procedimentos já realizados anteriormente não entram no Plano de Tratamento nem no Orçamento.</p>';
+  html+='<p class="muted">Dentes marcados como Ausente/Extração só aceitam procedimentos de Prótese/Implante. O dente fica em <strong style="color:var(--danger)">vermelho</strong> enquanto houver procedimento a executar e em <strong style="color:var(--info)">azul</strong> quando tudo já foi realizado (anteriormente ou com a evolução confirmada); os números nos selos indicam a quantidade de cada tipo. Procedimentos já realizados anteriormente não entram no Plano de Tratamento nem no Orçamento.</p>';
   html+=`<div id="toothInfo">${renderToothPanel(p, odontoToothOpenNum)}</div>`;
   html+=renderGeraisSection(p);
   return html;
@@ -2006,6 +2006,52 @@ function badgeClass(t){ return {master:'b-master',administrativo:'b-adm',dentist
 
 
 // =====================================================================
+// TEMA (claro / escuro / automático) e ícones
+// =====================================================================
+function temaEscolhido(){ try{ return localStorage.getItem('odonto-tema')||'auto'; }catch(e){ return 'auto'; } }
+const MQ_ESCURO=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):{matches:false};
+function aplicarTema(){
+  const t=temaEscolhido(); const d=t==='auto'?(MQ_ESCURO.matches?'dark':'light'):t;
+  document.documentElement.setAttribute('data-theme',d);
+  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute('content',d==='dark'?'#0D1413':'#F2F5F4');
+}
+function definirTema(t){ try{ localStorage.setItem('odonto-tema',t); }catch(e){} aplicarTema(); render(); }
+try{ MQ_ESCURO.addEventListener('change',()=>{ if(temaEscolhido()==='auto') aplicarTema(); }); }catch(e){}
+aplicarTema();
+const ICO=(d)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICONES={
+  sol:ICO('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  lua:ICO('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
+  auto:ICO('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor"/>'),
+  dente:ICO('<path d="M7.2 3.5c-2.4 0-4 1.9-4 4.6 0 2.2.8 3.6 1.5 5.4.7 1.9.9 3.6 1.3 5.3.3 1.3.9 2.2 1.8 2.2 1.2 0 1.5-1.3 1.8-2.9.3-1.6.7-3.4 2.4-3.4s2.1 1.8 2.4 3.4c.3 1.6.6 2.9 1.8 2.9.9 0 1.5-.9 1.8-2.2.4-1.7.6-3.4 1.3-5.3.7-1.8 1.5-3.2 1.5-5.4 0-2.7-1.6-4.6-4-4.6-1.9 0-2.9 1-4.8 1s-2.9-1-4.8-1z"/>'),
+  dashboard:ICO('<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>'),
+  usuarios:ICO('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.7 3.8-5.6 7.5-5.6s6.7 1.9 7.5 5.6"/>'),
+  pacientes:ICO('<circle cx="9" cy="8.5" r="3.2"/><path d="M2.8 19.5c.6-3.2 3.2-5 6.2-5s5.6 1.8 6.2 5"/><path d="M15.5 5.6a3.1 3.1 0 0 1 0 5.8M18 14.8c1.7.7 2.9 2.4 3.2 4.7"/>'),
+  agenda:ICO('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14h3"/>'),
+  tabelavalores:ICO('<path d="M3.8 12.2 12 4h7.8c.2 0 .2 0 .2.2V12l-8.2 8.2a1.4 1.4 0 0 1-2 0l-6-6a1.4 1.4 0 0 1 0-2z"/><circle cx="16" cy="8" r="1.4"/>'),
+  financeiro:ICO('<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M15.5 14.5h2"/>'),
+  estoque:ICO('<path d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9"/>'),
+  relatorios:ICO('<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/>'),
+  configuracoes:ICO('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>'),
+};
+const TEMA_OPCOES=[['light','Claro','sol'],['dark','Escuro','lua'],['auto','Auto','auto']];
+function temaSegHtml(){
+  const t=temaEscolhido();
+  return `<div class="tema-seg" role="group" aria-label="Tema">${TEMA_OPCOES.map(([v,r,i])=>`<button type="button" data-tema="${v}" class="${t===v?'active':''}" aria-pressed="${t===v}" title="Tema ${r.toLowerCase()}">${ICONES[i]}${r}</button>`).join('')}</div>`;
+}
+function btnTemaHtml(){
+  const t=temaEscolhido(); const o=TEMA_OPCOES.find(x=>x[0]===t)||TEMA_OPCOES[2];
+  return `<button type="button" class="btn-tema" data-tema-ciclo title="Tema: ${o[1].toLowerCase()} (toque para trocar)" aria-label="Trocar tema, atual: ${o[1]}">${ICONES[o[2]]}</button>`;
+}
+function bindTema(){
+  document.querySelectorAll('[data-tema]').forEach(b=>b.addEventListener('click',()=>definirTema(b.getAttribute('data-tema'))));
+  document.querySelectorAll('[data-tema-ciclo]').forEach(b=>b.addEventListener('click',()=>{
+    const ordem=['light','dark','auto']; const i=ordem.indexOf(temaEscolhido()); definirTema(ordem[(i+1)%3]);
+  }));
+}
+function rotuloMenu(l){ return l.replace(/^\S+\s/,''); }
+
+// =====================================================================
 // NUVEM: login (e-mail/senha e Google), primeiro acesso e sincronização
 // =====================================================================
 let nuvemAcesso=null, nuvemMsg='', nuvemErro='', nuvemInfo='', nuvemModo='entrar', nuvemFluxo=0;
@@ -2019,9 +2065,15 @@ try{ MQ_CEL.addEventListener('change',()=>{ if(view==='home') render(); }); }cat
 const G_ICON='<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 
 function telaNuvem(conteudo){
-  return `<div class="login-wrap"><div class="login-card">
-    <div class="login-marca"><span class="login-logo">🦷</span><div><div class="login-nome">OdontoGestão</div><div class="muted">Sistema da clínica</div></div></div>
-    ${conteudo}</div></div>`;
+  return `<div class="login-wrap">
+    <aside class="login-lado">
+      <div class="login-lado-marca"><span class="sb-logo">${ICONES.dente}</span>OdontoGestão</div>
+      <div><p class="login-frase">A clínica inteira em um só lugar.</p>
+      <p class="login-frase-sub">Prontuário, agenda e financeiro sincronizados entre a recepção, o consultório e o celular.</p></div>
+    </aside>
+    <main class="login-principal"><div class="login-tema">${btnTemaHtml()}</div><div class="login-card">
+      <div class="login-marca"><span class="login-logo">${ICONES.dente}</span><div><div class="login-nome">OdontoGestão</div><div class="muted">Sistema da clínica</div></div></div>
+      ${conteudo}</div></main></div>`;
 }
 function msgsNuvem(){
   return `${nuvemErro?`<div class="login-erro">${esc(nuvemErro)}</div>`:''}${nuvemInfo?`<div class="login-info">${esc(nuvemInfo)}</div>`:''}`;
@@ -2069,6 +2121,7 @@ function renderTelaNuvem(){
     ${msgsNuvem()}<button class="btn-p login-btn">Criar senha</button></form>
     <div class="login-links"><button class="lnk" data-nvmodo="entrar">Já tenho senha</button></div>`);
   return telaNuvem(`
+    <h3 class="login-titulo">Entrar</h3><p class="muted" style="margin:0">Use o e-mail que a clínica cadastrou para você.</p>
     <button class="btn-google login-btn" id="nvGoogle">${G_ICON}<span>Entrar com Google</span></button>
     <div class="login-ou"><span>ou</span></div>
     <form id="fNvEntrar"><label>E-mail</label><input id="nvEmail" type="email" autocomplete="email" required>
@@ -2285,6 +2338,7 @@ function render(){
   else app.innerHTML=renderApp();
   const pa=document.getElementById('printArea'); if(pa) pa.innerHTML=printSheetHtml;
   if(NUVEM) bindNuvemEvents();
+  bindTema();
   bindEvents();
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
@@ -2356,7 +2410,7 @@ function renderApp(){
   const cel=modoCelular();
   const items=menuItems().filter(i=>i.enabled && (!cel || MODULOS_CELULAR.includes(i.id)));
   if(!items.find(i=>i.id===currentTab)) currentTab=items[0].id;
-  const sidebar=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}">${i.label}</button>`).join('');
+  const sidebar=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}"${currentTab===i.id?' aria-current="page"':''}><span class="sb-ico">${ICONES[i.id]||''}</span>${esc(rotuloMenu(i.label))}</button>`).join('');
   let content='';
   if(currentTab==='dashboard') content=renderDashboard();
   else if(currentTab==='usuarios') content=renderUsuarios();
@@ -2370,12 +2424,11 @@ function renderApp(){
 
   const demo=(!NUVEM && /^https?:/.test(location.protocol))?'<div class="demo-banner">⚠️ Modo demonstração: a nuvem ainda não foi configurada (firebase-config.js). Os dados ficam só neste navegador.</div>':'';
   if(cel){
-    const icone={agenda:'📅',financeiro:'💰'};
-    const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"><span class="cel-ico">${icone[i.id]||'•'}</span>${esc(i.label.replace(/^\S+\s/,''))}</button>`).join('');
+    const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"><span class="cel-ico">${ICONES[i.id]||''}</span>${esc(rotuloMenu(i.label))}</button>`).join('');
     return `<div class="cel-layout">${demo}
       <div class="topbar cel-top">
-        <div class="cel-quem"><strong>${esc(state.clinic.nome)}</strong><div class="muted">${esc(u.nomeCompleto)} · ${tipoLabel(u.tipo)}</div></div>
-        <button id="btnLogout" class="btn-s">Sair</button>
+        <div class="cel-quem"><span class="sb-logo">${ICONES.dente}</span><div style="min-width:0"><strong>${esc(state.clinic.nome)}</strong><div class="muted">${esc(u.nomeCompleto)}, ${tipoLabel(u.tipo).toLowerCase()}</div></div></div>
+        <div class="cel-acoes">${btnTemaHtml()}<button id="btnLogout" class="btn-s">Sair</button></div>
       </div>
       ${NUVEM?`<div class="cel-status">${statusNuvemHtml()}</div>`:''}
       <div class="wrap">${currentTab==='agenda'?avisosHtml(u):''}${content}</div>
@@ -2384,14 +2437,14 @@ function renderApp(){
   }
   return `${demo}<div class="layout">
     <div class="sidebar">
-      <div style="padding:8px 12px 16px;font-weight:700">🦷 OdontoGestão</div>
-      ${sidebar}
-      <div style="padding:16px 12px 0;font-size:11px;color:var(--muted)">Versão ${APP_VERSION}</div>
+      <div class="sb-marca"><span class="sb-logo">${ICONES.dente}</span><span class="sb-nome">OdontoGestão</span></div>
+      <nav aria-label="Menu principal">${sidebar}</nav>
+      <div class="sb-rodape">${temaSegHtml()}<div class="sb-versao">Versão ${APP_VERSION}</div></div>
     </div>
     <div class="main">
       <div class="topbar">
-        <div><strong>${esc(state.clinic.nome)}</strong></div>
-        <div class="topbar-dir">${statusNuvemHtml()} ${esc(u.nomeCompleto)} <span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span>
+        <div class="topbar-clinica">${esc(state.clinic.nome)}</div>
+        <div class="topbar-dir">${statusNuvemHtml()} <span class="topbar-usuario">${esc(u.nomeCompleto)}</span> <span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span>
           ${bellHtml(u)}<button id="btnLogout" class="btn-s" style="margin-left:10px">Sair</button></div>
       </div>
       <div class="wrap">${lembreteBackupHtml()}${content}</div>
@@ -2409,7 +2462,7 @@ function renderDashboard(){
   const agHoje=(state.agendamentos||[]).filter(a=>a.data===hoje && statusAg(a)!=='cancelado').sort((x,y)=>x.horario.localeCompare(y.horario));
   const prox=agHoje.find(a=>a.horario>=agora && statusAg(a)!=='faltou');
   const cards=[];
-  const card=(rot,num,sub,go,ruim)=>`<button class="dash-card" data-dashgo="${go}"><div class="dash-rot">${rot}</div><div class="dash-num" style="color:${ruim?'#dc2626':'#16a34a'}">${num}</div><div class="dash-sub">${sub}</div></button>`;
+  const card=(rot,num,sub,go,ruim)=>`<button class="dash-card" data-dashgo="${go}"><div class="dash-rot">${rot}</div><div class="dash-num" style="color:${ruim?'var(--danger)':'var(--ok)'}">${num}</div><div class="dash-sub">${sub}</div></button>`;
   cards.push(card('Atendimentos hoje',agHoje.length,prox?'Próximo: '+esc(prox.horario)+' — '+esc(prox.pacienteNome):(agHoje.length?'Todos os de hoje já passaram':'Nenhum agendado'),'agenda',false));
   if(perms.pacientes){
     let evs=[]; state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
@@ -2425,7 +2478,7 @@ function renderDashboard(){
   }
   const lista=agHoje.map(a=>`<div class="ag-card" style="margin-bottom:6px"><div class="ag-time">${esc(a.horario)}</div><div class="ag-info"><div class="ag-pac">${esc(a.pacienteNome)} ${agBadge(a)}</div><div class="ag-proc">${esc(a.procedimentoNome)}</div></div><span class="ag-dentista" style="background:${dentistColor(a.dentistaId)[0]};color:${dentistColor(a.dentistaId)[1]}">${esc(a.dentistaNome)}</span></div>`).join('');
   let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
-  return `<div class="card"><h2 style="margin:0">Olá, ${esc(nomeSaudacao(u.nomeCompleto))}</h2><p class="muted" style="margin:4px 0 0">${dataFmt}</p></div>
+  return `<div class="card saudacao"><h2 style="margin:0">Olá, ${esc(nomeSaudacao(u.nomeCompleto))}</h2><p class="muted" style="margin:4px 0 0">${dataFmt}</p></div>
   ${avisosHtml(u)}
   <div class="dash-grid">${cards.join('')}</div>
   <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="margin:0">Agenda de hoje</h3><button class="btn-s" data-dashgo="agenda">Abrir agenda</button></div>
@@ -2465,7 +2518,7 @@ function podeEditarUsuario(alvo){ const eu=currentUser(); return !!eu && (alvo.t
 function podeExcluirUsuario(alvo){ const eu=currentUser(); return !!eu && alvo.tipo!=='master' && alvo.id!==eu.id; }
 function renderUsuarios(){
   const rows=state.users.map(u=>`<tr>
-    <td>${esc(u.nomeCompleto)}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:#dc2626">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
+    <td>${esc(u.nomeCompleto)}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
     <td><span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span></td>
     <td>${esc(u.telefone)}</td>
     <td>${esc(u.cro||'-')}</td>
@@ -2574,7 +2627,7 @@ function renderPacientes(){
   const rows=lista.map(p=>{
     const age=calcAge(p.nascimento);
     return `<tr>
-    <td><button class="btn-s" data-openpatient="${p.id}" style="font-weight:600">${esc(p.nome)}${age!==null?' <span class="muted">('+age+' anos)</span>':''}${temAlertaPaciente(p)?' <span title="Possui alertas de atenção" style="color:#dc2626">⚠️</span>':''}</button></td>
+    <td><button class="btn-s" data-openpatient="${p.id}" style="font-weight:600">${esc(p.nome)}${age!==null?' <span class="muted">('+age+' anos)</span>':''}${temAlertaPaciente(p)?' <span title="Possui alertas de atenção" style="color:var(--danger)">⚠️</span>':''}</button></td>
     <td>${esc(ultimaConsultaConfirmada(p))||'-'}</td>
     <td class="actions">
     <button class="btn-s" data-editpatient="${p.id}">Editar</button>
