@@ -13,10 +13,10 @@ jobs:
   publicar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Conferir configuração
         run: |
           if grep -q "COLOQUE-O-ID-DO-PROJETO" .firebaserc; then
@@ -33,7 +33,13 @@ jobs:
         run: |
           printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/chave.json"
-          npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --non-interactive
+          set +e
+          npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --non-interactive 2>&1 | tee "$RUNNER_TEMP/saida.txt"
+          st=${PIPESTATUS[0]}
+          if [ "$st" != "0" ]; then
+            grep -iE "error|erro|permission|denied|not enabled|has not been used|forbidden|403|404" "$RUNNER_TEMP/saida.txt" | tail -8 | while IFS= read -r l; do echo "::error::$l"; done
+          fi
+          exit $st
       - name: Apagar a chave
         if: always()
-        run: rm -f "$RUNNER_TEMP/chave.json"
+        run: rm -f "$RUNNER_TEMP/chave.json" "$RUNNER_TEMP/saida.txt"
