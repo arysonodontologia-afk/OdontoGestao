@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.1.0';
+const APP_VERSION='2.2.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -332,9 +332,8 @@ function lembreteBackupHtml(){
   const ult=state.meta&&state.meta.ultimoBackup;
   const dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
   if(ult && dias<7) return '';
-  return `<div class="card" style="border-color:var(--warn);display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-    <span>💾 ${ult?'Seu último backup foi há '+dias+' dia(s).':'Você ainda não fez nenhum backup.'} Faça um backup para não perder os dados.</span>
-    <button class="btn-p" id="btnGoBackup">Fazer backup agora</button></div>`;
+  return `<div class="faixa-aviso"><span>${ult?'Seu último backup foi há '+dias+' dias.':'Ainda não há nenhum backup dos dados.'} Faça um para guardar uma cópia fora da nuvem.</span>
+    <button class="lnk-forte" id="btnGoBackup">Fazer backup agora</button></div>`;
 }
 function renderBackup(){
   const ult=state.meta&&state.meta.ultimoBackup;
@@ -668,8 +667,8 @@ function statusAgExib(a){
   const ev=evolDoAgendamento(a); if(ev && ev.confirmado && !ev.falta) return 'atendido';
   return st;
 }
-const AG_STATUS={agendado:['Agendado','b-recep'],confirmado:['Confirmado','b-dent'],atendido:['Atendido','b-adm'],faltou:['Faltou','b-red'],cancelado:['Cancelado','b-cinza'],nao_vem:['Respondeu NÃO — contatar','b-red']};
-function agBadge(a){ const st=statusAgExib(a); return `<span class="badge ${AG_STATUS[st][1]}">${AG_STATUS[st][0]}</span>`; }
+const AG_STATUS={agendado:['Sem confirmação','b-recep'],confirmado:['Confirmado','b-dent'],chegou:['Na clínica','b-dent'],atendido:['Atendido','b-adm'],faltou:['Faltou','b-red'],cancelado:['Cancelado','b-cinza'],nao_vem:['Não vem, contatar','b-red']};
+function agBadge(a){ const st=statusAgExib(a); return `<span class="sit sit-${st}">${AG_STATUS[st][0]}</span>`; }
 function textoFaltaPadrao(){ return 'Paciente não compareceu ao atendimento agendado.'; }
 function garantirEvolucao(a){
   const pc=pacPorId(a.pacienteId); if(!pc) return null;
@@ -702,7 +701,7 @@ function avisosPendentes(u){
 }
 function bellHtml(u){
   const n=avisosPendentes(u).length;
-  return `<button class="btn-s" data-dashgo="inicio" title="Respostas dos pacientes" style="margin-left:10px">🔔${n?' <strong style="color:var(--danger)">'+n+'</strong>':''}</button>`;
+  return `<button class="btn-icone" data-dashgo="inicio" title="Respostas dos pacientes" aria-label="Respostas dos pacientes${n?', '+n+' nova'+(n>1?'s':''):''}">${ICONES.sino}${n?`<span class="bolha">${n}</span>`:''}</button>`;
 }
 function abrirWhatsApp(pc,msg,aoAbrir){
   const fone=telefoneWhatsApp(pc&&pc.telefone);
@@ -716,16 +715,16 @@ function mensagemContatoNao(a,pc){
   const dm=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
   return `Olá, ${(pc.nome||'').split(' ')[0]}! Aqui é da ${c.nome||'clínica'}. Vimos que você não poderá comparecer ao seu atendimento do dia ${dm} (${sem}), às ${a.horario}. Podemos remarcar? Me diga quais dias e horários ficam melhores para você.`;
 }
-function avisosHtml(u){
+function avisosHtml(u,semCaixa){
   const lista=avisosPendentes(u); if(!lista.length) return '';
   const linhas=lista.map(v=>{
     const a=(state.agendamentos||[]).find(x=>x.id===v.agendamentoId);
-    const dm=fmtDataBR(a.data)+' ('+fmtDiaSemana(a.data).toLowerCase()+') às '+esc(a.horario);
-    if(v.tipo==='nao') return `<div class="aviso aviso-nao"><div><strong>⚠️ ${esc(a.pacienteNome)} respondeu NÃO</strong> — atendimento de ${dm} com ${esc(a.dentistaNome)}.<div class="muted">O dentista deve entrar em contato com o paciente.</div></div>
-      <div class="actions"><button class="btn-p" data-avzap="${a.id}">💬 Falar com o paciente</button> <button class="btn-s" data-avremarcar="${a.id}">Remarcar</button> <button class="btn-s" data-avcancelar="${a.id}">Cancelar consulta</button> <button class="btn-s" data-avresolvido="${v.id}">Já resolvido</button></div></div>`;
-    return `<div class="aviso aviso-sim"><div><strong>✔ ${esc(a.pacienteNome)} confirmou presença</strong> — ${dm} com ${esc(a.dentistaNome)}.</div><div class="actions"><button class="btn-s" data-avok="${v.id}">OK</button></div></div>`;
+    const quando=(a.data===hojeISO()?'hoje':fmtDiaSemana(a.data).toLowerCase()+', '+fmtDataBR(a.data))+' às '+esc(a.horario);
+    if(v.tipo==='nao') return `<div class="resp"><span class="resp-dot" style="background:var(--warn-dot)"></span><div><strong>${esc(a.pacienteNome)}</strong> avisou que não vem ao atendimento de ${quando} com ${esc(a.dentistaNome)}.
+      <div class="resp-acoes"><button class="btn-p" data-avzap="${a.id}">Falar no WhatsApp</button><button class="btn-s" data-avremarcar="${a.id}">Remarcar</button><button class="btn-s" data-avcancelar="${a.id}">Cancelar consulta</button><button class="btn-s" data-avresolvido="${v.id}">Já resolvido</button></div></div></div>`;
+    return `<div class="resp"><span class="resp-dot" style="background:var(--ok-dot)"></span><div style="flex:1"><strong>${esc(a.pacienteNome)}</strong> confirmou o atendimento de ${quando} com ${esc(a.dentistaNome)}.</div><button class="btn-s" data-avok="${v.id}" style="padding:4px 10px;font-size:12.5px;align-self:flex-start">OK</button></div>`;
   }).join('');
-  return `<div class="card"><h3 style="margin:0 0 10px 0">🔔 Respostas dos pacientes (${lista.length})</h3>${linhas}</div>`;
+  return `<section class="bloco"${semCaixa?'':' style="margin-bottom:16px"'}><div class="bloco-corpo"><h2 class="lat-tit">Respostas dos pacientes</h2>${linhas}</div></section>`;
 }
 async function mudarStatusAg(id,novo){
   const a=(state.agendamentos||[]).find(x=>x.id===id); if(!a) return;
@@ -748,6 +747,7 @@ async function mudarStatusAg(id,novo){
     if(ant==='faltou' && ev && ev.falta){ ev.falta=false; if(ev.observacao===textoFaltaPadrao()) ev.observacao=''; }
     if(ant==='cancelado'){ garantirEvolucao(a); delete a.motivoCancelamento; delete a.canceladoEm; }
     a.status=novo;
+    if(novo==='chegou') a.chegouEm=new Date().toISOString();
     if(novo==='confirmado') criarAviso(a,'sim');
     if(novo==='nao_vem') criarAviso(a,'nao'); else resolverAvisos(a.id,'nao');
   }
@@ -778,33 +778,65 @@ function enviarLembrete(a){
   const msg=mensagemLembrete(a,pc);
   abrirWhatsApp(pc,msg,()=>{ a.lembreteEnviadoEm=new Date().toISOString(); saveData(); render(); });
 }
+function abrirLoteLembretes(data){
+  const fila=pendentesLembrete(data).sort((x,y)=>x.horario.localeCompare(y.horario));
+  if(!fila.length){ avisar('Não há lembretes pendentes para este dia.'); return; }
+  let i=0, enviados=0;
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  document.body.appendChild(bg);
+  const fechar=()=>{ if(bg.parentNode) bg.parentNode.removeChild(bg); render(); };
+  const desenhar=()=>{
+    if(i>=fila.length){
+      bg.innerHTML=`<div class="modal lote"><h3 style="margin:0 0 6px">Lembretes enviados</h3><p class="muted" style="margin:0 0 16px">${enviados} de ${fila.length} lembrete${fila.length>1?'s':''} enviado${enviados===1?'':'s'}. Quando os pacientes responderem, marque Sim ou Não na aba Lembretes.</p><button class="btn-p" data-lt="fim" style="width:100%">Concluir</button></div>`;
+      bg.querySelector('[data-lt="fim"]').addEventListener('click',fechar); return;
+    }
+    const a=fila[i], pc=pacPorId(a.pacienteId), tel=pc&&pc.telefone;
+    bg.innerHTML=`<div class="modal lote" style="text-align:left">
+      <div class="lote-topo"><h3 style="margin:0">Lembretes de ${esc(fmtDiaSemana(data).toLowerCase())}, ${fmtDataBR(data)}</h3><span class="muted">${i+1} de ${fila.length}</span></div>
+      <div class="kpi-barra" style="margin:10px 0 16px"><span style="width:${Math.round(i/fila.length*100)}%"></span></div>
+      <div class="lote-pac">${avatarHtml(a.pacienteNome,a.pacienteId)}<div><div style="font-weight:600">${esc(a.pacienteNome)}</div><div class="muted">${esc(a.horario)} com ${esc(a.dentistaNome||'')}${tel?', '+esc(tel):''}</div></div></div>
+      ${tel?'':'<p class="login-erro" style="margin-top:12px">Este paciente não tem telefone cadastrado.</p>'}
+      <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+        <button class="btn-s" data-lt="fechar">Parar</button>
+        <button class="btn-s" data-lt="pular" style="margin-left:auto">Pular</button>
+        ${tel?`<button class="btn-p" data-lt="enviar">${i+1<fila.length?'Abrir WhatsApp e seguir':'Abrir WhatsApp'}</button>`:''}
+      </div></div>`;
+    bg.querySelector('[data-lt="fechar"]').addEventListener('click',fechar);
+    bg.querySelector('[data-lt="pular"]').addEventListener('click',()=>{ i++; desenhar(); });
+    const env=bg.querySelector('[data-lt="enviar"]');
+    if(env) env.addEventListener('click',()=>{ abrirWhatsApp(pc,mensagemLembrete(a,pc),()=>{ a.lembreteEnviadoEm=new Date().toISOString(); enviados++; saveData(); }); i++; desenhar(); });
+  };
+  desenhar();
+}
 function agStatusSelect(a){
   const atual=statusAg(a), travado=statusAgExib(a)==='atendido';
-  return `<select class="ag-status-sel" data-agstatus="${a.id}" ${travado?'disabled title="Atendimento já registrado no prontuário"':''}>${[['agendado','Agendado'],['confirmado','Confirmado'],['nao_vem','Respondeu NÃO'],['faltou','Faltou'],['cancelado','Cancelado']].map(([v,t])=>`<option value="${v}" ${atual===v?'selected':''}>${t}</option>`).join('')}</select>`;
+  return `<select class="ag-status-sel" data-agstatus="${a.id}" ${travado?'disabled title="Atendimento já registrado no prontuário"':''}>${[['agendado','Sem confirmação'],['confirmado','Confirmado'],['chegou','Na clínica'],['nao_vem','Não vem'],['faltou','Faltou'],['cancelado','Cancelado']].map(([v,t])=>`<option value="${v}" ${atual===v?'selected':''}>${t}</option>`).join('')}</select>`;
 }
+function podeChegou(a){ const st=statusAgExib(a); return (st==='agendado'||st==='confirmado') && a.data===hojeISO(); }
 function agendaCardsList(list){
-  if(!list.length) return '<p class="muted">Nenhum atendimento agendado</p>';
+  if(!list.length) return '<p class="muted" style="margin:0">Nenhum atendimento neste dia.</p>';
   return list.map(a=>{
-    const [bg,fg]=dentistColor(a.dentistaId);
     const st=statusAgExib(a), rem=(a.remarcacoes||[]).length;
     const extra=[
-      rem?`<span title="${esc((a.remarcacoes||[]).map(r=>'antes: '+fmtDataBR(r.deData)+' '+r.deHorario).join('; '))}">↻ remarcado${rem>1?' ('+rem+'x)':''}</span>`:'',
-      a.lembreteEnviadoEm?`<span>💬 lembrete enviado ${esc(fmtDataHoraBR(a.lembreteEnviadoEm))}</span>`:'',
+      rem?`<span title="${esc((a.remarcacoes||[]).map(r=>'antes: '+fmtDataBR(r.deData)+' '+r.deHorario).join('; '))}">Remarcado${rem>1?' '+rem+' vezes':''}</span>`:'',
+      a.lembreteEnviadoEm?`<span>Lembrete enviado ${esc(fmtDataHoraBR(a.lembreteEnviadoEm))}</span>`:'',
+      st==='chegou'&&a.chegouEm?`<span>Chegou às ${esc(new Date(a.chegouEm).toTimeString().slice(0,5))}</span>`:'',
       st==='cancelado'&&a.motivoCancelamento?`<span>Motivo: ${esc(a.motivoCancelamento)}</span>`:''
-    ].filter(Boolean).join(' · ');
-    return `<div class="ag-card${st==='cancelado'?' ag-cancelado':''}" style="border-left:4px solid ${fg}">
-      <div class="ag-time">${esc(a.horario)}<div style="font-size:11px;font-weight:400;color:var(--muted)">até ${minParaHHMM(hhmmParaMin(a.horario)+duracaoDe(a))}</div></div>
+    ].filter(Boolean).join('. ');
+    return `<div class="ag-card${st==='cancelado'?' ag-cancelado':''}${agendaSelId===a.id?' ag-card-sel':''}">
+      <div class="ag-time">${esc(a.horario)}<div class="ag-ate">até ${minParaHHMM(hhmmParaMin(a.horario)+duracaoDe(a))}</div></div>
       <div class="ag-info">
         <div class="ag-pac">${esc(a.pacienteNome)} ${agBadge(a)}</div>
         <div class="ag-proc">${esc(a.procedimentoNome)}</div>
         ${extra?`<div class="ag-extra muted">${extra}</div>`:''}
       </div>
-      <span class="ag-dentista" style="background:${bg};color:${fg}">${esc(a.dentistaNome)}</span>
+      <span class="ag-dentista">${avatarHtml(a.dentistaNome,a.dentistaId,'av-peq')}${esc(a.dentistaNome)}</span>
       <div class="ag-card-actions">
         ${agStatusSelect(a)}
-        ${(st==='agendado'||st==='confirmado')?`<button class="btn-s" data-agwpp="${a.id}" title="Enviar lembrete por WhatsApp">💬</button>`:''}
-        <button class="btn-s" data-editag="${a.id}" title="Editar / remarcar">✎</button>
-        <button class="btn-d" data-delag="${a.id}" title="Excluir">✕</button>
+        ${podeChegou(a)?`<button class="btn-p" data-agchegou="${a.id}">Chegou</button>`:''}
+        ${(st==='agendado'||st==='confirmado')?`<button class="btn-icone peq" data-agwpp="${a.id}" aria-label="Enviar lembrete por WhatsApp" title="Enviar lembrete por WhatsApp">${ICONES.zap}</button>`:''}
+        <button class="btn-icone peq" data-editag="${a.id}" aria-label="Editar ou remarcar" title="Editar ou remarcar">${ICONES.editar}</button>
+        <button class="btn-icone peq btn-perigo" data-delag="${a.id}" aria-label="Excluir agendamento" title="Excluir">${ICONES.lixo}</button>
       </div>
     </div>`;
   }).join('');
@@ -817,86 +849,200 @@ function renderAgendaLembretes(){
   const rows=lista.map(a=>{
     const pc=pacPorId(a.pacienteId);
     return `<tr><td>${esc(a.horario)}</td><td>${esc(a.pacienteNome)}</td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
-    <td>${statusAg(a)==='agendado'?`<button class="btn-s" data-agresp="${a.id}|sim">✔ Sim</button> <button class="btn-s" data-agresp="${a.id}|nao">✖ Não</button>`:(statusAg(a)==='confirmado'?'<span class="badge b-dent">Respondeu SIM</span>':'<span class="badge b-red">Respondeu NÃO</span>')}</td>
-    <td>${a.lembreteEnviadoEm?'<span class="muted">✔ '+esc(fmtDataHoraBR(a.lembreteEnviadoEm))+'</span> ':''}<button class="btn-${a.lembreteEnviadoEm?'s':'p'}" data-agwpp="${a.id}">${a.lembreteEnviadoEm?'Reenviar':'💬 Enviar'}</button></td></tr>`;
+    <td>${statusAg(a)==='agendado'?`<button class="btn-s" data-agresp="${a.id}|sim">Sim</button> <button class="btn-s" data-agresp="${a.id}|nao">Não</button>`:(statusAg(a)==='confirmado'?'<span class="sit sit-confirmado">Respondeu sim</span>':'<span class="sit sit-nao_vem">Respondeu não</span>')}</td>
+    <td>${a.lembreteEnviadoEm?'<span class="muted">Enviado '+esc(fmtDataHoraBR(a.lembreteEnviadoEm))+'</span> ':''}<button class="btn-${a.lembreteEnviadoEm?'s':'p'}" data-agwpp="${a.id}">${a.lembreteEnviadoEm?'Reenviar':'Enviar'}</button></td></tr>`;
   }).join('');
+  const pend=pendentesLembrete(agendaLembData).length;
   return `<div class="card">
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <button class="btn-s" id="agLembPrev">←</button><input type="date" id="agLembData" value="${agendaLembData}"><button class="btn-s" id="agLembNext">→</button>
+  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1 1 320px"><h3 style="margin:0 0 4px 0">Lembretes de ${fmtDiaSemana(agendaLembData).toLowerCase()}, ${fmtDataBR(agendaLembData)}</h3>
+    <p class="muted" style="margin:0 0 12px">O botão abre o WhatsApp com a mensagem pronta; você só aperta enviar. Quando o paciente responder, marque <strong>Sim</strong> (confirma e avisa o dentista) ou <strong>Não</strong> (avisa o dentista para entrar em contato). ${lista.length} atendimento(s), ${enviados} lembrete(s) enviado(s).</p></div>
+    ${pend?`<button class="btn-p btn-acao" data-lote="${agendaLembData}">${ICONES.zap}Enviar ${pend} lembrete${pend>1?'s':''} em sequência</button>`:''}
   </div>
-  <h3 style="margin:14px 0 4px 0">Lembretes — ${fmtDiaSemana(agendaLembData)}, ${fmtDataBR(agendaLembData)}</h3>
-  <p class="muted" style="margin:0 0 12px">O botão abre o WhatsApp com a mensagem de confirmação já pronta (você só aperta enviar). Quando o paciente responder, toque em <strong>✔ Sim</strong> (o sistema confirma e avisa o dentista) ou em <strong>✖ Não</strong> (o sistema avisa o dentista para entrar em contato). ${lista.length} atendimento(s) · ${enviados} lembrete(s) enviado(s).</p>
   ${lista.length?`<div class="overflow"><table><thead><tr><th>Horário</th><th>Paciente</th><th>Telefone</th><th>Dentista</th><th>Situação</th><th>Resposta do paciente</th><th>Lembrete</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum atendimento a lembrar neste dia.</p>'}
   </div>`;
 }
+let agendaSelId=null, agendaDiaModo='grade', agDentFiltro='';
+function rotuloPeriodoAgenda(){
+  if(agendaViewMode==='lembretes'){ if(!agendaLembData) agendaLembData=addDaysStr(hojeISO(),1); return fmtDiaSemana(agendaLembData)+', '+fmtDataLonga(agendaLembData); }
+  if(agendaViewMode==='semana'){ const w=weekDates(agendaViewDate); return fmtIntervalo(w[0],w[6]); }
+  if(agendaViewMode==='mes'){ const t=new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
+  return fmtDiaSemana(agendaViewDate)+', '+fmtDataLonga(agendaViewDate);
+}
+function fmtDataLonga(iso){ return new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); }
+function fmtIntervalo(a,b){
+  const da=new Date(a+'T00:00:00'), db=new Date(b+'T00:00:00');
+  const mes=d=>d.toLocaleDateString('pt-BR',{month:'long'});
+  return da.getMonth()===db.getMonth()? `${da.getDate()} a ${db.getDate()} de ${mes(db)} de ${db.getFullYear()}` : `${da.getDate()} de ${mes(da)} a ${db.getDate()} de ${mes(db)} de ${db.getFullYear()}`;
+}
+function pendentesLembrete(data){
+  return (state.agendamentos||[]).filter(a=>a.data===data && statusAg(a)==='agendado' && !a.lembreteEnviadoEm && statusAgExib(a)!=='atendido');
+}
 function renderAgendaPrincipal(){
-  const viewBar=`<div class="tabs">
-    <button data-agview="dia" class="${agendaViewMode==='dia'?'active':''}">Dia</button>
-    <button data-agview="semana" class="${agendaViewMode==='semana'?'active':''}">Semana</button>
-    <button data-agview="mes" class="${agendaViewMode==='mes'?'active':''}">Mês</button>
-    <button data-agview="lembretes" class="${agendaViewMode==='lembretes'?'active':''}">💬 Lembretes</button>
-  </div>`;
+  if(modoCelular()) return renderAgendaCelular();
+  const vistas=[['dia','Dia'],['semana','Semana'],['mes','Mês'],['lembretes','Lembretes']];
   let body='';
   if(agendaViewMode==='dia') body=renderAgendaDia();
   else if(agendaViewMode==='semana') body=renderAgendaSemana();
   else if(agendaViewMode==='lembretes') body=renderAgendaLembretes();
   else body=renderAgendaMes();
-  return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-  <h2 style="margin:0">Agenda</h2><button id="btnNewAgendamento" class="btn-p">+ Novo Agendamento</button></div>
+  return `<div class="pg-cab ag-cab">
+    <h1>Agenda</h1>
+    <div class="ag-nav">
+      <button class="btn-icone" id="agNavPrev" aria-label="Anterior">${ICONES.esq}</button>
+      <button class="btn-s" id="agNavHoje">Hoje</button>
+      <button class="btn-icone" id="agNavNext" aria-label="Próximo">${ICONES.dir}</button>
+      <strong class="ag-periodo">${esc(rotuloPeriodoAgenda())}</strong>
+    </div>
+    <div class="seg" role="group" aria-label="Visualização" style="margin-left:auto">${vistas.map(([v,t])=>`<button data-agview="${v}" class="${agendaViewMode===v?'active':''}" aria-pressed="${agendaViewMode===v}">${t}</button>`).join('')}</div>
+    <button id="btnNewAgendamento" class="btn-p btn-acao">${ICONES.mais}Novo agendamento</button>
+  </div>
   <div id="agendaFormArea"></div>
-  ${viewBar}${body}`;
+  ${body}`;
+}
+function dentistasDaAgenda(lista){
+  const ds=(state.users||[]).filter(u=>u.tipo==='dentista').map(u=>({id:u.id,nome:u.nomeCompleto}));
+  const ids=new Set(ds.map(d=>d.id));
+  const outros=lista.filter(a=>!ids.has(a.dentistaId));
+  const extras=[]; outros.forEach(a=>{ if(!extras.find(e=>e.id===(a.dentistaId||'?'))) extras.push({id:a.dentistaId||'?',nome:a.dentistaNome||'Sem dentista'}); });
+  return ds.concat(extras);
+}
+const SLOT_PX=44, SLOT_MIN=30;
+function faixasSobrepostas(itens){
+  // distribui atendimentos que se sobrepõem lado a lado
+  const ord=itens.slice().sort((x,y)=>x.ini-y.ini||y.fim-x.fim);
+  let grupo=[], fimGrupo=-1; const grupos=[];
+  ord.forEach(it=>{ if(it.ini>=fimGrupo && grupo.length){ grupos.push(grupo); grupo=[]; } grupo.push(it); fimGrupo=Math.max(fimGrupo,it.fim); });
+  if(grupo.length) grupos.push(grupo);
+  grupos.forEach(g=>{ const fins=[]; g.forEach(it=>{ let l=fins.findIndex(f=>f<=it.ini); if(l<0){ l=fins.length; fins.push(0); } fins[l]=it.fim; it.faixa=l; }); g.forEach(it=>it.nFaixas=fins.length); });
+  return ord;
 }
 function renderAgendaDia(){
-  const list=(state.agendamentos||[]).filter(a=>a.data===agendaViewDate).sort((a,b)=>a.horario.localeCompare(b.horario));
-  const d=new Date(agendaViewDate+'T00:00:00');
-  const dataFmt=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-  return `<div class="card">
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <button class="btn-s" id="agPrevDia">←</button>
-    <input type="date" id="agDataDia" value="${agendaViewDate}">
-    <button class="btn-s" id="agNextDia">→</button>
-  </div>
-  <h3 style="margin:14px 0 4px 0">${fmtDiaSemana(agendaViewDate)}</h3>
-  <p class="muted" style="margin:0 0 14px 0">${dataFmt} &nbsp;·&nbsp; ${list.filter(a=>statusAg(a)!=='cancelado').length} atendimento${list.filter(a=>statusAg(a)!=='cancelado').length===1?'':'s'}</p>
-  ${agendaCardsList(list)}
-  </div>`;
+  const todos=(state.agendamentos||[]).filter(a=>a.data===agendaViewDate).sort((a,b)=>a.horario.localeCompare(b.horario));
+  const ativos=todos.filter(a=>statusAg(a)!=='cancelado');
+  const cancelados=todos.length-ativos.length;
+  const sel=agendaSelId?todos.find(a=>a.id===agendaSelId):null;
+  const modos=`<div class="seg" role="group" aria-label="Modo"><button data-agdiamodo="grade" class="${agendaDiaModo==='grade'?'active':''}">Grade</button><button data-agdiamodo="lista" class="${agendaDiaModo==='lista'?'active':''}">Lista</button></div>`;
+  let principal='';
+  if(agendaDiaModo==='lista'){
+    principal=`<section class="bloco"><div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${modos}</div><div class="bloco-corpo">${agendaCardsList(todos)}</div></section>`;
+  } else {
+    const dents=dentistasDaAgenda(ativos);
+    if(!dents.length) principal=`<section class="bloco"><div class="bloco-cab"><h2>Grade do dia</h2>${modos}</div><div class="bloco-corpo">${semDentistaAviso()}</div></section>`;
+    else {
+      const its=ativos.map(a=>({a,ini:hhmmParaMin(a.horario),fim:hhmmParaMin(a.horario)+duracaoDe(a)}));
+      let ini=8*60, fim=18*60;
+      its.forEach(i=>{ ini=Math.min(ini,Math.floor(i.ini/60)*60); fim=Math.max(fim,Math.ceil(i.fim/60)*60); });
+      ini=Math.max(0,ini); fim=Math.min(24*60,fim);
+      const pxMin=SLOT_PX/SLOT_MIN, altura=(fim-ini)*pxMin;
+      const horas=[]; for(let m=ini;m<fim;m+=60) horas.push(`<div class="gr-hora" style="height:${60*pxMin}px">${minParaHHMM(m)}</div>`);
+      const cols=dents.map(d=>{
+        const meus=faixasSobrepostas(its.filter(i=>(i.a.dentistaId||'?')===d.id));
+        const blocos=meus.map(i=>{
+          const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
+          const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64;
+          return `<button class="gr-bloco gb-${st}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+AG_STATUS[st][0])}">
+            ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${esc(a.pacienteNome)}</strong></span>`
+            :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}</span>`}
+          </button>`;
+        }).join('');
+        return `<div class="gr-col" data-agcol="${esc(d.id)}" data-agini="${ini}" style="height:${altura}px;background-size:100% ${SLOT_PX}px" title="Clique num horário livre para agendar">${blocos}</div>`;
+      }).join('');
+      const cab=dents.map(d=>{ const n=ativos.filter(a=>(a.dentistaId||'?')===d.id).length; return `<div class="gr-dent">${avatarHtml(d.nome,d.id)}<div><div class="gr-dent-nome">${esc(d.nome)}</div><div class="muted">${n} atendimento${n===1?'':'s'}</div></div></div>`; }).join('');
+      let agora='';
+      if(agendaViewDate===hojeISO()){ const m=hhmmParaMin(agoraHHMM()); if(m>=ini && m<=fim) agora=`<div class="gr-agora" style="top:${(m-ini)*pxMin}px" aria-hidden="true"></div>`; }
+      const tpl=`64px repeat(${dents.length},minmax(200px,1fr))`;
+      principal=`<section class="bloco" aria-label="Grade de horários">
+        <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${cancelados?`<button class="lnk-forte" data-agdiamodo="lista">${cancelados} cancelado${cancelados>1?'s':''}, ver na lista</button>`:''}<div style="margin-left:auto">${modos}</div></div>
+        <div class="gr-rolagem"><div class="gr" style="min-width:${64+dents.length*200}px">
+          <div class="gr-topo" style="grid-template-columns:${tpl}"><div></div>${cab}</div>
+          <div class="gr-corpo" style="grid-template-columns:${tpl}"><div class="gr-horas">${horas.join('')}</div>${cols}${agora}</div>
+        </div></div>
+      </section>`;
+    }
+  }
+  const amanha=addDaysStr(hojeISO(),1), pendAm=pendentesLembrete(amanha).length;
+  const lateral=`<aside class="ag-lateral">
+    ${sel?`<section class="bloco"><div class="bloco-cab"><h2>Atendimento selecionado</h2><button class="btn-icone peq" data-agsel="" aria-label="Fechar">✕</button></div><div class="bloco-corpo ag-sel-corpo">${agendaCardsList([sel])}</div></section>`:''}
+    <section class="bloco"><div class="bloco-corpo">${miniCalendarioHtml(agendaViewDate)}</div></section>
+    <section class="bloco"><div class="bloco-corpo">
+      <h2 class="lat-tit">Confirmações de amanhã</h2>
+      ${pendAm?`<p class="lat-txt">${pendAm} paciente${pendAm>1?'s':''} ainda não receberam o lembrete por WhatsApp.</p><button class="btn-p" style="width:100%" data-lote="${amanha}">Enviar lembretes</button>`:'<p class="lat-txt" style="margin:0">Todos os lembretes de amanhã já foram enviados.</p>'}
+    </div></section>
+    <section class="bloco"><div class="bloco-corpo">
+      <h2 class="lat-tit">Legenda</h2>
+      <div class="legenda">${['confirmado','agendado','chegou','nao_vem','faltou','atendido'].map(st=>`<span><i class="gb-${st}"></i>${AG_STATUS[st][0]}</span>`).join('')}</div>
+    </div></section>
+  </aside>`;
+  return `<div class="ag-dia">${`<div class="ag-dia-a">${principal}</div>`}${lateral}</div>`;
+}
+function miniCalendarioHtml(iso){
+  const mes=iso.slice(0,7), dias=monthDays(mes), hoje=hojeISO();
+  const com=new Set((state.agendamentos||[]).filter(a=>a.data&&a.data.slice(0,7)===mes&&statusAg(a)!=='cancelado').map(a=>a.data));
+  const titulo=new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  return `<h2 class="lat-tit">${esc(titulo.charAt(0).toUpperCase()+titulo.slice(1))}</h2>
+  <div class="mini-cal">${['S','T','Q','Q','S','S','D'].map(d=>`<span class="mc-sem">${d}</span>`).join('')}
+  ${dias.map(d=>d?`<button class="mc-dia${d===iso?' mc-sel':''}${d===hoje?' mc-hoje':''}" data-gotodia="${d}" aria-label="${fmtDataBR(d)}">${parseInt(d.slice(8),10)}${com.has(d)?'<i></i>':''}</button>`:'<span></span>').join('')}</div>`;
 }
 function renderAgendaSemana(){
   const week=weekDates(agendaViewDate);
-  const nav=`<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-  <button class="btn-s" id="agPrevSemana">← Semana anterior</button>
-  <strong>${week[0]} a ${week[6]}</strong>
-  <button class="btn-s" id="agNextSemana">Próxima semana →</button>
-  </div></div>`;
-  const dias=week.map(dt=>{
+  return week.map(dt=>{
     const list=(state.agendamentos||[]).filter(a=>a.data===dt).sort((a,b)=>a.horario.localeCompare(b.horario));
-    const hoje=dt===hojeISO();
-    return `<div class="card" style="${hoje?'border-color:var(--primary)':''}">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-      <h4 style="margin:0">${fmtDiaSemana(dt)} <span class="muted" style="font-weight:400">— ${dt}</span></h4>
-      ${list.filter(a=>statusAg(a)!=='cancelado').length?`<span class="muted">${list.filter(a=>statusAg(a)!=='cancelado').length} atend.</span>`:''}
-    </div>
-    ${agendaCardsList(list)}</div>`;
+    const n=list.filter(a=>statusAg(a)!=='cancelado').length, hoje=dt===hojeISO();
+    return `<section class="bloco" style="margin-bottom:14px;${hoje?'border-color:var(--primary)':''}">
+    <div class="bloco-cab"><h2>${fmtDiaSemana(dt)}, ${parseInt(dt.slice(8),10)}</h2>${hoje?'<span class="sit sit-confirmado">Hoje</span>':''}<span class="muted" style="margin-left:auto">${n?n+' atendimento'+(n>1?'s':''):'Livre'}</span></div>
+    ${list.length?`<div class="bloco-corpo">${agendaCardsList(list)}</div>`:''}</section>`;
   }).join('');
-  return nav+dias;
 }
 function renderAgendaMes(){
   const month=agendaViewDate.slice(0,7);
   const days=monthDays(month);
   const counts={};
   (state.agendamentos||[]).forEach(a=>{ if(a.data && a.data.slice(0,7)===month && statusAg(a)!=='cancelado') counts[a.data]=(counts[a.data]||0)+1; });
+  const hoje=hojeISO();
   const cells=days.map(d=>{
     if(!d) return `<div class="mes-cell mes-empty"></div>`;
     const n=counts[d]||0;
-    return `<button class="mes-cell" data-gotodia="${d}"><div class="mes-num">${parseInt(d.slice(8),10)}</div>${n?`<div class="mes-count">${n} atend.</div>`:''}</button>`;
+    return `<button class="mes-cell${d===hoje?' mes-hoje':''}" data-gotodia="${d}"><div class="mes-num">${parseInt(d.slice(8),10)}</div>${n?`<div class="mes-count">${n} atendimento${n>1?'s':''}</div>`:''}</button>`;
   }).join('');
-  const nav=`<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-  <button class="btn-s" id="agPrevMes">← Mês anterior</button>
-  <input type="month" id="agMesInput" value="${month}">
-  <button class="btn-s" id="agNextMes">Próximo mês →</button>
-  </div></div>`;
-  return nav+`<div class="card"><div class="mes-grid-head">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div>${d}</div>`).join('')}</div>
-  <div class="mes-grid">${cells}</div></div>`;
+  return `<section class="bloco"><div class="bloco-corpo"><div class="mes-grid-head">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div>${d}</div>`).join('')}</div>
+  <div class="mes-grid">${cells}</div></div></section>`;
+}
+function semanaDomingo(iso){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()-d.getDay()); const r=[]; for(let i=0;i<7;i++){ r.push(isoLocal(d)); d.setDate(d.getDate()+1); } return r; }
+function renderAgendaCelular(){
+  const u=currentUser(), sem=semanaDomingo(agendaViewDate), hoje=hojeISO();
+  const nomes=['dom','seg','ter','qua','qui','sex','sáb'];
+  const faixa=`<div class="cel-semana">${sem.map((d,i)=>`<button data-gotodia="${d}" class="${d===agendaViewDate?'active':''}${d===hoje?' hoje':''}"${d===agendaViewDate?' aria-current="date"':''}><span>${nomes[i]}</span><strong>${parseInt(d.slice(8),10)}</strong></button>`).join('')}</div>`;
+  const todos=(state.agendamentos||[]).filter(a=>a.data===agendaViewDate && statusAg(a)!=='cancelado').sort((a,b)=>a.horario.localeCompare(b.horario));
+  const dents=dentistasDaAgenda(todos);
+  const fil=agDentFiltro && dents.find(d=>d.id===agDentFiltro)?agDentFiltro:'';
+  const chips=dents.length>1?`<div class="cel-chips">${[{id:'',nome:'Todos'}].concat(dents).map(d=>`<button data-agdent="${esc(d.id)}" class="${fil===d.id?'active':''}" aria-pressed="${fil===d.id}">${esc(d.id?nomeSaudacao(d.nome):d.nome)}</button>`).join('')}</div>`:'';
+  const lista=todos.filter(a=>!fil || (a.dentistaId||'?')===fil);
+  const agoraM=hhmmParaMin(agoraHHMM());
+  let linhaFeita=agendaViewDate!==hoje, itens_destacado=false;
+  const itens=lista.map(a=>{
+    const st=statusAgExib(a), ini=hhmmParaMin(a.horario), fimM=ini+duracaoDe(a);
+    let linha='';
+    if(!linhaFeita && ini>agoraM){ linhaFeita=true; linha=`<div class="cel-agora"><span>${agoraHHMM()}</span><i></i></div>`; }
+    const passado=agendaViewDate<hoje || (agendaViewDate===hoje && fimM<agoraM) || st==='atendido' || st==='faltou';
+    const destaque=!passado && (st==='confirmado'||st==='agendado'||st==='chegou') && !itens_destacado;
+    if(destaque) itens_destacado=true;
+    return `${linha}<div class="cel-item${passado?' passado':''}">
+      <div class="cel-hora${destaque?' destaque':''}">${esc(a.horario)}</div>
+      <div class="cel-card${destaque?' destaque':''}${st==='agendado'?' tracejado':''}">
+        <div class="cel-card-l1"><strong>${esc(a.pacienteNome)}</strong>${agBadge(a)}</div>
+        <div class="cel-card-l2">${esc(a.procedimentoNome||'')}</div>
+        <div class="cel-card-l3">${esc(a.dentistaNome||'')}, até ${minParaHHMM(fimM)}</div>
+        ${!passado && st!=='nao_vem' ? `<div class="cel-card-acoes">
+          <button class="btn-s" data-agwpp="${a.id}">WhatsApp</button>
+          <button class="btn-s" data-editag="${a.id}">Remarcar</button>
+          ${podeChegou(a)?`<button class="btn-p" data-agchegou="${a.id}">Chegou</button>`:''}
+        </div>`:''}
+      </div></div>`;
+  });
+  if(!linhaFeita && lista.length) itens.push(`<div class="cel-agora"><span>${agoraHHMM()}</span><i></i></div>`);
+  return `${avisosHtml(u)}${faixa}${chips}<div id="agendaFormArea"></div>
+  <div class="cel-lista">${itens.join('')||'<p class="muted" style="text-align:center;margin:28px 0">Nenhum atendimento neste dia.</p>'}</div>`;
 }
 function openAgendamentoForm(a){
   const isNew=!a;
@@ -2013,7 +2159,7 @@ const MQ_ESCURO=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark
 function aplicarTema(){
   const t=temaEscolhido(); const d=t==='auto'?(MQ_ESCURO.matches?'dark':'light'):t;
   document.documentElement.setAttribute('data-theme',d);
-  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute('content',d==='dark'?'#0D1413':'#F2F5F4');
+  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute('content',d==='dark'?'#0C1216':'#F5F6F8');
 }
 function definirTema(t){ try{ localStorage.setItem('odonto-tema',t); }catch(e){} aplicarTema(); render(); }
 try{ MQ_ESCURO.addEventListener('change',()=>{ if(temaEscolhido()==='auto') aplicarTema(); }); }catch(e){}
@@ -2023,6 +2169,16 @@ const ICONES={
   sol:ICO('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
   lua:ICO('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   auto:ICO('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor"/>'),
+  sino:ICO('<path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 19.5a2 2 0 0 0 4 0"/>'),
+  busca:ICO('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+  mais:ICO('<path d="M12 5v14M5 12h14"/>'),
+  sair:ICO('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/>'),
+  esq:ICO('<path d="M15 6l-6 6 6 6"/>'),
+  dir:ICO('<path d="M9 6l6 6-6 6"/>'),
+  zap:ICO('<path d="M4.5 19.5l1.2-3.6A7.5 7.5 0 1 1 8.6 19z"/><path d="M9.3 9.2c.3 1.9 1.6 3.6 3.6 4.5l1-.9 1.6.7-.3 1.4c-2.9.3-6.4-2.4-7-5.7l1.4-.4z"/>'),
+  editar:ICO('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
+  lixo:ICO('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>'),
+  check:ICO('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   dente:ICO('<path d="M7.2 3.5c-2.4 0-4 1.9-4 4.6 0 2.2.8 3.6 1.5 5.4.7 1.9.9 3.6 1.3 5.3.3 1.3.9 2.2 1.8 2.2 1.2 0 1.5-1.3 1.8-2.9.3-1.6.7-3.4 2.4-3.4s2.1 1.8 2.4 3.4c.3 1.6.6 2.9 1.8 2.9.9 0 1.5-.9 1.8-2.2.4-1.7.6-3.4 1.3-5.3.7-1.8 1.5-3.2 1.5-5.4 0-2.7-1.6-4.6-4-4.6-1.9 0-2.9 1-4.8 1s-2.9-1-4.8-1z"/>'),
   dashboard:ICO('<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>'),
   usuarios:ICO('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.7 3.8-5.6 7.5-5.6s6.7 1.9 7.5 5.6"/>'),
@@ -2049,7 +2205,13 @@ function bindTema(){
     const ordem=['light','dark','auto']; const i=ordem.indexOf(temaEscolhido()); definirTema(ordem[(i+1)%3]);
   }));
 }
-function rotuloMenu(l){ return l.replace(/^\S+\s/,''); }
+function rotuloMenu(l){ return l; }
+function iniciais(nome){
+  const p=(nome||'').replace(/^(dra?|prof[a]?)\.?\s+/i,'').trim().split(/\s+/).filter(Boolean);
+  if(!p.length) return '?';
+  return ((p[0][0]||'')+(p.length>1?p[p.length-1][0]:'')).toUpperCase();
+}
+function avatarHtml(nome,id,cls){ const [bg,fg]=dentistColor(id||nome); return `<span class="avatar ${cls||''}" style="background:${bg};color:${fg}" aria-hidden="true">${esc(iniciais(nome))}</span>`; }
 
 // =====================================================================
 // NUVEM: login (e-mail/senha e Google), primeiro acesso e sincronização
@@ -2068,8 +2230,10 @@ function telaNuvem(conteudo){
   return `<div class="login-wrap">
     <aside class="login-lado">
       <div class="login-lado-marca"><span class="sb-logo">${ICONES.dente}</span>OdontoGestão</div>
-      <div><p class="login-frase">A clínica inteira em um só lugar.</p>
-      <p class="login-frase-sub">Prontuário, agenda e financeiro sincronizados entre a recepção, o consultório e o celular.</p></div>
+      <svg class="login-arte" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.2 3.5c-2.4 0-4 1.9-4 4.6 0 2.2.8 3.6 1.5 5.4.7 1.9.9 3.6 1.3 5.3.3 1.3.9 2.2 1.8 2.2 1.2 0 1.5-1.3 1.8-2.9.3-1.6.7-3.4 2.4-3.4s2.1 1.8 2.4 3.4c.3 1.6.6 2.9 1.8 2.9.9 0 1.5-.9 1.8-2.2.4-1.7.6-3.4 1.3-5.3.7-1.8 1.5-3.2 1.5-5.4 0-2.7-1.6-4.6-4-4.6-1.9 0-2.9 1-4.8 1s-2.9-1-4.8-1z"/><path d="M8 5.2c-1.6 0-2.7 1.3-2.7 3.1 0 1.5.5 2.5 1 3.7"/></svg>
+      <div style="position:relative;z-index:1"><p class="login-frase">Prontuário, agenda e financeiro da clínica, juntos.</p>
+      <p class="login-frase-sub">O que a recepção marca aparece no consultório e no celular do dentista na mesma hora.</p></div>
+      <p class="login-lado-rodape">Dados protegidos e guardados no Brasil (São Paulo).</p>
     </aside>
     <main class="login-principal"><div class="login-tema">${btnTemaHtml()}</div><div class="login-card">
       <div class="login-marca"><span class="login-logo">${ICONES.dente}</span><div><div class="login-nome">OdontoGestão</div><div class="muted">Sistema da clínica</div></div></div>
@@ -2123,7 +2287,7 @@ function renderTelaNuvem(){
   return telaNuvem(`
     <h3 class="login-titulo">Entrar</h3><p class="muted" style="margin:0">Use o e-mail que a clínica cadastrou para você.</p>
     <button class="btn-google login-btn" id="nvGoogle">${G_ICON}<span>Entrar com Google</span></button>
-    <div class="login-ou"><span>ou</span></div>
+    <div class="login-ou"><span>ou com e-mail e senha</span></div>
     <form id="fNvEntrar"><label>E-mail</label><input id="nvEmail" type="email" autocomplete="email" required>
     <label>Senha</label><input id="nvSenha" type="password" autocomplete="current-password" required>
     ${msgsNuvem()}<button class="btn-p login-btn">Entrar</button></form>
@@ -2263,9 +2427,9 @@ function aoMudarRemoto(){
 let ultimoStatusNuvem={p:0,on:true};
 function textoStatusNuvem(){
   const {p,on}=ultimoStatusNuvem;
-  if(!on) return ['📴 Sem internet — as alterações serão enviadas quando voltar','st-off'];
-  if(p>0) return ['⏳ Salvando…','st-pend'];
-  return ['☁️ Salvo na nuvem','st-ok'];
+  if(!on) return ['Sem internet: as alterações serão enviadas quando voltar','st-off'];
+  if(p>0) return ['Salvando…','st-pend'];
+  return ['Salvo na nuvem','st-ok'];
 }
 function atualizarStatusNuvem(p,on){
   ultimoStatusNuvem={p,on};
@@ -2389,18 +2553,63 @@ function currentUser(){ return state.users.find(u=>u.id===session); }
 function menuItems(){
   const u=currentUser(); const p=Object.assign(defaultPerms(u.tipo), u.permissions||{});
   return [
-    {id:'dashboard', label:'🏠 Dashboard', enabled:true},
-    {id:'usuarios', label:'👤 Usuários', enabled:p.usuarios},
-    {id:'pacientes', label:'🧑‍⚕️ Pacientes', enabled:p.pacientes},
-    {id:'agenda', label:'📅 Agenda', enabled:true},
-    {id:'tabelavalores', label:'💲 Tabela de Valores', enabled:true},
-    {id:'financeiro', label:'💰 Financeiro', enabled:p.financeiro},
-    {id:'estoque', label:'📦 Estoque', enabled:true, stub:true},
-    {id:'relatorios', label:'📊 Relatórios', enabled:true},
-    {id:'configuracoes', label:'⚙️ Configurações', enabled:true},
+    {id:'dashboard', label:'Painel', grupo:'Atendimento', enabled:true},
+    {id:'agenda', label:'Agenda', grupo:'Atendimento', enabled:true},
+    {id:'pacientes', label:'Pacientes', grupo:'Atendimento', enabled:p.pacientes},
+    {id:'financeiro', label:'Financeiro', grupo:'Gestão', enabled:p.financeiro},
+    {id:'tabelavalores', label:'Tabela de valores', grupo:'Gestão', enabled:true},
+    {id:'relatorios', label:'Relatórios', grupo:'Gestão', enabled:true},
+    {id:'estoque', label:'Estoque', grupo:'Gestão', enabled:true, stub:true},
+    {id:'usuarios', label:'Usuários', grupo:'Administração', enabled:p.usuarios},
+    {id:'configuracoes', label:'Configurações', grupo:'Administração', enabled:true},
   ];
 }
-
+const ATALHO_BUSCA=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||'')?'⌘K':'Ctrl K';
+function buscaHtml(){
+  return `<div class="busca" id="buscaGlobal">
+    <label class="busca-campo">${ICONES.busca}<input type="search" id="buscaInput" placeholder="Buscar paciente por nome, CPF ou telefone" aria-label="Buscar paciente" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="buscaRes"><span class="busca-kbd">${ATALHO_BUSCA}</span></label>
+    <div class="busca-res" id="buscaRes" role="listbox" hidden></div>
+  </div>`;
+}
+function buscarPacientes(q){
+  const t=normTxt(q).trim(), dig=q.replace(/\D/g,'');
+  if(!t && !dig) return [];
+  return state.patients.filter(p=>{
+    if(t && normTxt(p.nome).includes(t)) return true;
+    if(dig.length>=3 && (String(p.cpf||'').replace(/\D/g,'').includes(dig) || String(p.telefone||'').replace(/\D/g,'').includes(dig))) return true;
+    return false;
+  }).sort((a,b)=>{ const ia=normTxt(a.nome).indexOf(t), ib=normTxt(b.nome).indexOf(t); return (ia===0?0:1)-(ib===0?0:1) || (a.nome||'').localeCompare(b.nome||''); }).slice(0,8);
+}
+function abrirPaciente(id){
+  currentTab='pacientes'; patientDetailId=id; patientDetailTab='dados';
+  anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null; odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null;
+  render(); window.scrollTo(0,0);
+}
+function bindBuscaGlobal(){
+  const inp=document.getElementById('buscaInput'), res=document.getElementById('buscaRes'); if(!inp||!res) return;
+  let lista=[], idx=0;
+  const desenhar=()=>{
+    const q=inp.value;
+    if(!q.trim()){ res.hidden=true; inp.setAttribute('aria-expanded','false'); return; }
+    lista=buscarPacientes(q); idx=Math.min(idx,Math.max(0,lista.length-1));
+    res.innerHTML=lista.length?lista.map((p,i)=>`<button type="button" class="busca-item${i===idx?' sel':''}" role="option" aria-selected="${i===idx}" data-buscapac="${p.id}">${avatarHtml(p.nome,p.id)}<span><span class="busca-item-nome">${esc(p.nome)}</span><span class="busca-item-sub" style="display:block">${esc([p.telefone,p.cpf?'CPF '+p.cpf:''].filter(Boolean).join(', ')||'Sem telefone cadastrado')}</span></span></button>`).join('')
+      :`<div class="busca-vazio">Nenhum paciente encontrado para “${esc(q)}”.</div>`;
+    res.hidden=false; inp.setAttribute('aria-expanded','true');
+    res.querySelectorAll('[data-buscapac]').forEach(b=>b.addEventListener('mousedown',e=>{ e.preventDefault(); abrirPaciente(b.getAttribute('data-buscapac')); }));
+  };
+  inp.addEventListener('input',()=>{ idx=0; desenhar(); });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); idx=Math.min(idx+1,lista.length-1); desenhar(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); idx=Math.max(idx-1,0); desenhar(); }
+    else if(e.key==='Enter'){ e.preventDefault(); if(lista[idx]) abrirPaciente(lista[idx].id); }
+    else if(e.key==='Escape'){ inp.value=''; res.hidden=true; inp.blur(); }
+  });
+  inp.addEventListener('blur',()=>setTimeout(()=>{ res.hidden=true; inp.setAttribute('aria-expanded','false'); },120));
+  inp.addEventListener('focus',()=>{ if(inp.value.trim()) desenhar(); });
+}
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey) && (e.key==='k'||e.key==='K')){ const i=document.getElementById('buscaInput'); if(i){ e.preventDefault(); i.focus(); i.select(); } }
+});
 function renderApp(){
   const u=currentUser();
   if(!u){
@@ -2410,7 +2619,10 @@ function renderApp(){
   const cel=modoCelular();
   const items=menuItems().filter(i=>i.enabled && (!cel || MODULOS_CELULAR.includes(i.id)));
   if(!items.find(i=>i.id===currentTab)) currentTab=items[0].id;
-  const sidebar=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}"${currentTab===i.id?' aria-current="page"':''}><span class="sb-ico">${ICONES[i.id]||''}</span>${esc(rotuloMenu(i.label))}</button>`).join('');
+  const nAgHoje=(state.agendamentos||[]).filter(a=>a.data===hojeISO() && statusAg(a)!=='cancelado').length;
+  const grupos=[]; items.forEach(i=>{ let g=grupos.find(x=>x.nome===i.grupo); if(!g){ g={nome:i.grupo,itens:[]}; grupos.push(g); } g.itens.push(i); });
+  const botao=i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}"${currentTab===i.id?' aria-current="page"':''}><span class="sb-ico">${ICONES[i.id]||''}</span>${esc(i.label)}${i.id==='agenda'&&nAgHoje?`<span class="sb-cont">${nAgHoje}</span>`:''}${i.stub?'<span class="sb-embreve">em breve</span>':''}</button>`;
+  const sidebar=grupos.map(g=>`<div class="sb-grupo"><div class="sb-grupo-rot">${esc(g.nome)}</div>${g.itens.map(botao).join('')}</div>`).join('');
   let content='';
   if(currentTab==='dashboard') content=renderDashboard();
   else if(currentTab==='usuarios') content=renderUsuarios();
@@ -2424,30 +2636,35 @@ function renderApp(){
 
   const demo=(!NUVEM && /^https?:/.test(location.protocol))?'<div class="demo-banner">⚠️ Modo demonstração: a nuvem ainda não foi configurada (firebase-config.js). Os dados ficam só neste navegador.</div>':'';
   if(cel){
-    const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"><span class="cel-ico">${ICONES[i.id]||''}</span>${esc(rotuloMenu(i.label))}</button>`).join('');
+    const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"${currentTab===i.id?' aria-current="page"':''}><span class="cel-ico">${ICONES[i.id]||''}</span>${esc(i.label)}</button>`).join('');
+    const titulo=(items.find(i=>i.id===currentTab)||{}).label||'';
+    const sub=currentTab==='agenda'?fmtDiaSemana(agendaViewDate)+', '+new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long'}):esc(state.clinic.nome);
     return `<div class="cel-layout">${demo}
-      <div class="topbar cel-top">
-        <div class="cel-quem"><span class="sb-logo">${ICONES.dente}</span><div style="min-width:0"><strong>${esc(state.clinic.nome)}</strong><div class="muted">${esc(u.nomeCompleto)}, ${tipoLabel(u.tipo).toLowerCase()}</div></div></div>
-        <div class="cel-acoes">${btnTemaHtml()}<button id="btnLogout" class="btn-s">Sair</button></div>
-      </div>
-      ${NUVEM?`<div class="cel-status">${statusNuvemHtml()}</div>`:''}
-      <div class="wrap">${currentTab==='agenda'?avisosHtml(u):''}${content}</div>
-      <nav class="cel-nav">${nav}</nav>
+      <header class="topbar cel-top">
+        <span class="sb-logo">${ICONES.dente}</span>
+        <div class="cel-quem"><strong>${esc(titulo)}</strong><div class="muted">${sub}</div></div>
+        <div class="cel-acoes">${btnTemaHtml()}${currentTab==='agenda'?`<button class="btn-p btn-cel-novo" id="btnNewAgendamento" aria-label="Novo agendamento">${ICONES.mais}</button>`:''}<button id="btnLogout" class="btn-tema" aria-label="Sair">${ICONES.sair}</button></div>
+      </header>
+      ${NUVEM&&!navigator.onLine?`<div class="cel-status">${statusNuvemHtml()}</div>`:''}
+      <div class="wrap">${content}</div>
+      <nav class="cel-nav" aria-label="Menu">${nav}</nav>
     </div>`;
   }
   return `${demo}<div class="layout">
-    <div class="sidebar">
-      <div class="sb-marca"><span class="sb-logo">${ICONES.dente}</span><span class="sb-nome">OdontoGestão</span></div>
+    <aside class="sidebar">
+      <div class="sb-marca"><span class="sb-logo">${ICONES.dente}</span><div style="min-width:0"><div class="sb-nome">OdontoGestão</div><div class="sb-clinica" title="${esc(state.clinic.nome)}">${esc(state.clinic.nome)}</div></div></div>
       <nav aria-label="Menu principal">${sidebar}</nav>
-      <div class="sb-rodape">${temaSegHtml()}<div class="sb-versao">Versão ${APP_VERSION}</div></div>
-    </div>
-    <div class="main">
-      <div class="topbar">
-        <div class="topbar-clinica">${esc(state.clinic.nome)}</div>
-        <div class="topbar-dir">${statusNuvemHtml()} <span class="topbar-usuario">${esc(u.nomeCompleto)}</span> <span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span>
-          ${bellHtml(u)}<button id="btnLogout" class="btn-s" style="margin-left:10px">Sair</button></div>
+      <div class="sb-rodape">${temaSegHtml()}
+        <div class="sb-usuario">${avatarHtml(u.nomeCompleto,u.id)}<div style="min-width:0;flex:1"><div class="sb-usuario-nome">${esc(u.nomeCompleto)}</div><div class="sb-usuario-tipo">${tipoLabel(u.tipo)}</div></div><button id="btnLogout" class="btn-icone peq" aria-label="Sair" title="Sair">${ICONES.sair}</button></div>
+        <div class="sb-versao">Versão ${APP_VERSION}</div>
       </div>
-      <div class="wrap">${lembreteBackupHtml()}${content}</div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        ${permsDe(u).pacientes?buscaHtml():'<div style="flex:1"></div>'}
+        <div class="topbar-dir">${statusNuvemHtml()}${bellHtml(u)}<button class="btn-p btn-acao" id="btnTopNovoAg">${ICONES.mais}Novo agendamento</button></div>
+      </header>
+      <div class="wrap">${currentTab==='dashboard'?'':lembreteBackupHtml()}${content}</div>
     </div>
   </div>`;
 }
@@ -2457,33 +2674,69 @@ function renderStub(label){
 }
 
 function nomeSaudacao(n){ const t=(n||'').trim().split(/\s+/); return (/^(dra?|prof|profa)\.?$/i.test(t[0]) && t[1]) ? t[0]+' '+t[1] : (t[0]||''); }
+let dashDentista='';
 function renderDashboard(){
-  const u=currentUser(), perms=permsDe(u), hoje=hojeISO(), agora=agoraHHMM();
+  const u=currentUser(), perms=permsDe(u), hoje=hojeISO(), agora=agoraHHMM(), agoraM=hhmmParaMin(agora);
   const agHoje=(state.agendamentos||[]).filter(a=>a.data===hoje && statusAg(a)!=='cancelado').sort((x,y)=>x.horario.localeCompare(y.horario));
-  const prox=agHoje.find(a=>a.horario>=agora && statusAg(a)!=='faltou');
-  const cards=[];
-  const card=(rot,num,sub,go,ruim)=>`<button class="dash-card" data-dashgo="${go}"><div class="dash-rot">${rot}</div><div class="dash-num" style="color:${ruim?'var(--danger)':'var(--ok)'}">${num}</div><div class="dash-sub">${sub}</div></button>`;
-  cards.push(card('Atendimentos hoje',agHoje.length,prox?'Próximo: '+esc(prox.horario)+' — '+esc(prox.pacienteNome):(agHoje.length?'Todos os de hoje já passaram':'Nenhum agendado'),'agenda',false));
+  const prox=agHoje.find(a=>hhmmParaMin(a.horario)+duracaoDe(a)>agoraM && ['agendado','confirmado','chegou'].includes(statusAgExib(a)));
+  const h=new Date().getHours(), saud=h<12?'Bom dia':h<18?'Boa tarde':'Boa noite';
+  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
+  const n=agHoje.length;
+  const kpi=(rot,num,sub,go,cor,extra)=>`<button class="kpi" data-dashgo="${go}"><div class="kpi-rot">${rot}</div><div class="kpi-num"${cor?` style="color:${cor}"`:''}>${num}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}${extra||''}</button>`;
+  const ks=[];
+  ks.push(kpi('Atendimentos hoje',n,prox?`Próximo às ${esc(prox.horario)}, ${esc(prox.pacienteNome)}`:(n?'Todos os de hoje já passaram':'Agenda livre hoje'),'agenda'));
+  const conf=agHoje.filter(a=>['confirmado','chegou','atendido'].includes(statusAgExib(a))).length;
+  ks.push(kpi('Presença confirmada',`${conf} <small>de ${n}</small>`,'','agenda','',`<div class="kpi-barra"><span style="width:${n?Math.round(conf/n*100):0}%"></span></div>`));
+  let evs=[], orcN=0, orcV=0, venc=[];
   if(perms.pacientes){
-    let evs=[]; state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
+    state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
     if(u.tipo==='dentista') evs=evs.filter(e=>e.dentistaNome===u.nomeCompleto);
-    cards.push(card('Evoluções a confirmar',evs.length,evs.length?(u.tipo==='dentista'?'suas, aguardando confirmação':'aguardando confirmação do dentista'):'prontuários em dia','rel:evolpendentes',evs.length>0));
-    let n=0, val=0; state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && diasEntre(o.data,hoje)>=7){ n++; val+=o.total||0; } }));
-    cards.push(card('Orçamentos sem resposta (+7 dias)',n,n?fmtMoney(val)+' parados':'nenhum parado','rel:orcpendentes',n>0));
+    state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
   }
   if(perms.financeiro){
     ensureFluxoTipos();
-    const venc=(state.fluxoFinanceiro||[]).filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje);
-    cards.push(card('Parcelas vencidas',venc.length,venc.length?fmtMoney(venc.reduce((sum,e)=>sum+(e.valor||0),0))+' em atraso':'nenhuma em atraso','rel:inadimplencia',venc.length>0));
+    const mes=hoje.slice(0,7), fl=state.fluxoFinanceiro||[];
+    const rec=fl.filter(e=>e.tipo==='receita' && e.confirmado && (e.dataPagamento||e.vencimento||'').slice(0,7)===mes).reduce((s,e)=>s+(e.valor||0),0);
+    const prev=fl.filter(e=>e.tipo==='receita' && !e.confirmado && (e.vencimento||'').slice(0,7)===mes && e.vencimento>=hoje).reduce((s,e)=>s+(e.valor||0),0);
+    venc=fl.filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje);
+    const nomeMes=new Date().toLocaleDateString('pt-BR',{month:'long'});
+    ks.push(kpi('Recebido em '+nomeMes,fmtMoney(rec).replace(',00',''),prev?fmtMoney(prev).replace(',00','')+' ainda previstos no mês':'Nada mais previsto no mês','fin'));
+    ks.push(kpi('Parcelas vencidas',venc.length,venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' em atraso':'Nenhuma em atraso','rel:inadimplencia',venc.length?'var(--danger)':''));
+  } else if(perms.pacientes){
+    ks.push(kpi('Evoluções a confirmar',evs.length,evs.length?'Prontuários aguardando o dentista':'Prontuários em dia','rel:evolpendentes'));
+    ks.push(kpi('Orçamentos sem resposta',orcN,orcN?'Há mais de 7 dias, '+fmtMoney(orcV).replace(',00','')+' parados':'Nenhum parado','rel:orcpendentes'));
   }
-  const lista=agHoje.map(a=>`<div class="ag-card" style="margin-bottom:6px"><div class="ag-time">${esc(a.horario)}</div><div class="ag-info"><div class="ag-pac">${esc(a.pacienteNome)} ${agBadge(a)}</div><div class="ag-proc">${esc(a.procedimentoNome)}</div></div><span class="ag-dentista" style="background:${dentistColor(a.dentistaId)[0]};color:${dentistColor(a.dentistaId)[1]}">${esc(a.dentistaNome)}</span></div>`).join('');
-  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
-  return `<div class="card saudacao"><h2 style="margin:0">Olá, ${esc(nomeSaudacao(u.nomeCompleto))}</h2><p class="muted" style="margin:4px 0 0">${dataFmt}</p></div>
-  ${avisosHtml(u)}
-  <div class="dash-grid">${cards.join('')}</div>
-  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="margin:0">Agenda de hoje</h3><button class="btn-s" data-dashgo="agenda">Abrir agenda</button></div>
-  ${lista||'<p class="muted">Nenhum atendimento agendado para hoje.</p>'}</div>
-  <p class="muted">${state.patients.length} paciente(s) · ${state.users.length} usuário(s) cadastrado(s)</p>`;
+  const dents=dentistasDaAgenda(agHoje).filter(d=>agHoje.some(a=>(a.dentistaId||'?')===d.id));
+  if(dashDentista && !dents.find(d=>d.id===dashDentista)) dashDentista='';
+  const filtro=dents.length>1?`<div class="seg" role="group" aria-label="Filtrar por dentista" style="margin-left:auto">${[{id:'',nome:'Todos'}].concat(dents).map(d=>`<button data-dashdent="${esc(d.id)}" class="${dashDentista===d.id?'active':''}" aria-pressed="${dashDentista===d.id}">${esc(d.id?nomeSaudacao(d.nome):d.nome)}</button>`).join('')}</div>`:'';
+  const linhas=agHoje.filter(a=>!dashDentista||(a.dentistaId||'?')===dashDentista).map(a=>{
+    const st=statusAgExib(a), fimM=hhmmParaMin(a.horario)+duracaoDe(a);
+    const passado=fimM<=agoraM || st==='atendido' || st==='faltou', ehProx=prox&&prox.id===a.id;
+    return `<tr class="${ehProx?'proximo':passado?'passado':''}" data-agabrir="${a.id}"><td class="ta-hora">${esc(a.horario)}</td><td><div class="ta-pac">${esc(a.pacienteNome)}</div><div class="ta-sub">${esc(a.procedimentoNome||'')}</div></td><td>${esc(a.dentistaNome||'')}</td><td>${agBadge(a)}${ehProx?'<span class="tag-prox">Próximo</span>':''}</td></tr>`;
+  }).join('');
+  const agendaBloco=`<section class="bloco"><div class="bloco-cab"><h2>Agenda de hoje</h2>${filtro}<button class="lnk-forte"${filtro?'':' style="margin-left:auto"'} data-dashgo="agenda">Abrir agenda</button></div>
+    ${linhas?`<div class="overflow"><table class="t-agenda"><thead><tr><th style="width:70px">Horário</th><th>Paciente</th><th>Dentista</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum atendimento agendado para hoje.</p></div>'}</section>`;
+  const pend=[];
+  if(perms.pacientes){
+    pend.push(`<button class="pend" data-dashgo="rel:evolpendentes"><span><span class="pend-tit">Evoluções a confirmar</span><span class="pend-sub">${u.tipo==='dentista'?'Seus prontuários de atendimentos já feitos':'Prontuários de atendimentos já feitos'}</span></span><span class="pend-num">${evs.length}</span></button>`);
+    pend.push(`<button class="pend" data-dashgo="rel:orcpendentes"><span><span class="pend-tit">Orçamentos sem resposta</span><span class="pend-sub">${orcN?'Há mais de 7 dias, '+fmtMoney(orcV).replace(',00','')+' parados':'Nenhum parado há mais de 7 dias'}</span></span><span class="pend-num">${orcN}</span></button>`);
+  }
+  if(perms.financeiro){
+    const pacs=new Set(venc.map(e=>e.pacienteId)).size;
+    pend.push(`<button class="pend" data-dashgo="rel:inadimplencia"><span><span class="pend-tit">Parcelas vencidas</span><span class="pend-sub">${venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' de '+pacs+' paciente'+(pacs>1?'s':''):'Nenhuma em atraso'}</span></span><span class="pend-num${venc.length?' ruim':''}">${venc.length}</span></button>`);
+  }
+  const ult=state.meta&&state.meta.ultimoBackup, dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
+  const backup=perms.usuarios?`<p class="nota-rodape">${ult?(dias===0?'Último backup hoje.':'Último backup há '+dias+' dia'+(dias>1?'s':'')+'.'):'Nenhum backup feito ainda.'} <button class="lnk-forte" id="btnGoBackup">Fazer backup agora</button></p>`:'';
+  return `<div class="pg-cab"><div><h1>${saud}, ${esc(nomeSaudacao(u.nomeCompleto))}</h1><p>${dataFmt}. ${n?(n===1?'Há 1 atendimento':'São '+n+' atendimentos')+' na agenda de hoje.':'Nenhum atendimento na agenda de hoje.'}</p></div></div>
+  <div class="kpis">${ks.join('')}</div>
+  <div class="painel-cols">
+    <div class="col-a">${agendaBloco}</div>
+    <div class="col-b">
+      ${pend.length?`<section class="bloco"><div class="bloco-corpo"><h2 class="lat-tit" style="margin-bottom:2px">Pendências</h2>${pend.join('')}</div></section>`:''}
+      ${avisosHtml(u,true)}
+      ${backup}
+    </div>
+  </div>`;
 }
 
 function userFormFields(tipo, u, isNew){
@@ -3290,9 +3543,44 @@ function bindEvents(){
     const t=await pedirTexto('Alerta manual (aparece em vermelho no topo do prontuário). Deixe vazio para remover.',{multilinha:true,valor:pc.alertaManual||'',rotuloOk:'Salvar'});
     if(t!==null){ pc.alertaManual=t.trim(); saveData(); render(); }
   }));
+  bindBuscaGlobal();
+  document.querySelectorAll('[data-dashdent]').forEach(b=>b.addEventListener('click',()=>{ dashDentista=b.getAttribute('data-dashdent'); render(); }));
+  document.querySelectorAll('[data-agabrir]').forEach(tr=>tr.addEventListener('click',()=>{
+    const a=(state.agendamentos||[]).find(x=>x.id===tr.getAttribute('data-agabrir')); if(!a) return;
+    currentTab='agenda'; agendaViewMode='dia'; agendaViewDate=a.data; agendaSelId=a.id; patientDetailId=null; render();
+  }));
+  const btnTopNovoAg=document.getElementById('btnTopNovoAg');
+  if(btnTopNovoAg) btnTopNovoAg.addEventListener('click',()=>{ currentTab='agenda'; patientDetailId=null; if(agendaViewMode==='lembretes') agendaViewMode='dia'; render(); openAgendamentoForm(null); });
+  document.querySelectorAll('[data-agsel]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); const id=b.getAttribute('data-agsel'); agendaSelId=id&&agendaSelId!==id?id:null; render(); }));
+  document.querySelectorAll('[data-agdiamodo]').forEach(b=>b.addEventListener('click',()=>{ agendaDiaModo=b.getAttribute('data-agdiamodo'); render(); }));
+  document.querySelectorAll('[data-agdent]').forEach(b=>b.addEventListener('click',()=>{ agDentFiltro=b.getAttribute('data-agdent'); render(); }));
+  document.querySelectorAll('[data-agchegou]').forEach(b=>b.addEventListener('click',()=>mudarStatusAg(b.getAttribute('data-agchegou'),'chegou')));
+  document.querySelectorAll('[data-lote]').forEach(b=>b.addEventListener('click',()=>abrirLoteLembretes(b.getAttribute('data-lote'))));
+  document.querySelectorAll('[data-agcol]').forEach(col=>col.addEventListener('click',e=>{
+    if(e.target!==col) return;
+    const ini=parseInt(col.getAttribute('data-agini'),10), y=e.offsetY;
+    const m=ini+Math.floor(y/SLOT_PX)*SLOT_MIN;
+    openAgendamentoForm(null);
+    const h=document.getElementById('agHorarioForm'), d=document.getElementById('agDentista');
+    if(h) h.value=minParaHHMM(m);
+    if(d && [...d.options].some(o=>o.value===col.getAttribute('data-agcol'))) d.value=col.getAttribute('data-agcol');
+    const area=document.getElementById('agendaFormArea'); if(area) area.scrollIntoView({behavior:'smooth',block:'start'});
+  }));
+  const navAg=(dir)=>{
+    if(agendaViewMode==='lembretes'){ if(!agendaLembData) agendaLembData=addDaysStr(hojeISO(),1); agendaLembData=dir===0?addDaysStr(hojeISO(),1):addDaysStr(agendaLembData,dir); }
+    else if(agendaViewMode==='semana') agendaViewDate=dir===0?hojeISO():addDaysStr(agendaViewDate,7*dir);
+    else if(agendaViewMode==='mes') agendaViewDate=dir===0?hojeISO():shiftMonth(agendaViewDate.slice(0,7),dir)+'-01';
+    else agendaViewDate=dir===0?hojeISO():addDaysStr(agendaViewDate,dir);
+    agendaSelId=null; render();
+  };
+  const agNavPrev=document.getElementById('agNavPrev'), agNavNext=document.getElementById('agNavNext'), agNavHoje=document.getElementById('agNavHoje');
+  if(agNavPrev) agNavPrev.addEventListener('click',()=>navAg(-1));
+  if(agNavNext) agNavNext.addEventListener('click',()=>navAg(1));
+  if(agNavHoje) agNavHoje.addEventListener('click',()=>navAg(0));
   document.querySelectorAll('[data-dashgo]').forEach(b=>b.addEventListener('click',()=>{
     const g=b.getAttribute('data-dashgo'); patientDetailId=null;
     if(g==='agenda'){ currentTab='agenda'; agendaViewMode='dia'; agendaViewDate=hojeISO(); }
+    else if(g==='fin'){ currentTab='financeiro'; }
     else if(g==='inicio'){ currentTab='dashboard'; }
     else if(g.startsWith('rel:')){ currentTab='relatorios'; relatorioTab=g.slice(4); }
     render();
@@ -3557,7 +3845,7 @@ function bindEvents(){
     agendaViewMode=b.getAttribute('data-agview'); render();
   }));
   document.querySelectorAll('[data-gotodia]').forEach(b=>b.addEventListener('click',()=>{
-    agendaViewDate=b.getAttribute('data-gotodia'); agendaViewMode='dia'; render();
+    agendaViewDate=b.getAttribute('data-gotodia'); agendaViewMode='dia'; agendaSelId=null; render();
   }));
   const agPrevDia=document.getElementById('agPrevDia');
   if(agPrevDia) agPrevDia.addEventListener('click',()=>{ agendaViewDate=addDaysStr(agendaViewDate,-1); render(); });

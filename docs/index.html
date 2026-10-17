@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OdontoGestão</title>
-<meta name="theme-color" content="#F2F5F4">
+<meta name="theme-color" content="#F5F6F8">
 <script>(function(){var t='auto';try{t=localStorage.getItem('odonto-tema')||'auto'}catch(e){}var d=t==='auto'?((window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'):t;document.documentElement.setAttribute('data-theme',d);})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -16,14 +16,14 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icones/icone-192.png">
 <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
-<link rel="stylesheet" href="estilo.css?v=2.1.0">
+<link rel="stylesheet" href="estilo.css?v=2.2.0">
 </head>
 <body>
 <div id="app"><div class="wrap"><p class="muted" style="text-align:center;margin-top:30vh">Carregando…</p></div></div>
 <div id="printArea"></div>
-<script src="firebase-config.js?v=2.1.0"></script>
-<script src="nuvem.js?v=2.1.0"></script>
-<script src="app.js?v=2.1.0"></script>
+<script src="firebase-config.js?v=2.2.0"></script>
+<script src="nuvem.js?v=2.2.0"></script>
+<script src="app.js?v=2.2.0"></script>
 <script>
 if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e)));
