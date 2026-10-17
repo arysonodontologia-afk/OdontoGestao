@@ -574,3 +574,56 @@ table.tv th:nth-child(1){width:52%} table.tv th:nth-child(2){width:16%} table.tv
 .print-tabela .pt-sub{font-size:9pt;color:#333}
 
 .cel-saudacao{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--text)}
+
+/* ---------- formulários enviados ao paciente (anamnese e termo) ---------- */
+.tag-pac{display:inline-block;font-size:11.5px;font-weight:600;color:var(--primary-d);background:var(--primary-soft);border-radius:6px;padding:1px 7px;margin-left:4px;vertical-align:1px}
+[data-theme=dark] .tag-pac{color:var(--primary-d)}
+.chk-linha{display:flex!important;align-items:flex-start;gap:9px;font-size:14px!important;color:var(--text)!important;font-weight:500;line-height:1.4;cursor:pointer}
+.chk-linha input{margin-top:2px;width:18px;height:18px;flex-shrink:0}
+.erro-campo{color:var(--danger);font-size:13px;margin:8px 0 0;min-height:1em}
+.modal.env-form{max-width:620px;width:100%;max-height:calc(100vh - 32px);overflow:auto}
+.modal.rev-form{max-width:680px;width:100%;max-height:calc(100vh - 32px);overflow:auto}
+.rev-corpo{border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--surface-2);max-height:55vh;overflow:auto}
+.rev-termo p{font-size:13.5px;line-height:1.55;margin:8px 0}
+.assin-bloco{margin-top:18px;padding-top:12px;border-top:1px dashed var(--border-strong);text-align:center;font-size:13.5px}
+.assin-img{display:inline-block;background:#fff;border-radius:8px;padding:4px 10px}
+.assin-img img{display:block;max-width:260px;max-height:90px;width:auto;height:auto}
+.assin-linha{width:240px;max-width:80%;border-top:1px solid var(--text-2);margin:2px auto 4px}
+.assin-meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+.a4-sheet .assin-bloco{border-top:none;margin-top:0;padding-top:0;font-size:10.5pt}
+.a4-sheet .assin-img{padding:0}
+.a4-sheet .assin-img img{max-height:22mm;max-width:65mm}
+.a4-sheet .assin-linha{width:70mm;border-top-color:#000}
+.a4-sheet .assin-meta{font-size:8pt;color:#444}
+.a4-sheet .termo-via{padding:12mm 16mm}
+.a4-sheet .termo-assin{display:flex;gap:10mm;align-items:flex-end;justify-content:space-around;margin-top:8mm;text-align:center;font-size:10.5pt}
+.a4-sheet .termo-col{flex:1;min-width:0}
+.a4-sheet .termo-nota{font-size:8pt;color:#444;margin:6mm 0 0;text-align:center}
+@media print{ #printArea .via.termo-via{height:auto;overflow:visible;padding:4mm 8mm} }
+
+/* página pública que o paciente abre pelo link */
+body.pagina-publica{background:var(--bg)}
+.pub{max-width:640px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+.pub-cab{display:flex;align-items:center;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+.pub-logo{max-height:44px;max-width:110px;object-fit:contain;border-radius:6px;background:#fff}
+.pub-clin{font-weight:600;font-size:16px}
+.pub-tel{font-size:13px;color:var(--muted)}
+.pub-corpo{flex:1;padding:18px 16px 8px}
+.pub-corpo h1{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:4px 0 8px}
+.pub-corpo h2{font-size:16px;font-weight:600;margin:0 0 8px}
+.pub-intro{margin:0 0 6px;color:var(--text-2);line-height:1.5}
+.pub-prazo{margin:0 0 14px;font-size:13px;color:var(--muted)}
+.pub-cartao{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px 16px;margin-bottom:14px}
+.pub-cartao>label:first-child,.pub-cartao .row:first-child label{margin-top:0}
+.pub-q{margin-bottom:6px}
+.pub-termo p{line-height:1.6;margin:0 0 10px;color:var(--text-2)}
+.pub-dica{font-size:12.5px;color:var(--muted);margin:5px 0 0}
+.pub-erro{color:var(--danger);font-weight:500;font-size:14px;min-height:1.2em;margin:12px 0 0}
+.pub-enviar{width:100%;height:50px;font-size:16px;margin-top:10px}
+.pub-rod{padding:14px 16px 26px;font-size:12px;color:var(--muted);text-align:center}
+.pub-ok{text-align:center;padding:40px 8px}
+.pub-ok-ico{width:64px;height:64px;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-size:32px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.assin-pad{position:relative;border:1.5px dashed var(--border-strong);border-radius:12px;background:#fff;overflow:hidden}
+.assin-pad canvas{display:block;width:100%;height:190px;touch-action:none;cursor:crosshair}
+.assin-dica{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#9aa6b0;font-size:15px;pointer-events:none}
+.assin-limpar{position:absolute;right:8px;top:8px;padding:6px 12px;font-size:13px;background:#fff!important;color:#2B3742!important;border:1px solid #D5DBE1!important}

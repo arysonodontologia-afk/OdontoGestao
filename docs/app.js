@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.3.1';
+const APP_VERSION='2.4.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -1728,10 +1728,10 @@ function renderDocumentacao(p){
   }
   if(docFormType) return renderDocumentoForm(p, docFormType);
   const list=p.documentos.slice().sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
-  const rows=list.map(d=>`<tr><td>${fmtDataBR(d.data)}</td><td>${d.tipo==='atestado'?'Atestado Odontológico':'Declaração de Comparecimento'}</td>
+  const rows=list.map(d=>`<tr><td>${fmtDataBR(d.data)}</td><td>${d.tipo==='atestado'?'Atestado Odontológico':d.tipo==='termo'?'Termo de Consentimento'+(d.procedimento?' — '+esc(d.procedimento):'')+' <span class="tag-pac">Assinado</span>':'Declaração de Comparecimento'}</td>
     <td class="actions"><button class="btn-s" data-viewdoc="${d.id}">Ver / Imprimir</button><button class="btn-d" data-deldoc="${d.id}">Excluir</button></td></tr>`).join('');
   return `<div class="card"><h3>Documentação</h3>
-  <p class="muted">Gere documentos padronizados conforme o modelo do CFO.</p>
+  <p class="muted">Gere documentos padronizados conforme o modelo do CFO.${NUVEM?' Termos de consentimento assinados pelo paciente (aba Anamnese → Enviar para o paciente) também ficam aqui.':''}</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <button class="btn-p" data-newdoc="atestado">+ Atestado Odontológico</button>
     <button class="btn-p" data-newdoc="declaracao">+ Declaração de Comparecimento</button>
@@ -1790,6 +1790,7 @@ function renderDocumentoForm(p, tipo){
   </form></div>`;
 }
 function renderDocumentoView(p, d){
+  if(d.tipo==='termo') return renderTermoView(p,d);
   const c=state.clinic||{};
   const ident=[]; if(p.rg) ident.push('RG nº '+esc(p.rg)); if(p.cpf) ident.push('CPF/MF nº '+esc(p.cpf));
   const identTxt=ident.length?', '+ident.join(' / '):'';
@@ -2716,6 +2717,7 @@ function render(){
   if(NUVEM) bindNuvemEvents();
   bindTema();
   bindEvents();
+  if(NUVEM) bindFormularios();
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
 }
@@ -2938,6 +2940,8 @@ function renderDashboard(){
     const pacs=new Set(venc.map(e=>e.pacienteId)).size;
     pend.push(`<button class="pend" data-dashgo="rel:inadimplencia"><span><span class="pend-tit">Parcelas vencidas</span><span class="pend-sub">${venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' de '+pacs+' paciente'+(pacs>1?'s':''):'Nenhuma em atraso'}</span></span><span class="pend-num${venc.length?' ruim':''}">${venc.length}</span></button>`);
   }
+  const resp=(NUVEM&&perms.pacientes)?(state.formularios||[]).filter(f=>f.status==='respondido'):[];
+  if(resp.length) pend.push(`<button class="pend" data-formsresp="1"><span><span class="pend-tit">Formulários devolvidos</span><span class="pend-sub">Anamneses e termos assinados pelos pacientes, para revisar</span></span><span class="pend-num">${resp.length}</span></button>`);
   const alv=(u.tipo==='master'||perms.clinica)?alvaraAviso(state.clinic):null;
   if(alv) pend.push(`<button class="pend" data-tab="configuracoes"><span><span class="pend-tit">Alvará sanitário</span><span class="pend-sub">${esc(alv.txt)}</span></span><span class="pend-num${alv.ruim?' ruim':''}">!</span></button>`);
   const ult=state.meta&&state.meta.ultimoBackup, dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
@@ -3258,7 +3262,7 @@ function renderAnamneseList(p){
   const list=(p.anamneses||[]).slice().sort((x,y)=>(y.dataPreenchimento||'').localeCompare(x.dataPreenchimento||''));
   const rows=list.map(r=>`<tr>
     <td>${esc(r.dataPreenchimento)}</td>
-    <td><span class="badge ${r.tipo==='odontologica'?'b-dent':'b-harm'}">${r.tipo==='odontologica'?'Odontológica':'Harmonização Facial'}</span></td>
+    <td><span class="badge ${r.tipo==='odontologica'?'b-dent':'b-harm'}">${r.tipo==='odontologica'?'Odontológica':'Harmonização Facial'}</span>${r.origem==='paciente'?' <span class="tag-pac">Assinada pelo paciente</span>':''}</td>
     <td class="actions"><button class="btn-s" data-viewanamnese="${r.id}">${r.finalizado?'Visualizar':'Continuar preenchimento'}</button>
     <button class="btn-d" data-delanamnese="${r.id}">Excluir</button></td></tr>`).join('');
   return `<div class="card"><h3>Anamneses do paciente</h3>
@@ -3268,14 +3272,11 @@ function renderAnamneseList(p){
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <button class="btn-p" data-newanamnese="odontologica">+ Nova Anamnese Odontológica</button>
     <button class="btn-p" data-newanamnese="harmonizacao">+ Nova Anamnese de Harmonização Facial</button>
-  </div></div>`;
+  </div></div>${NUVEM?formsEnviadosHtml(p):''}`;
 }
 
-function renderAnamneseOdonto(rec){
-  const a = Object.assign(defaultAnamnese(), rec.dados||{});
-  return `<div class="card"><h3>Anamnese Odontológica</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)}</p>
-  <form id="fAnamnese">
-  <div class="row">
+function anamneseOdontoCampos(a){
+  return `  <div class="row">
     <div><label>Está em tratamento médico atualmente?</label><select id="anTratamento"><option ${a.tratamentoMedico==='Não'?'selected':''}>Não</option><option ${a.tratamentoMedico==='Sim'?'selected':''}>Sim</option></select></div>
     <div><label>Qual?</label><input id="anTratamentoQual" value="${esc(a.tratamentoQual)}"></div>
   </div>
@@ -3308,11 +3309,11 @@ function renderAnamneseOdonto(rec){
   </div>
   <div class="row">
     <div><label>Fumante</label><select id="anFumante"><option ${a.fumante==='Não'?'selected':''}>Não</option><option ${a.fumante==='Sim'?'selected':''}>Sim</option></select></div>
-    <div><label>Etilista</label><select id="anEtilista"><option ${a.etilista==='Não'?'selected':''}>Não</option><option ${a.etilista==='Sim'?'selected':''}>Sim</option></select></div>
+    <div><label>Bebe álcool com frequência</label><select id="anEtilista"><option ${a.etilista==='Não'?'selected':''}>Não</option><option ${a.etilista==='Sim'?'selected':''}>Sim</option></select></div>
   </div>
   <div class="row">
     <div><label>Sangramento gengival espontâneo</label><select id="anSangramento"><option ${a.sangramentoGengival==='Não'?'selected':''}>Não</option><option ${a.sangramentoGengival==='Sim'?'selected':''}>Sim</option></select></div>
-    <div><label>Bruxismo</label><select id="anBruxismo"><option ${a.bruxismo==='Não'?'selected':''}>Não</option><option ${a.bruxismo==='Sim'?'selected':''}>Sim</option></select></div>
+    <div><label>Range ou aperta os dentes (bruxismo)</label><select id="anBruxismo"><option ${a.bruxismo==='Não'?'selected':''}>Não</option><option ${a.bruxismo==='Sim'?'selected':''}>Sim</option></select></div>
     <div><label>Usa fio dental</label><select id="anFioDental"><option ${a.fioDental==='Não'?'selected':''}>Não</option><option ${a.fioDental==='Sim'?'selected':''}>Sim</option></select></div>
   </div>
   <div class="row">
@@ -3320,6 +3321,30 @@ function renderAnamneseOdonto(rec){
     <div><label>Frequência de escovação diária</label><input id="anEscovacao" value="${esc(a.escovacaoDiaria)}" placeholder="ex: 3x ao dia"></div>
   </div>
   <label>Observações gerais</label><input id="anObservacoes" value="${esc(a.observacoes)}">
+`;
+}
+function lerAnamneseOdonto(){
+  const g=id=>document.getElementById(id);
+  return {
+    tratamentoMedico:g('anTratamento').value, tratamentoQual:g('anTratamentoQual').value,
+    medicamentosContinuos:g('anMedicamentos').value, alergiaMedicamentos:g('anAlergiaMed').value,
+    alergiaAnestesico:g('anAlergiaAnest').value, alergiaAnestesicoDetalhe:g('anAlergiaAnestDet').value,
+    alergiaLatex:g('anAlergiaLatex').value,
+    docDiabetes:g('docDiabetes').checked, docHipertensao:g('docHipertensao').checked, docCardiopatia:g('docCardiopatia').checked,
+    docRenal:g('docRenal').checked, docHepatite:g('docHepatite').checked, docHiv:g('docHiv').checked,
+    docRespiratoria:g('docRespiratoria').checked, docCoagulacao:g('docCoagulacao').checked, docEpilepsia:g('docEpilepsia').checked,
+    docOsteoporose:g('docOsteoporose').checked, docCancer:g('docCancer').checked, docOutras:g('docOutras').value,
+    gestante:g('anGestante').value, gestanteMeses:g('anGestanteMeses').value, amamentando:g('anAmamentando').value,
+    fumante:g('anFumante').value, etilista:g('anEtilista').value,
+    sangramentoGengival:g('anSangramento').value, bruxismo:g('anBruxismo').value, fioDental:g('anFioDental').value,
+    ultimaVisita:g('anUltimaVisita').value, escovacaoDiaria:g('anEscovacao').value, observacoes:g('anObservacoes').value
+  };
+}
+function renderAnamneseOdonto(rec){
+  const a = Object.assign(defaultAnamnese(), rec.dados||{});
+  return `<div class="card"><h3>Anamnese Odontológica</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)}</p>
+  <form id="fAnamnese">
+${anamneseOdontoCampos(a)}
   <p class="muted" style="margin-top:8px">⚠️ Após salvar, esta anamnese vira um documento e não poderá mais ser editada — apenas visualizada.</p>
   <div style="margin-top:16px"><button class="btn-p">Salvar Anamnese</button> <button type="button" id="btnBackAnamnese" class="btn-s">Voltar</button></div>
   </form></div>`;
@@ -3335,12 +3360,12 @@ function renderHarmonizacao(rec){
   </form></div>`;
 }
 
-function renderAnamneseOdontoView(rec){
+function anamneseOdontoLinhas(dados){
+  const rec={dados};
   const a=Object.assign(defaultAnamnese(), rec.dados||{});
   const doencas=[['docDiabetes','Diabetes'],['docHipertensao','Hipertensão'],['docCardiopatia','Cardiopatia'],['docRenal','Problema renal'],['docHepatite','Hepatite'],['docHiv','HIV/AIDS'],['docRespiratoria','Doença respiratória/Asma'],['docCoagulacao','Distúrbio de coagulação'],['docEpilepsia','Epilepsia'],['docOsteoporose','Osteoporose/Bisfosfonatos'],['docCancer','Câncer/Quimioterapia']]
     .filter(d=>a[d[0]]).map(d=>d[1]).join(', ')||'Nenhuma';
-  return `<div class="card"><h3>Anamnese Odontológica</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)} · Documento finalizado (somente leitura)</p>
-  ${fieldRow('Está em tratamento médico atualmente?', a.tratamentoMedico+(a.tratamentoQual?' — '+a.tratamentoQual:''))}
+  return `  ${fieldRow('Está em tratamento médico atualmente?', a.tratamentoMedico+(a.tratamentoQual?' — '+a.tratamentoQual:''))}
   ${fieldRow('Medicamentos de uso contínuo', a.medicamentosContinuos)}
   ${fieldRow('Alergia a medicamentos', a.alergiaMedicamentos)}
   ${fieldRow('Já teve reação a anestésico odontológico?', a.alergiaAnestesico+(a.alergiaAnestesicoDetalhe?' — '+a.alergiaAnestesicoDetalhe:''))}
@@ -3350,28 +3375,374 @@ function renderAnamneseOdontoView(rec){
   ${fieldRow('Gestante', a.gestante+(a.gestanteMeses?' — '+a.gestanteMeses+' meses':''))}
   ${fieldRow('Amamentando', a.amamentando)}
   ${fieldRow('Fumante', a.fumante)}
-  ${fieldRow('Etilista', a.etilista)}
+  ${fieldRow('Bebe álcool com frequência', a.etilista)}
   ${fieldRow('Sangramento gengival espontâneo', a.sangramentoGengival)}
-  ${fieldRow('Bruxismo', a.bruxismo)}
+  ${fieldRow('Range ou aperta os dentes (bruxismo)', a.bruxismo)}
   ${fieldRow('Usa fio dental', a.fioDental)}
   ${fieldRow('Última visita ao dentista', a.ultimaVisita)}
   ${fieldRow('Frequência de escovação diária', a.escovacaoDiaria)}
   ${fieldRow('Observações gerais', a.observacoes)}
+`;
+}
+function renderAnamneseOdontoView(rec){
+  return `<div class="card"><h3>Anamnese Odontológica</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)}${rec.origem==='paciente'?' pelo paciente, pelo link':''} · Documento finalizado (somente leitura)</p>
+  ${anamneseOdontoLinhas(rec.dados)}
+  ${rec.assinaturaId?assinaturaHtml(rec):''}
   <div style="margin-top:16px"><button type="button" id="btnBackAnamnese" class="btn-s">Voltar</button></div>
   </div>`;
 }
 
-function renderHarmonizacaoView(rec){
-  const dados=rec.dados||{};
-  const rows=harmQuestions.map(q=>{
+function harmLinhas(dados){
+  dados=dados||{};
+  return harmQuestions.map(q=>{
     let val=dados[q.id]||'-';
     if(q.type==='ynd' && dados[q.id]==='Sim' && dados[q.id+'_det']) val+=' — '+dados[q.id+'_det'];
     return fieldRow(q.label, val);
   }).join('');
-  return `<div class="card"><h3>Anamnese - Harmonização Facial</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)} · Documento finalizado (somente leitura)</p>
+}
+function renderHarmonizacaoView(rec){
+  const rows=harmLinhas(rec.dados)+(rec.assinaturaId?assinaturaHtml(rec):'');
+  return `<div class="card"><h3>Anamnese - Harmonização Facial</h3><p class="muted">Preenchida em ${esc(rec.dataPreenchimento)}${rec.origem==='paciente'?' pelo paciente, pelo link':''} · Documento finalizado (somente leitura)</p>
   ${rows}
   <div style="margin-top:16px"><button type="button" id="btnBackAnamnese" class="btn-s">Voltar</button></div>
   </div>`;
+}
+
+// =====================================================================
+// Formulários enviados ao paciente pelo WhatsApp
+// (anamnese odontológica, anamnese de harmonização e termo de consentimento)
+// A clínica gera um link pessoal; o paciente preenche no celular, assina
+// com o dedo e devolve. A resposta volta para revisão antes de entrar no
+// prontuário.
+// =====================================================================
+const FORM_TIPOS={odontologica:'Anamnese odontológica',harmonizacao:'Anamnese de harmonização facial',termo:'Termo de consentimento'};
+const TERMO_TITULO='Termo de consentimento livre e esclarecido';
+const TERMO_PADRAO=`Eu, {paciente}, declaro que fui informado(a) de forma clara pelo(a) {dentista}, da {clinica}, sobre o procedimento: {procedimento}.
+
+Recebi explicações sobre o diagnóstico, os objetivos do tratamento, as etapas, o tempo estimado, os custos e as alternativas disponíveis, inclusive a de não realizar o tratamento e suas consequências.
+
+Fui esclarecido(a) de que todo procedimento odontológico ou de harmonização orofacial pode trazer riscos e efeitos indesejados, como dor, inchaço, sangramento, hematoma, sensibilidade, infecção, reação alérgica e alteração temporária (raramente permanente) da sensibilidade, e de que o resultado depende também da resposta do meu organismo e dos meus cuidados, não podendo ser garantido de forma absoluta.
+
+Comprometo-me a seguir as orientações recebidas, comparecer às consultas de retorno, informar qualquer alteração na minha saúde ou nos medicamentos que uso e avisar a clínica imediatamente em caso de qualquer intercorrência.
+
+Declaro que as informações de saúde que prestei são verdadeiras e completas.
+
+Autorizo o registro do tratamento em prontuário, inclusive por fotografias e radiografias, para fins clínicos, com sigilo garantido nos termos do Código de Ética Odontológica e da Lei Geral de Proteção de Dados (Lei nº 13.709/2018).
+
+Tive a oportunidade de fazer perguntas, que foram respondidas de forma satisfatória, e sei que posso revogar este consentimento a qualquer momento antes da realização do procedimento.
+
+Por estar de acordo, assino este termo de forma livre e esclarecida.`;
+
+function formsDoPaciente(pid){ return (state.formularios||[]).filter(f=>f.pacienteId===pid).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)); }
+function formSituacao(f){ if(f.status==='respondido') return 'respondido'; return f.expiraEm && f.expiraEm<Date.now()?'vencido':'pendente'; }
+function linkFormulario(token){ return location.origin+location.pathname+'?f='+encodeURIComponent(token); }
+function fmtDH(v){ if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}); }
+function fmtDM(ms){ return new Date(ms).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
+function assinaturasDoPaciente(p){
+  return [...(p.anamneses||[]),...(p.documentos||[])].map(x=>x.assinaturaId).filter(Boolean);
+}
+function termoParagrafos(t){ return String(t||'').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean).map(x=>`<p>${esc(x).replace(/\n/g,'<br>')}</p>`).join(''); }
+function assinaturaHtml(r,src){
+  const img=src?`<img src="${esc(src)}" alt="Assinatura de ${esc(r.assinante||'')}">`:`<img data-imgid="${esc(r.assinaturaId)}" alt="Assinatura de ${esc(r.assinante||'')}">`;
+  return `<div class="assin-bloco"><div class="assin-img">${img}</div><div class="assin-linha"></div>
+    <div><strong>${esc(r.assinante||'')}</strong>${r.docAssinante?' · CPF '+esc(r.docAssinante):''}</div>
+    <div class="assin-meta">Assinado eletronicamente pelo link pessoal enviado pela clínica em ${esc(fmtDH(r.assinadoEm))}</div></div>`;
+}
+function msgFormulario(f,p){
+  const c=state.clinic||{}, nome=(p.nome||'').split(' ')[0];
+  const oque={odontologica:'preencha sua ficha de saúde (anamnese)',harmonizacao:'preencha sua ficha de saúde para a harmonização facial (anamnese)',termo:'leia o termo de consentimento do seu tratamento'}[f.tipo];
+  return `Olá, ${nome}! Aqui é da ${c.nome||'clínica'}. Para agilizar seu atendimento, ${oque} pelo link abaixo e assine no final, com o dedo, na tela do celular. Leva poucos minutos.\n\n${linkFormulario(f.token)}\n\nO link é pessoal e vale até ${fmtDM(f.expiraEm)}.`;
+}
+function enviarFormZap(f,p){
+  const msg=msgFormulario(f,p);
+  if(!telefoneWhatsApp(p.telefone)){ mostrarMensagem('Este paciente não tem telefone cadastrado. Copie a mensagem e envie por outro meio:',msg); return; }
+  abrirWhatsApp(p,msg);
+}
+function copiarTexto(txt,ok){
+  const falha=()=>mostrarMensagem('Copie o link abaixo:',txt);
+  try{ navigator.clipboard.writeText(txt).then(()=>avisar(ok||'Copiado.')).catch(falha); }catch(e){ falha(); }
+}
+
+function formsEnviadosHtml(p){
+  if(!podeUsar('pacientes')) return '';
+  const lista=formsDoPaciente(p.id);
+  const sit={pendente:f=>`<span class="sit sit-agendado">Aguardando · vale até ${fmtDM(f.expiraEm)}</span>`,
+    vencido:()=>'<span class="sit sit-faltou">Link vencido</span>',
+    respondido:f=>`<span class="sit sit-chegou">Respondido em ${esc(fmtDH(f.respondidoEm))}</span>`};
+  const linhas=lista.map(f=>{
+    const s=formSituacao(f);
+    const ac=s==='respondido'?`<button class="btn-p" data-formrev="${esc(f.token)}">Revisar e salvar</button>`
+      :s==='pendente'?`<button class="btn-s" data-formzap="${esc(f.token)}">Reenviar</button><button class="btn-s" data-formcopiar="${esc(f.token)}">Copiar link</button><button class="btn-d" data-formcancelar="${esc(f.token)}">Cancelar</button>`
+      :`<button class="btn-d" data-formcancelar="${esc(f.token)}">Excluir</button>`;
+    return `<tr><td>${esc(FORM_TIPOS[f.tipo]||f.tipo)}${f.procedimento?`<div class="muted" style="font-size:12.5px">${esc(f.procedimento)}</div>`:''}</td><td>${esc(fmtDH(f.criadoEm))}</td><td>${sit[s](f)}</td><td class="actions">${ac}</td></tr>`;
+  }).join('');
+  return `<div class="card"><h3>Enviar para o paciente preencher</h3>
+  <p class="muted">O paciente recebe um link pelo WhatsApp, preenche no celular e assina com o dedo. A resposta volta para cá e você revisa antes de salvar no prontuário.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn-s" data-envform="odontologica">Anamnese odontológica</button>
+    <button class="btn-s" data-envform="harmonizacao">Anamnese de harmonização</button>
+    <button class="btn-s" data-envform="termo">Termo de consentimento</button>
+  </div>
+  ${lista.length?`<div class="overflow" style="margin-top:14px"><table><thead><tr><th>Formulário</th><th>Enviado em</th><th>Situação</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`:''}
+  </div>`;
+}
+function podeUsar(perm){ const u=currentUser(); if(!u) return false; if(u.tipo==='master') return true; return !!permsDe(u)[perm]; }
+
+function abrirEnvioFormulario(p,tipo){
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  const modelo=(state.meta&&state.meta.termoModelo)||TERMO_PADRAO;
+  bg.innerHTML=`<div class="modal env-form" style="text-align:left" role="dialog" aria-label="Enviar ${esc(FORM_TIPOS[tipo])}">
+    <h3 style="margin:0 0 4px">Enviar ${esc(FORM_TIPOS[tipo].toLowerCase())}</h3>
+    <p class="muted" style="margin:0 0 6px">Para <strong>${esc(p.nome)}</strong>${p.telefone?' · '+esc(p.telefone):' · <span style="color:var(--danger)">sem telefone cadastrado</span>'}</p>
+    ${tipo==='termo'?`<div class="row">
+      <div><label>Procedimento</label><input data-ef="proc" placeholder="Ex: Exodontia do dente 38"></div>
+      <div><label>Dentista responsável</label><select data-ef="dent">${dentistaOptionsHtml('',false)}</select></div></div>
+      <label>Texto do termo</label><textarea class="ta" rows="9" data-ef="texto">${esc(modelo)}</textarea>
+      <p class="muted" style="margin:4px 0 0;font-size:12.5px">{paciente}, {procedimento}, {dentista} e {clinica} são trocados automaticamente. Este é um modelo geral: revise o texto com a sua assessoria jurídica ou o CRO.</p>
+      <label class="chk-linha"><input type="checkbox" data-ef="padrao"> Guardar este texto como modelo da clínica</label>`:''}
+    <label>O link vale por</label><select data-ef="dias"><option value="2">2 dias</option><option value="7" selected>7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option></select>
+    <p class="erro-campo" data-ef="erro" role="alert"></p>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn-s" data-ef="nao">Cancelar</button><button class="btn-p" data-ef="ok">Enviar pelo WhatsApp</button></div></div>`;
+  document.body.appendChild(bg);
+  const q=k=>bg.querySelector(`[data-ef="${k}"]`);
+  const fechar=()=>bg.remove();
+  q('nao').addEventListener('click',fechar);
+  bg.addEventListener('click',e=>{ if(e.target===bg) fechar(); });
+  q('ok').addEventListener('click',()=>{
+    const c=state.clinic||{}, dias=+q('dias').value||7;
+    const dados={tipo,pacienteId:p.id,pacienteNome:p.nome||'',clinicaNome:c.nome||'',clinicaTel:c.whatsapp||c.telefone||''};
+    if(c.logo && c.logo.length<150000) dados.clinicaLogo=c.logo;
+    if(tipo==='termo'){
+      const proc=q('proc').value.trim(), d=state.users.find(u=>u.id===q('dent').value), bruto=q('texto').value.trim();
+      if(!proc){ q('erro').textContent='Informe o procedimento.'; q('proc').focus(); return; }
+      if(!d){ q('erro').textContent='Selecione o dentista responsável.'; q('dent').focus(); return; }
+      if(bruto.length<40){ q('erro').textContent='O texto do termo está muito curto.'; q('texto').focus(); return; }
+      if(q('padrao').checked){ state.meta=state.meta||{}; state.meta.termoModelo=bruto; saveData(); }
+      const troca={paciente:p.nome||'',procedimento:proc,dentista:nomeExibicao(d),clinica:c.nome||'clínica'};
+      Object.assign(dados,{procedimento:proc,dentistaNome:nomeExibicao(d),dentistaCro:d.cro||'',termoTitulo:TERMO_TITULO,
+        termoTexto:bruto.replace(/\{(paciente|procedimento|dentista|clinica)\}/g,(m,k)=>troca[k])});
+    }
+    let token;
+    try{ token=Nuvem.criarFormulario(dados,dias); }catch(e){ q('erro').textContent=Nuvem.mapErro(e); return; }
+    fechar();
+    enviarFormZap(Object.assign({},dados,{token,expiraEm:Date.now()+dias*86400000}),p);
+    setTimeout(()=>{ if(view==='home') render(); },300);
+  });
+}
+
+function limparRespostas(tipo,r){
+  r=r||{}; const out={};
+  const permitidas=tipo==='odontologica'?Object.keys(defaultAnamnese()):tipo==='harmonizacao'?harmQuestions.flatMap(q=>q.type==='ynd'?[q.id,q.id+'_det']:[q.id]):[];
+  permitidas.forEach(k=>{ const v=r[k]; if(typeof v==='boolean') out[k]=v; else if(v!==undefined && v!==null) out[k]=String(v).slice(0,2000); });
+  return out;
+}
+function respostasHtml(f){
+  if(f.tipo==='odontologica') return anamneseOdontoLinhas(limparRespostas('odontologica',f.respostas));
+  if(f.tipo==='harmonizacao') return harmLinhas(limparRespostas('harmonizacao',f.respostas));
+  return `<div class="rev-termo"><strong>${esc(f.termoTitulo||TERMO_TITULO)}</strong>${termoParagrafos(f.termoTexto)}<p><strong>Procedimento:</strong> ${esc(f.procedimento||'')}<br><strong>Profissional:</strong> ${esc(f.dentistaNome||'')}</p></div>`;
+}
+function abrirRevisaoFormulario(token){
+  const f=(state.formularios||[]).find(x=>x.token===token); if(!f) return;
+  const p=state.patients.find(x=>x.id===f.pacienteId);
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal rev-form" style="text-align:left" role="dialog" aria-label="Revisar formulário">
+    <h3 style="margin:0 0 4px">${esc(FORM_TIPOS[f.tipo]||'Formulário')}</h3>
+    <p class="muted" style="margin:0 0 12px">${p?'Paciente: <strong>'+esc(p.nome)+'</strong> · ':'<span style="color:var(--danger)">O paciente deste formulário foi excluído.</span> '}Respondido em ${esc(fmtDH(f.respondidoEm))}</p>
+    <div class="rev-corpo">${respostasHtml(f)}
+    ${assinaturaHtml({assinante:f.nomeAssinante,docAssinante:f.docAssinante,assinadoEm:f.respondidoEm},f.assinatura)}</div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn-d" data-rv="descartar">Descartar</button><button class="btn-s" data-rv="fechar">Fechar</button>
+      ${p?`<button class="btn-p" data-rv="salvar">Salvar no prontuário</button>`:''}</div></div>`;
+  document.body.appendChild(bg);
+  const fechar=()=>bg.remove();
+  bg.querySelector('[data-rv="fechar"]').addEventListener('click',fechar);
+  bg.addEventListener('click',e=>{ if(e.target===bg) fechar(); });
+  bg.querySelector('[data-rv="descartar"]').addEventListener('click',()=>{
+    customConfirm('Descartar estas respostas? Elas não serão salvas no prontuário.',()=>{ fechar(); Nuvem.apagarFormulario(f.token); render(); });
+  });
+  const bs=bg.querySelector('[data-rv="salvar"]');
+  if(bs) bs.addEventListener('click',async()=>{
+    bs.disabled=true; bs.textContent='Salvando…';
+    try{ await importarFormulario(f,p); fechar(); avisar(f.tipo==='termo'?'Termo salvo na aba Documentação do paciente.':'Anamnese salva no prontuário do paciente.'); render(); }
+    catch(e){ console.error(e); bs.disabled=false; bs.textContent='Salvar no prontuário'; avisar('Não foi possível salvar: '+((e&&e.message)||e)); }
+  });
+}
+async function importarFormulario(f,p){
+  const assinaturaId=await salvarImagem(dataUrlToBlob(f.assinatura));
+  const quando=f.respondidoEm||Date.now();
+  const base={origem:'paciente',assinaturaId,assinante:String(f.nomeAssinante||'').slice(0,200),docAssinante:String(f.docAssinante||'').slice(0,20),
+    assinadoEm:new Date(quando).toISOString(),dispositivo:String(f.dispositivo||'').slice(0,300)};
+  const dia=isoLocal(new Date(quando));
+  if(f.tipo==='termo'){
+    p.documentos=p.documentos||[];
+    p.documentos.push(Object.assign({id:uid(),tipo:'termo',data:dia,criadoEm:dia,titulo:f.termoTitulo||TERMO_TITULO,texto:String(f.termoTexto||''),
+      procedimento:f.procedimento||'',dentistaNome:f.dentistaNome||'',dentistaCro:f.dentistaCro||''},base));
+  } else {
+    ensureAnamneses(p);
+    p.anamneses.push(Object.assign({id:uid(),tipo:f.tipo,dataPreenchimento:dia,dados:limparRespostas(f.tipo,f.respostas),finalizado:true},base));
+  }
+  saveData();
+  Nuvem.apagarFormulario(f.token);
+}
+function abrirListaRespondidos(){
+  const lista=(state.formularios||[]).filter(f=>f.status==='respondido').sort((a,b)=>(b.respondidoEm||0)-(a.respondidoEm||0));
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal rev-form" style="text-align:left"><h3 style="margin:0 0 10px">Formulários devolvidos pelos pacientes</h3>
+    ${lista.length?lista.map(f=>{ const p=state.patients.find(x=>x.id===f.pacienteId);
+      return `<div class="resp"><div style="flex:1"><strong>${esc(p?p.nome:f.pacienteNome)}</strong><div class="muted" style="font-size:12.5px">${esc(FORM_TIPOS[f.tipo]||'')} · ${esc(fmtDH(f.respondidoEm))}</div></div><button class="btn-p" data-lr="${esc(f.token)}">Revisar</button></div>`; }).join(''):'<p class="muted">Nenhum formulário aguardando revisão.</p>'}
+    <div style="margin-top:14px;text-align:right"><button class="btn-s" data-lr-fechar>Fechar</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('[data-lr-fechar]').addEventListener('click',()=>bg.remove());
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.remove(); });
+  bg.querySelectorAll('[data-lr]').forEach(b=>b.addEventListener('click',()=>{ bg.remove(); abrirRevisaoFormulario(b.getAttribute('data-lr')); }));
+}
+function bindFormularios(){
+  const pac=()=>state.patients.find(x=>x.id===patientDetailId);
+  const doToken=t=>(state.formularios||[]).find(f=>f.token===t);
+  document.querySelectorAll('[data-envform]').forEach(b=>b.addEventListener('click',()=>{ const p=pac(); if(p) abrirEnvioFormulario(p,b.getAttribute('data-envform')); }));
+  document.querySelectorAll('[data-formzap]').forEach(b=>b.addEventListener('click',()=>{ const f=doToken(b.getAttribute('data-formzap')), p=pac(); if(f&&p) enviarFormZap(f,p); }));
+  document.querySelectorAll('[data-formcopiar]').forEach(b=>b.addEventListener('click',()=>copiarTexto(linkFormulario(b.getAttribute('data-formcopiar')),'Link copiado.')));
+  document.querySelectorAll('[data-formcancelar]').forEach(b=>b.addEventListener('click',()=>{
+    const f=doToken(b.getAttribute('data-formcancelar')); if(!f) return;
+    customConfirm(formSituacao(f)==='pendente'?'Cancelar este link? O paciente não conseguirá mais abrir o formulário.':'Excluir este envio?',()=>{ Nuvem.apagarFormulario(f.token); render(); });
+  }));
+  document.querySelectorAll('[data-formrev]').forEach(b=>b.addEventListener('click',()=>abrirRevisaoFormulario(b.getAttribute('data-formrev'))));
+  document.querySelectorAll('[data-formsresp]').forEach(b=>b.addEventListener('click',abrirListaRespondidos));
+}
+
+function renderTermoView(p,d){
+  const c=state.clinic||{};
+  const sheet=`<div class="a4-sheet"><div class="via termo-via">
+    <div class="doc-head">${cabecalhoDocHtml(c,'doc-clinic','doc-sub')}</div>
+    <div class="doc-title">${esc(d.titulo||TERMO_TITULO)}</div>
+    <div class="doc-body">${termoParagrafos(d.texto)}
+      <p><strong>Paciente:</strong> ${esc(p.nome)}${p.cpf?' · CPF '+esc(p.cpf):''}<br><strong>Procedimento:</strong> ${esc(d.procedimento||'')}</p></div>
+    <div class="termo-assin">
+      <div class="termo-col">${assinaturaHtml(d)}</div>
+      <div class="termo-col termo-prof"><div class="sign-line"></div><div><strong>${esc(d.dentistaNome||'')}</strong></div><div class="doc-sub">Cirurgião-dentista${d.dentistaCro?' — CRO '+esc(d.dentistaCro):''}</div></div>
+    </div>
+    <p class="termo-nota">Documento assinado eletronicamente pelo(a) paciente em ${esc(fmtDH(d.assinadoEm))}, por meio de link pessoal enviado pela clínica${d.dispositivo?' (dispositivo: '+esc(d.dispositivo.slice(0,140))+')':''}.</p>
+  </div></div>`;
+  printSheetHtml=sheet;
+  return `<div class="card">
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <button class="btn-p" id="btnPrintDoc">🖨️ Imprimir</button>
+    <button class="btn-s" id="btnBackDoc">Voltar</button>
+  </div>
+  <p class="muted" style="margin:0 0 14px">Termo assinado pelo paciente no celular. Fica guardado no prontuário; imprima só se precisar de uma via em papel.</p>
+  ${sheet}
+  </div>`;
+}
+
+// ---------- página pública (o paciente abre o link) ----------
+function pubTela(f,inner){
+  f=f||{};
+  return `<div class="pub"><header class="pub-cab">${f.clinicaLogo?`<img src="${esc(f.clinicaLogo)}" alt="" class="pub-logo">`:''}
+    <div><div class="pub-clin">${esc(f.clinicaNome||'OdontoGestão')}</div>${f.clinicaTel?`<div class="pub-tel">${esc(f.clinicaTel)}</div>`:''}</div></header>
+    <main class="pub-corpo">${inner}</main>
+    <footer class="pub-rod">Suas respostas vão direto para o prontuário da clínica e ficam protegidas por sigilo profissional.</footer></div>`;
+}
+function padAssinatura(cv,aoMudar){
+  const cx=cv.getContext('2d'); let tracos=0, desenhando=false, ult=null, largura=0;
+  function estilo(){ cx.lineCap='round'; cx.lineJoin='round'; cx.lineWidth=2.6; cx.strokeStyle='#14202a'; cx.fillStyle='#14202a'; }
+  function ajustar(){
+    const r=cv.getBoundingClientRect(); if(!r.width || Math.round(r.width)===largura) return;
+    const dpr=Math.max(1,window.devicePixelRatio||1);
+    let antigo=null; if(tracos){ antigo=document.createElement('canvas'); antigo.width=cv.width; antigo.height=cv.height; antigo.getContext('2d').drawImage(cv,0,0); }
+    largura=Math.round(r.width); cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    cx.setTransform(1,0,0,1,0,0); if(antigo) cx.drawImage(antigo,0,0,cv.width,cv.height);
+    cx.setTransform(dpr,0,0,dpr,0,0); estilo();
+  }
+  const pos=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+  cv.addEventListener('pointerdown',e=>{
+    e.preventDefault(); ajustar(); desenhando=true; ult=pos(e);
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    cx.beginPath(); cx.arc(ult.x,ult.y,1.3,0,Math.PI*2); cx.fill();
+    tracos++; if(aoMudar) aoMudar(tracos);
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(!desenhando) return; e.preventDefault();
+    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+    cx.beginPath(); cx.moveTo(ult.x,ult.y);
+    (evs.length?evs:[e]).forEach(ev=>{ const p=pos(ev); cx.lineTo(p.x,p.y); ult=p; });
+    cx.stroke(); tracos++;
+  });
+  const fim=()=>{ desenhando=false; };
+  cv.addEventListener('pointerup',fim); cv.addEventListener('pointercancel',fim); cv.addEventListener('pointerleave',fim);
+  window.addEventListener('resize',ajustar);
+  ajustar();
+  return {
+    vazio:()=>tracos<6,
+    limpar(){ cx.save(); cx.setTransform(1,0,0,1,0,0); cx.clearRect(0,0,cv.width,cv.height); cx.restore(); tracos=0; if(aoMudar) aoMudar(0); },
+    exportar(){
+      const w=Math.min(700,cv.width), h=Math.round(cv.height*w/cv.width);
+      const o=document.createElement('canvas'); o.width=w; o.height=h;
+      const ox=o.getContext('2d'); ox.fillStyle='#fff'; ox.fillRect(0,0,w,h); ox.drawImage(cv,0,0,w,h);
+      let d=o.toDataURL('image/png'); if(d.length>280000) d=o.toDataURL('image/jpeg',0.85);
+      return d;
+    }
+  };
+}
+async function bootFormularioPublico(token){
+  const app=document.getElementById('app');
+  document.body.classList.add('pagina-publica');
+  app.innerHTML=pubTela(null,'<p class="muted" style="text-align:center;margin:30px 0">Abrindo o formulário…</p>');
+  let f=null;
+  try{ await Nuvem.iniciarPublico(); f=await Nuvem.lerFormularioPublico(token); }
+  catch(e){
+    console.error(e);
+    app.innerHTML=pubTela(null,'<h1>Sem conexão</h1><p>Não foi possível abrir o formulário. Verifique a internet e tente de novo.</p><button class="btn-p pub-enviar" onclick="location.reload()">Tentar de novo</button>');
+    return;
+  }
+  if(!f){ app.innerHTML=pubTela(null,'<h1>Link indisponível</h1><p>Este link já foi usado, venceu ou foi cancelado pela clínica. Se precisar, peça um novo link à clínica.</p>'); return; }
+  if(f.clinicaNome) document.title=f.clinicaNome;
+  const termo=f.tipo==='termo', nome=(f.pacienteNome||'').split(' ')[0];
+  let campos='';
+  if(f.tipo==='odontologica') campos=`<div class="pub-cartao">${anamneseOdontoCampos(defaultAnamnese())}</div>`;
+  else if(f.tipo==='harmonizacao') campos=`<div class="pub-cartao">${harmQuestions.map(q=>`<div class="pub-q">${questionField(q,{})}</div>`).join('')}</div>`;
+  else campos=`<div class="pub-cartao pub-termo"><h2>${esc(f.termoTitulo||TERMO_TITULO)}</h2>${termoParagrafos(f.termoTexto)}
+    <p><strong>Procedimento:</strong> ${esc(f.procedimento||'')}<br><strong>Profissional:</strong> ${esc(f.dentistaNome||'')}</p></div>`;
+  const titulo=FORM_TIPOS[f.tipo]||'Formulário';
+  app.innerHTML=pubTela(f,`<h1>${esc(titulo)}</h1>
+    <p class="pub-intro">Olá${nome?', '+esc(nome):''}! ${termo?'Leia o termo com atenção. Se tiver qualquer dúvida, fale com a clínica antes de assinar.':'Responda com calma. Essas informações ajudam o dentista a cuidar de você com segurança.'} No final, assine com o dedo e toque em <strong>Enviar</strong>.</p>
+    <p class="pub-prazo">Este link é pessoal e vale até ${esc(fmtDM(f.expiraEm))}.</p>
+    <form id="fPub" novalidate>${campos}
+      <div class="pub-cartao"><h2>Assinatura</h2>
+        <label class="chk-linha"><input type="checkbox" id="pubAceite"> ${termo?'Li este termo, tirei minhas dúvidas e concordo com ele.':'Declaro que as informações acima são verdadeiras.'}</label>
+        <label for="pubNome">Nome completo de quem assina</label><input id="pubNome" value="${esc(f.pacienteNome||'')}" autocomplete="name" maxlength="150">
+        <p class="pub-dica">Se o paciente for menor de idade, quem assina é o responsável legal.</p>
+        <label for="pubDoc">CPF de quem assina${termo?'':' (opcional)'}</label><input id="pubDoc" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" maxlength="14">
+        <label>Assine com o dedo no quadro abaixo</label>
+        <div class="assin-pad"><canvas id="pubCanvas" aria-label="Quadro de assinatura"></canvas><span class="assin-dica" id="pubDicaAss">Assine aqui</span><button type="button" class="btn-s assin-limpar" id="pubLimpar">Limpar</button></div>
+        <p class="pub-erro" id="pubErro" role="alert"></p>
+        <button class="btn-p pub-enviar" id="pubEnviar">Enviar para a clínica</button>
+      </div></form>`);
+  const g=id=>document.getElementById(id);
+  const pad=padAssinatura(g('pubCanvas'),n=>{ g('pubDicaAss').style.display=n?'none':''; });
+  g('pubLimpar').addEventListener('click',()=>pad.limpar());
+  g('pubDoc').addEventListener('input',e=>{ e.target.value=mascaraDoc(e.target.value).slice(0,14); });
+  g('fPub').addEventListener('submit',async ev=>{
+    ev.preventDefault();
+    const erro=t=>{ g('pubErro').textContent=t; g('pubErro').scrollIntoView({block:'center',behavior:'smooth'}); };
+    const nomeA=g('pubNome').value.trim(), doc=g('pubDoc').value.trim();
+    if(!g('pubAceite').checked) return erro(termo?'Marque que leu e concorda com o termo.':'Marque a declaração de que as informações são verdadeiras.');
+    if(nomeA.length<5 || nomeA.indexOf(' ')<0) return erro('Escreva o nome completo de quem assina.');
+    if(termo && !doc) return erro('Informe o CPF de quem assina.');
+    if(doc && !cpfValido(doc)) return erro('Confira o CPF: ele parece incorreto.');
+    if(pad.vazio()) return erro('Faça sua assinatura no quadro.');
+    let respostas={};
+    if(f.tipo==='odontologica') respostas=lerAnamneseOdonto();
+    else if(f.tipo==='harmonizacao') g('fPub').querySelectorAll('[data-q]').forEach(el=>{ respostas[el.getAttribute('data-q')]=String(el.value||'').slice(0,2000); });
+    const bt=g('pubEnviar'); bt.disabled=true; bt.textContent='Enviando…'; g('pubErro').textContent='';
+    try{
+      await Nuvem.responderFormularioPublico(token,{respostas,assinatura:pad.exportar(),nomeAssinante:nomeA,docAssinante:doc,dispositivo:String(navigator.userAgent||'').slice(0,300)});
+      app.innerHTML=pubTela(f,`<div class="pub-ok"><div class="pub-ok-ico" aria-hidden="true">✓</div><h1>Pronto, recebemos!</h1><p>Obrigado${nome?', '+esc(nome):''}. ${termo?'Seu termo assinado':'Suas respostas'} já ${termo?'está':'estão'} com a clínica. Pode fechar esta página.</p></div>`);
+      window.scrollTo(0,0);
+    }catch(e){
+      console.error(e); bt.disabled=false; bt.textContent='Enviar para a clínica';
+      erro(e&&e.code==='permission-denied'?'Este link venceu ou já foi respondido. Peça um novo link à clínica.':e&&e.code==='unavailable'?'Sem internet no momento. Verifique a conexão e toque em Enviar de novo.':'Não foi possível enviar. Tente de novo em instantes.');
+    }
+  });
 }
 
 function openPatientForm(p){
@@ -3606,6 +3977,8 @@ function bindEvents(){
       ` Prontuários têm prazo legal de guarda: exclua apenas cadastros feitos por engano. Na dúvida, cancele e exporte um backup antes.`;
     confirmarAcao(msg,'Excluir definitivamente',()=>{
       imagensDoPaciente(pac).forEach(removerImagem);
+      assinaturasDoPaciente(pac).forEach(removerImagem);
+      if(NUVEM) formsDoPaciente(pac.id).forEach(f=>Nuvem.apagarFormulario(f.token));
       state.agendamentos=(state.agendamentos||[]).filter(a=>a.pacienteId!==pid);
       state.patients=state.patients.filter(p=>p.id!==pid); saveData(); render();
     });
@@ -3689,6 +4062,7 @@ function bindEvents(){
   document.querySelectorAll('[data-deldoc]').forEach(b=>b.addEventListener('click',()=>{
     customConfirm('Excluir este documento?', ()=>{
       const p=state.patients.find(x=>x.id===patientDetailId);
+      const del=p.documentos.find(d=>d.id===b.getAttribute('data-deldoc')); if(del&&del.assinaturaId) removerImagem(del.assinaturaId);
       p.documentos=p.documentos.filter(d=>d.id!==b.getAttribute('data-deldoc'));
       saveData(); render();
     });
@@ -4181,6 +4555,7 @@ function bindEvents(){
   document.querySelectorAll('[data-delanamnese]').forEach(b=>b.addEventListener('click',()=>{
     customConfirm('Excluir esta anamnese?', ()=>{
       const p=state.patients.find(x=>x.id===patientDetailId);
+      const del=p.anamneses.find(r=>r.id===b.getAttribute('data-delanamnese')); if(del&&del.assinaturaId) removerImagem(del.assinaturaId);
       p.anamneses=p.anamneses.filter(r=>r.id!==b.getAttribute('data-delanamnese'));
       saveData(); render();
     });
@@ -4192,20 +4567,7 @@ function bindEvents(){
     ev.preventDefault();
     const p=state.patients.find(x=>x.id===patientDetailId);
     const rec=p.anamneses.find(r=>r.id===anamneseOpenId);
-    rec.dados={
-      tratamentoMedico:anTratamento.value, tratamentoQual:anTratamentoQual.value,
-      medicamentosContinuos:anMedicamentos.value, alergiaMedicamentos:anAlergiaMed.value,
-      alergiaAnestesico:anAlergiaAnest.value, alergiaAnestesicoDetalhe:anAlergiaAnestDet.value,
-      alergiaLatex:anAlergiaLatex.value,
-      docDiabetes:docDiabetes.checked, docHipertensao:docHipertensao.checked, docCardiopatia:docCardiopatia.checked,
-      docRenal:docRenal.checked, docHepatite:docHepatite.checked, docHiv:docHiv.checked,
-      docRespiratoria:docRespiratoria.checked, docCoagulacao:docCoagulacao.checked, docEpilepsia:docEpilepsia.checked,
-      docOsteoporose:docOsteoporose.checked, docCancer:docCancer.checked, docOutras:docOutras.value,
-      gestante:anGestante.value, gestanteMeses:anGestanteMeses.value, amamentando:anAmamentando.value,
-      fumante:anFumante.value, etilista:anEtilista.value,
-      sangramentoGengival:anSangramento.value, bruxismo:anBruxismo.value, fioDental:anFioDental.value,
-      ultimaVisita:anUltimaVisita.value, escovacaoDiaria:anEscovacao.value, observacoes:anObservacoes.value
-    };
+    rec.dados=lerAnamneseOdonto();
     rec.finalizado=true;
     saveData(); anamneseOpenId=null; render();
   });
@@ -4261,6 +4623,8 @@ function bindEvents(){
 }
 
 async function boot(){
+  const tokenForm=new URLSearchParams(location.search).get('f');
+  if(NUVEM && tokenForm) return bootFormularioPublico(tokenForm);
   if(NUVEM) return bootNuvem();
   document.getElementById('app').innerHTML='<div class="wrap"><div class="card center"><p class="muted">Carregando…</p></div></div>';
   await carregarDados();

@@ -91,14 +91,16 @@ function mapErro(e){
 }
 
 // ---------- inicialização ----------
-async function carregarSDK(){
+async function carregarSDK(publico){
   const [mApp,mAuth,mFs]=await Promise.all([
     import(SDK+'firebase-app.js'), import(SDK+'firebase-auth.js'), import(SDK+'firebase-firestore.js')]);
   A=mAuth; F=mFs;
   app=mApp.initializeApp(CFG);
   auth=A.getAuth(app); auth.languageCode='pt-BR';
   try{
-    db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
+    // página pública do paciente: nada fica guardado no aparelho dele
+    db=publico?F.initializeFirestore(app,{localCache:F.memoryLocalCache()})
+      :F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
   }catch(e){
     console.warn('Cache local indisponível; usando só memória.',e);
     db=F.initializeFirestore(app,{localCache:F.memoryLocalCache()});
@@ -110,6 +112,38 @@ async function iniciar(h){
   A.getRedirectResult(auth).catch(e=>{ if(hooks.onErroLogin) hooks.onErroLogin(mapErro(e)); });
   A.onAuthStateChanged(auth,u=>{ usuario=u; if(hooks.onAuth) hooks.onAuth(u); });
   window.addEventListener('online',status); window.addEventListener('offline',status);
+}
+
+// ---------- formulários enviados ao paciente (anamnese e termo) ----------
+let formularios=[];
+function tokenNovo(){ const b=crypto.getRandomValues(new Uint8Array(24)); return btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+const ms=v=>v&&v.toMillis?v.toMillis():(typeof v==='number'?v:0);
+// devolve o código na hora (o WhatsApp precisa abrir no mesmo clique); a gravação segue em segundo plano
+function criarFormulario(dados,dias){
+  const token=tokenNovo();
+  const doc=Object.assign({},dados,{status:'pendente',criadoEm:F.serverTimestamp(),criadoPor:meuEmail(),
+    expiraEm:F.Timestamp.fromMillis(Date.now()+(dias||7)*86400000)});
+  acompanhar(F.setDoc(ref('formularios',token),doc));
+  return token;
+}
+function apagarFormulario(token){ acompanhar(F.deleteDoc(ref('formularios',token))); }
+function ouvirFormularios(){
+  return primeiraVez('formularios','formularios',(fim,erro)=>F.onSnapshot(colRef('formularios'),OPC,snap=>{
+    formularios=snap.docs.map(d=>{ const x=d.data(); return Object.assign({},x,{token:d.id,expiraEm:ms(x.expiraEm),criadoEm:ms(x.criadoEm)||Date.now(),respondidoEm:ms(x.respondidoEm)}); });
+    const st=hooks.estado(); if(st) st.formularios=formularios;
+    if(!lidos.formularios){ if(!soCache(snap)) fim(); return; }
+    if(snap.docChanges().length && hooks.onRemoto) hooks.onRemoto('formularios');
+  },erro));
+}
+// página pública
+async function iniciarPublico(){ await carregarSDK(true); }
+async function lerFormularioPublico(token){
+  try{ const s=await F.getDocFromServer(ref('formularios',token)); if(!s.exists()) return null; const x=s.data(); return Object.assign({},x,{expiraEm:ms(x.expiraEm)}); }
+  catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
+}
+async function responderFormularioPublico(token,resp){
+  await F.updateDoc(ref('formularios',token),{status:'respondido',respostas:resp.respostas||{},assinatura:resp.assinatura,
+    nomeAssinante:resp.nomeAssinante||'',docAssinante:resp.docAssinante||'',dispositivo:resp.dispositivo||'',respondidoEm:F.serverTimestamp()});
 }
 
 // ---------- login ----------
@@ -289,6 +323,7 @@ async function conectar(ac){
   const t=[ouvirConfig(),ouvirUsuarios()];
   if(pode('usuarios')) t.push(ouvirAcessos());
   for(const key in COLS){ const c=COLS[key]; if(!c.perm || pode(c.perm)) t.push(ouvirBaldes(key)); }
+  if(pode('pacientes')) t.push(ouvirFormularios());
   ouvirMeuAcesso();
   await Promise.all(t);
   const st={clinic:srvCfg.clinica?JSON.parse(srvCfg.clinica):null, meta:srvCfg.meta?JSON.parse(srvCfg.meta):{}};
@@ -297,6 +332,7 @@ async function conectar(ac){
     const m=srv[key];
     st[key]=m?[...m.entries()].sort((a,b)=>a[1].p-b[1].p).map(([,v])=>JSON.parse(v.s)):[];
   }
+  st.formularios=formularios;
   pronto=true; status();
   return st;
 }
@@ -438,7 +474,8 @@ async function apagarImagensExceto(manter){
 
 window.Nuvem={
   ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, reenviarVerificacao, verificarDeNovo,
-  redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor, salvar, aguardarEnvio,
+  redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
+  criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],

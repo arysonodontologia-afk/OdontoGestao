@@ -88,6 +88,31 @@ service cloud.firestore {
       match /despesas/{b}      { allow read, write: if pode('financeiro'); }
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos'); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos'); }
+
+      // Formulários enviados ao paciente pelo WhatsApp (anamnese e termo).
+      // O documento é um código aleatório longo: só quem recebeu o link abre.
+      // O paciente (sem login) só lê enquanto está pendente e não venceu,
+      // e só pode devolver uma vez, preenchendo os campos de resposta.
+      match /formularios/{token} {
+        function aberto() { return resource.data.status == 'pendente' && resource.data.expiraEm > request.time; }
+        allow get: if pode('pacientes') || aberto();
+        allow list, delete: if pode('pacientes');
+        allow create: if pode('pacientes') && token.size() >= 24
+          && request.resource.data.status == 'pendente'
+          && request.resource.data.expiraEm is timestamp
+          && request.resource.data.tipo in ['odontologica', 'harmonizacao', 'termo'];
+        allow update: if aberto()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+               ['status', 'respostas', 'assinatura', 'nomeAssinante', 'docAssinante', 'dispositivo', 'respondidoEm'])
+          && request.resource.data.status == 'respondido'
+          && request.resource.data.respondidoEm == request.time
+          && request.resource.data.assinatura is string
+          && request.resource.data.assinatura.size() < 300000
+          && request.resource.data.assinatura.matches('^data:image/(png|jpeg);base64,.*')
+          && request.resource.data.respostas is map
+          && request.resource.data.nomeAssinante is string
+          && request.resource.data.nomeAssinante.size() < 200;
+      }
     }
   }
 }
