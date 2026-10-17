@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.2.0';
+const APP_VERSION='2.2.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2416,6 +2416,12 @@ function podeAtualizarSozinho(){
   return true;
 }
 function aoMudarRemoto(){
+  // dados que chegaram depois da tela de configuração inicial: segue para o sistema
+  if(NUVEM && (view==='setupClinic'||view==='nuvemPerfil') && state.clinic){
+    if(currentUser()){ try{ ensureProcedimentos(); }catch(e){} view='home'; currentTab=modoCelular()?'agenda':'dashboard'; render(); }
+    else if(view==='setupClinic' && nuvemAcesso && nuvemAcesso.tipo==='master'){ view='nuvemPerfil'; render(); }
+    return;
+  }
   if(view!=='home') return;
   if(podeAtualizarSozinho()){ const y=window.scrollY; render(); window.scrollTo(0,y); return; }
   if(document.getElementById('pilulaAtualizar')) return;

@@ -150,22 +150,33 @@ async function sair(forcar){
 
 // ---------- acesso ----------
 async function carregarAcesso(){
-  const s=await F.getDoc(ref('acessos',meuEmail()));
+  const r=ref('acessos',meuEmail());
+  let s;
+  try{ s=await F.getDocFromServer(r); }catch(e){ s=await F.getDoc(r); }   // sem internet: cópia local
   return s.exists()?s.data():null;
 }
 // Primeiro acesso do responsável (o e-mail dele está nas regras do Firestore).
 async function criarDono(){
+  const r=ref('acessos',meuEmail());
   const ac={userId:novoId(), tipo:'master', ativo:true,
     perms:{usuarios:true,pacientes:true,clinica:true,procedimentos:true,financeiro:true}};
-  try{ await F.setDoc(ref('acessos',meuEmail()),ac); return ac; }
-  catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
+  try{
+    // transação: se o acesso já existir no servidor, usa o existente (nunca sobrescreve)
+    return await F.runTransaction(db,async t=>{ const s=await t.get(r); if(s.exists()) return s.data(); t.set(r,ac); return ac; });
+  }catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
 }
 
 // ---------- leitura em tempo real ----------
-function primeiraVez(nome,assinar){
+// Só considera uma coleção "carregada" quando a resposta vem do servidor.
+// (Num aparelho novo, a primeira resposta pode vir vazia da memória local.)
+// Sem internet, aceita a cópia local depois de alguns segundos.
+const soCache=snap=>snap.metadata.fromCache && navigator.onLine!==false;
+const OPC={includeMetadataChanges:true};
+function primeiraVez(nome,key,assinar){
   return new Promise(res=>{
     let feito=false;
-    const fim=()=>{ if(!feito){ feito=true; res(); } };
+    const fim=()=>{ if(!feito){ feito=true; lidos[key]=true; clearTimeout(t); res(); } };
+    const t=setTimeout(()=>{ if(!feito){ console.warn('Usando a cópia local de '+nome+' (servidor demorou)'); fim(); } },12000);
     const un=assinar(fim,err=>{
       console.error('Falha ao ler '+nome,err);
       if(hooks.onErro && pronto) hooks.onErro(err);
@@ -176,7 +187,7 @@ function primeiraVez(nome,assinar){
 }
 function ouvirBaldes(key){
   const c=COLS[key]; const m=srv[key]=new Map(); conhecidos[key]=new Set();
-  return primeiraVez(c.nome,(fim,erro)=>F.onSnapshot(colRef(c.nome),snap=>{
+  return primeiraVez(c.nome,key,(fim,erro)=>F.onSnapshot(colRef(c.nome),OPC,snap=>{
     const mudados=new Set(), removidos=new Set();
     snap.docChanges().forEach(ch=>{
       const b=ch.doc.id;
@@ -189,12 +200,12 @@ function ouvirBaldes(key){
       }
       for(const [id,v] of m) if(v.b===b && !(id in itens)){ m.delete(id); removidos.add(id); }
     });
-    if(!lidos[key]){ lidos[key]=true; fim(); return; }
+    if(!lidos[key]){ if(!soCache(snap)) fim(); return; }
     if(mudados.size||removidos.size) aplicar(key,mudados,removidos);
   },erro));
 }
 function ouvirUsuarios(){
-  return primeiraVez('usuarios',(fim,erro)=>F.onSnapshot(colRef('usuarios'),snap=>{
+  return primeiraVez('usuarios','users',(fim,erro)=>F.onSnapshot(colRef('usuarios'),OPC,snap=>{
     const mudados=new Set(), removidos=new Set();
     snap.docChanges().forEach(ch=>{
       const id=ch.doc.id;
@@ -202,21 +213,21 @@ function ouvirUsuarios(){
       const d=ch.doc.data()||{}; const p=d._p||0; const u=limparUsuario(d); u.id=id; const s=canon(u);
       if(srvUsers.get(id)!==s){ srvUsers.set(id,s); posUsers.set(id,p); mudados.add(id); }
     });
-    if(!lidos.users){ lidos.users=true; fim(); return; }
+    if(!lidos.users){ if(!soCache(snap)) fim(); return; }
     if(mudados.size||removidos.size) aplicar('users',mudados,removidos);
   },erro));
 }
 const posUsers=new Map();
 function ouvirAcessos(){
-  return primeiraVez('acessos',(fim,erro)=>F.onSnapshot(colRef('acessos'),snap=>{
+  return primeiraVez('acessos','acessos',(fim,erro)=>F.onSnapshot(colRef('acessos'),OPC,snap=>{
     snap.docChanges().forEach(ch=>{
       if(ch.type==='removed') srvAc.delete(ch.doc.id); else srvAc.set(ch.doc.id,canon(ch.doc.data()));
     });
-    if(!lidos.acessos){ lidos.acessos=true; fim(); }
+    if(!lidos.acessos && !soCache(snap)) fim();
   },erro));
 }
 function ouvirConfig(){
-  return primeiraVez('config',(fim,erro)=>F.onSnapshot(colRef('config'),snap=>{
+  return primeiraVez('config','config',(fim,erro)=>F.onSnapshot(colRef('config'),OPC,snap=>{
     let mudou=false;
     snap.docChanges().forEach(ch=>{
       const id=ch.doc.id; const s=ch.type==='removed'?null:((ch.doc.data()||{}).d||null);
@@ -224,7 +235,7 @@ function ouvirConfig(){
         if(lidos.config){ const st=hooks.estado(); if(id==='clinica') st.clinic=s?JSON.parse(s):null; if(id==='meta') st.meta=s?JSON.parse(s):{}; }
       }
     });
-    if(!lidos.config){ lidos.config=true; fim(); return; }
+    if(!lidos.config){ if(!soCache(snap)) fim(); return; }
     if(mudou && hooks.onRemoto) hooks.onRemoto();
   },erro));
 }
