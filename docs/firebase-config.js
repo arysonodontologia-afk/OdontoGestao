@@ -17,9 +17,7 @@ window.FIREBASE_CONFIG = {
   try{
     const x=new XMLHttpRequest(); x.open('GET','/__/firebase/init.json',false); x.send();
     if(x.status===200){
-      const c=JSON.parse(x.responseText);
-      c.authDomain=location.hostname;   // login com Google no mesmo endereço do sistema
-      window.FIREBASE_CONFIG=c;
+      window.FIREBASE_CONFIG=JSON.parse(x.responseText);   // authDomain = ID.firebaseapp.com (aceito pelo Google)
     }
   }catch(e){ console.warn('Não foi possível ler a configuração do Firebase',e); }
 })();
