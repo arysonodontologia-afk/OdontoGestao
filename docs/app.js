@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.4.1';
+const APP_VERSION='2.4.2';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2994,7 +2994,8 @@ function userFormFields(tipo, u, isNew){
 function emailTravado(u){ if(!u || !u.id) return false; const eu=currentUser(); if(!eu) return false; if(u.id===eu.id) return true; return eu.tipo!=='master' && !!normEmail(u.email); }
 // Só o Master edita o Master; ninguém exclui a si mesmo nem o Master.
 function podeEditarUsuario(alvo){ const eu=currentUser(); return !!eu && (alvo.tipo!=='master' || eu.tipo==='master'); }
-function podeExcluirUsuario(alvo){ const eu=currentUser(); return !!eu && alvo.tipo!=='master' && alvo.id!==eu.id; }
+// o Master pode excluir/desativar qualquer outro usuário, inclusive outro Master; os demais, só usuários comuns
+function podeExcluirUsuario(alvo){ const eu=currentUser(); if(!eu || !alvo || alvo.id===eu.id) return false; return eu.tipo==='master' || alvo.tipo!=='master'; }
 function renderUsuarios(){
   const lista=state.users.filter(usuarioAtivo).concat(state.users.filter(u=>!usuarioAtivo(u)));
   const rows=lista.map(u=>`<tr${usuarioAtivo(u)?'':' class="u-inativo"'}>
