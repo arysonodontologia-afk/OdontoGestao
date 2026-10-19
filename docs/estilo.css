@@ -627,3 +627,8 @@ body.pagina-publica{background:var(--bg)}
 .assin-pad canvas{display:block;width:100%;height:190px;touch-action:none;cursor:crosshair}
 .assin-dica{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#9aa6b0;font-size:15px;pointer-events:none}
 .assin-limpar{position:absolute;right:8px;top:8px;padding:6px 12px;font-size:13px;background:#fff!important;color:#2B3742!important;border:1px solid #D5DBE1!important}
+
+/* usuários desativados */
+tr.u-inativo td{color:var(--muted)}
+tr.u-inativo td .badge{opacity:.6}
+.sit-cancelado-n{background:var(--surface-3);color:var(--muted);margin-left:4px}

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.4.0';
+const APP_VERSION='2.4.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -901,7 +901,7 @@ function renderAgendaPrincipal(){
   ${body}`;
 }
 function dentistasDaAgenda(lista){
-  const ds=(state.users||[]).filter(ehDentista).map(u=>({id:u.id,nome:nomeExibicao(u)}));
+  const ds=(state.users||[]).filter(dentistaAtivo).map(u=>({id:u.id,nome:nomeExibicao(u)}));
   const ids=new Set(ds.map(d=>d.id));
   const outros=lista.filter(a=>!ids.has(a.dentistaId));
   const extras=[]; outros.forEach(a=>{ if(!extras.find(e=>e.id===(a.dentistaId||'?'))) extras.push({id:a.dentistaId||'?',nome:a.dentistaNome||'Sem dentista'}); });
@@ -1056,7 +1056,7 @@ function renderAgendaCelular(){
 }
 function openAgendamentoForm(a){
   const isNew=!a;
-  const dentistas=state.users.filter(ehDentista);
+  const dentistas=state.users.filter(dentistaAtivo);
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
   <form id="fAgendamento">
@@ -1372,7 +1372,7 @@ function repEvolPendentes(){
   itens.sort((a,b)=>(a.e.data+(a.e.hora||'')).localeCompare(b.e.data+(b.e.hora||'')));
   const rows=itens.map(({p,e,dias})=>`<tr><td>${fmtDataBR(e.data)} ${esc(e.hora||'')}</td><td>${repPacBtn(p,'evolucao')}</td><td>${esc(e.procedimentoNome)}</td><td>${esc(e.dentistaNome)}</td>
     <td><span class="badge ${dias>2?'b-red':'b-recep'}">${dias===0?'hoje':dias+' dia(s)'}</span></td></tr>`).join('');
-  const dents=state.users.filter(ehDentista);
+  const dents=state.users.filter(dentistaAtivo);
   const filtros=`<div><label>Dentista</label><select id="repEvolDent"><option value="">Todos</option>${dents.map(d=>`<option value="${esc(d.nomeCompleto)}" ${repEvolDentista===d.nomeCompleto?'selected':''}>${esc(d.nomeCompleto)}</option>`).join('')}</select></div>`;
   return repCard('Evoluções pendentes de confirmação','Atendimentos que já aconteceram, mas cuja evolução ainda não foi confirmada pelo dentista. O prontuário só fica completo depois da confirmação.',filtros,
     `<strong>Pendentes:</strong> ${itens.length}`,
@@ -1689,7 +1689,7 @@ function renderExameClinico(p){
   ${list.length?`<div class="overflow"><table><thead><tr><th>Data / hora</th><th>Dentista</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum exame clínico registrado ainda.</p>'}</div>`;
 }
 function renderExameClinicoForm(ex){
-  const dentistas=state.users.filter(ehDentista);
+  const dentistas=state.users.filter(dentistaAtivo);
   const grupos=EXAME_CLINICO_GRUPOS.map(g=>`<div class="section-title">${g.titulo}</div><div class="row">${g.campos.map(c=>exameCampoHtml(c, ex.dados||{})).join('')}</div>`).join('');
   return `<div class="card"><h3>Exame Clínico</h3>
   ${semDentistaAviso()}
@@ -1747,13 +1747,14 @@ function fmtDataBR(iso){
 }
 function dentistaOptionsHtml(selectedId, comCro){
   if(comCro===undefined) comCro=true;
-  const dentistas=state.users.filter(ehDentista);
   const u=currentUser();
-  const sel=selectedId||(ehDentista(u)?u.id:'');
+  const sel=selectedId||(dentistaAtivo(u)?u.id:'');
+  // desativados não aparecem, a não ser o que já está gravado neste registro
+  const dentistas=state.users.filter(d=>dentistaAtivo(d)||(selectedId&&d.id===selectedId&&ehDentista(d)));
   return '<option value="">Selecione</option>'+dentistas.map(d=>`<option value="${d.id}" ${sel===d.id?'selected':''}>${esc(nomeExibicao(d))}${comCro?' — CRO '+esc(d.cro):''}</option>`).join('');
 }
 function semDentistaAviso(){
-  if(state.users.some(ehDentista)) return '';
+  if(state.users.some(dentistaAtivo)) return '';
   return '<div style="border:1px solid var(--danger);border-radius:8px;padding:10px 12px;margin:10px 0"><p style="margin:0;color:var(--danger);font-size:14px"><strong>Nenhum dentista cadastrado.</strong> Cadastre um usuário do tipo Dentista, com o CRO, em Usuários para poder usar esta função.</p></div>';
 }
 function renderDocumentoForm(p, tipo){
@@ -2419,7 +2420,7 @@ function acessosDesejados(){
   const m=new Map();
   (state.users||[]).forEach(u=>{
     const e=normEmail(u.email); if(!e || !emailValido(e) || m.has(e)) return;
-    m.set(e,{userId:u.id, tipo:u.tipo, perms:permsDe(u), ativo:true});
+    m.set(e,{userId:u.id, tipo:u.tipo, perms:permsDe(u), ativo:!u.inativo});
   });
   return m;
 }
@@ -2565,7 +2566,7 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
   const d=c, e=d.end||{}, dis=podeEditar?'':' disabled';
   const inp=(id,rot,val,extra,dica)=>`<div class="cl-campo"><label for="${id}">${rot}</label><input id="${id}" value="${esc(val||'')}"${extra||''}${dis}>${dica?`<div class="cl-dica">${dica}</div>`:''}</div>`;
   const ufSel=(id,val)=>`<select id="${id}"${dis}><option value="">UF</option>${UFS.map(u=>`<option ${val===u?'selected':''}>${u}</option>`).join('')}</select>`;
-  const dentistas=(state.users||[]).filter(u=>u.tipo==='dentista'||u.tipo==='master');
+  const dentistas=(state.users||[]).filter(u=>(u.tipo==='dentista'||u.tipo==='master')&&usuarioAtivo(u));
   const linhasHor=DIAS_CLINICA.map(([k,n])=>{ const h=d.horarios[k]||{}; return `<div class="cl-hor-linha${h.aberto?'':' fechado'}" data-hordia="${k}">
       <label class="cl-hor-dia"><input type="checkbox" id="hAb_${k}" ${h.aberto?'checked':''}${dis}> ${n}</label>
       <input type="time" id="hIni_${k}" value="${esc(h.ini||'08:00')}" aria-label="${n}, abre"${dis}><span class="muted">às</span><input type="time" id="hFim_${k}" value="${esc(h.fim||'18:00')}" aria-label="${n}, fecha"${dis}>
@@ -2883,6 +2884,8 @@ function renderStub(label){
 
 // ---- tratamento: Dr./Dra. para dentistas e saudação conforme a hora ----
 function semTitulo(n){ return String(n||'').replace(/^\s*(dr\(a\)|dra|dr|prof[a]?)\.?\s+/i,'').trim(); }
+function usuarioAtivo(u){ return !!u && !u.inativo; }
+function dentistaAtivo(u){ return ehDentista(u) && usuarioAtivo(u); }
 function ehDentista(u){ return !!u && (u.tipo==='dentista' || (u.tipo==='master' && !!String(u.cro||'').trim())); }
 function tituloDe(u){ if(!ehDentista(u)) return ''; return u.sexo==='F'?'Dra.':u.sexo==='M'?'Dr.':'Dr(a).'; }
 function nomeExibicao(u){ if(!u) return ''; const t=tituloDe(u); return (t?t+' ':'')+semTitulo(u.nomeCompleto); }
@@ -2993,19 +2996,21 @@ function emailTravado(u){ if(!u || !u.id) return false; const eu=currentUser(); 
 function podeEditarUsuario(alvo){ const eu=currentUser(); return !!eu && (alvo.tipo!=='master' || eu.tipo==='master'); }
 function podeExcluirUsuario(alvo){ const eu=currentUser(); return !!eu && alvo.tipo!=='master' && alvo.id!==eu.id; }
 function renderUsuarios(){
-  const rows=state.users.map(u=>`<tr>
-    <td>${esc(nomeExibicao(u))}${ehDentista(u)&&!u.sexo?' <span class="sit sit-nao_vem" title="Edite e informe o sexo">informe o sexo</span>':''}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
+  const lista=state.users.filter(usuarioAtivo).concat(state.users.filter(u=>!usuarioAtivo(u)));
+  const rows=lista.map(u=>`<tr${usuarioAtivo(u)?'':' class="u-inativo"'}>
+    <td>${esc(nomeExibicao(u))}${usuarioAtivo(u)?'':' <span class="sit sit-cancelado-n">Desativado</span>'}${ehDentista(u)&&!u.sexo?' <span class="sit sit-nao_vem" title="Edite e informe o sexo">informe o sexo</span>':''}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
     <td><span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span></td>
     <td>${esc(u.telefone)}</td>
     <td>${esc(u.cro||'-')}</td>
     <td class="actions">
       ${podeEditarUsuario(u)?`<button class="btn-s" data-edituser="${u.id}">Editar</button>`:'<span class="muted">Somente o Master</span>'}
-      ${podeExcluirUsuario(u)?`<button class="btn-d" data-deluser="${u.id}">Excluir</button>`:''}
+      ${podeExcluirUsuario(u)?(usuarioAtivo(u)?`<button class="btn-s" data-desativauser="${u.id}">Desativar</button>`:`<button class="btn-s" data-reativauser="${u.id}">Reativar</button>`)+`<button class="btn-d" data-deluser="${u.id}">Excluir</button>`:''}
     </td></tr>`).join('');
   return `<div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center"><h2>Usuários</h2>
   <button id="btnNewUser" class="btn-p">+ Novo usuário</button></div>
-  ${NUVEM?'<p class="muted" style="margin-top:0">Para dar acesso a alguém, cadastre o usuário com o e-mail dele. Para tirar o acesso, exclua o usuário.</p>':''}
+  ${NUVEM?'<p class="muted" style="margin-top:0">Para dar acesso a alguém, cadastre o usuário com o e-mail dele.</p>':''}
+  <p class="muted" style="margin-top:0"><strong>Desativar</strong> tira o acesso ao sistema e esconde o usuário da agenda e da escolha de dentista nos atendimentos, mas mantém o histórico (agendamentos, evoluções, documentos). <strong>Excluir</strong> apaga o cadastro: use para usuários de teste.</p>
   <div class="overflow"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Telefone</th><th>CRO</th><th></th></tr></thead>
   <tbody>${rows||'<tr><td colspan="5" class="muted">Nenhum usuário cadastrado</td></tr>'}</tbody></table></div>
   </div>
@@ -3931,7 +3936,7 @@ function bindEvents(){
     const btn=fLogin.querySelector('button'); btn.disabled=true;
     const nome=fLogin.username.value.trim(), senha=fLogin.password.value;
     let u=null;
-    for(const x of state.users.filter(x=>x.username===nome)){ if(await verificarSenha(x,senha)){ u=x; break; } }
+    for(const x of state.users.filter(x=>x.username===nome && usuarioAtivo(x))){ if(await verificarSenha(x,senha)){ u=x; break; } }
     btn.disabled=false;
     if(!u){ document.getElementById('loginErr').textContent='Usuário ou senha inválidos.'; return; }
     if(u.password!==undefined && !u.senhaHash){ Object.assign(u,await hashSenha(senha)); delete u.password; saveData(); }
@@ -3960,7 +3965,15 @@ function bindEvents(){
   document.querySelectorAll('[data-deluser]').forEach(b=>b.addEventListener('click',()=>{
     const alvo=state.users.find(u=>u.id===b.getAttribute('data-deluser'));
     if(!alvo || !podeExcluirUsuario(alvo)){ avisar('Este usuário não pode ser excluído.'); return; }
-    customConfirm('Excluir este usuário?', ()=>{ state.users=state.users.filter(u=>u.id!==alvo.id); saveData(); render(); });
+    customConfirm(`Excluir ${nomeExibicao(alvo)}? O cadastro e o acesso serão apagados. Se este usuário já tem atendimentos reais, prefira Desativar.`, ()=>{ state.users=state.users.filter(u=>u.id!==alvo.id); saveData(); render(); });
+  }));
+  document.querySelectorAll('[data-desativauser],[data-reativauser]').forEach(b=>b.addEventListener('click',()=>{
+    const id=b.getAttribute('data-desativauser')||b.getAttribute('data-reativauser'), desativar=b.hasAttribute('data-desativauser');
+    const alvo=state.users.find(u=>u.id===id);
+    if(!alvo || !podeExcluirUsuario(alvo)){ avisar('Este usuário não pode ser alterado.'); return; }
+    const fazer=()=>{ if(desativar) alvo.inativo=true; else delete alvo.inativo; saveData(); render(); };
+    if(desativar) customConfirm(`Desativar ${nomeExibicao(alvo)}? Ele não conseguirá mais entrar no sistema e deixará de aparecer na agenda e na escolha de dentista. Você pode reativar quando quiser.`,fazer);
+    else fazer();
   }));
 
   const btnNewPatient=document.getElementById('btnNewPatient');
