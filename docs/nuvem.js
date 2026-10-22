@@ -306,13 +306,13 @@ async function listarClinicas(){
 }
 async function criarEspelho(f){
   const cid='espelho-'+String(f.id).replace(/[^\w-]/g,'').slice(0,40);
-  await F.setDoc(F.doc(db,'clinicas',cid),{nome:'Espelho · '+(f.nome||f.id),donoEmail:ADMIN_EMAIL,espelho:true,origem:{cid:f.id,nome:f.nome||''},
+  await F.setDoc(F.doc(db,'clinicas',cid),{nome:'Teste · '+(f.nome||f.id),donoEmail:ADMIN_EMAIL,espelho:true,origem:{cid:f.id,nome:f.nome||''},
     plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],personalizacoesInfo:f.personalizacoesInfo||{},
     personalizacoesHist:f.personalizacoesHist||[],status:'ativa',criadaEm:F.serverTimestamp(),sincronizadoEm:F.serverTimestamp()},{merge:true});
   return cid;
 }
 async function sincronizarEspelho(cid,f){
-  await F.updateDoc(F.doc(db,'clinicas',cid),{plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],
+  await F.updateDoc(F.doc(db,'clinicas',cid),{nome:'Teste · '+(f.nome||f.id),origem:{cid:f.id,nome:f.nome||''},plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],
     personalizacoesInfo:f.personalizacoesInfo||{},personalizacoesHist:f.personalizacoesHist||[],sincronizadoEm:F.serverTimestamp()});
 }
 async function criarClinica(dados){

@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.9.1', data:'2026-10-22', itens:[
+    'Plataforma do teste mostra as bases dos clientes (sem clínicas de teste avulsas)',
+    'Abrir a base de um cliente busca na produção a versão e as melhorias aplicadas',
+    'Pacientes fictícios carregados só quando você pedir, dentro da base',
+  ]},
   {v:'2.9.0', data:'2026-10-22', itens:[
     'Oficina no ambiente de teste: lista dos clientes reais com plano, versão e personalizações',
     'Base espelho de cada cliente no teste, com os pacientes fictícios padrão',

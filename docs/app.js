@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.9.0';
+const APP_VERSION='2.9.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2449,7 +2449,7 @@ async function aoMudarLogin(u){
       try{ ensureProcedimentos(); }catch(e){ console.error(e); }
       view='home'; currentTab=modoCelular()?'agenda':'dashboard';
       if(Nuvem.emEspelho()){
-        if(!temDadosFicticios()) setTimeout(()=>{ const prog=mostrarProgresso('Preparando o espelho com os dados fictícios'); carregarDadosFicticios(prog).then(()=>{ prog.fechar(); render(); }).catch(e=>{ prog.fechar(); console.error(e); avisar('Não foi possível carregar os dados fictícios: '+((e&&e.message)||e)); }); },300);
+        // a versão e as melhorias já vieram da produção ao abrir; os pacientes fictícios são opcionais
       } else {
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
@@ -3939,8 +3939,10 @@ function carregarPlataforma(forcar){
 function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
 function renderPlataforma(){
   if(!(NUVEM && Nuvem.souAdmin())) return '<div class="card"><p class="muted">Área restrita.</p></div>';
+  if(Nuvem.ambienteTeste() && platAba==='clinicas') platAba='clientes';
+  if(!Nuvem.ambienteTeste() && platAba==='clientes') platAba='clinicas';
   carregarPlataforma(); carregarSugestoesPlat();
-  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas',Nuvem.ambienteTeste()?'Clínicas de teste':'Clínicas']].concat(Nuvem.ambienteTeste()?[['clientes','Clientes (produção)']]:[]).concat([['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes'+(sugNovasN()?' ('+sugNovasN()+')':'')],['versoes','Versões']]).map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
+  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${(Nuvem.ambienteTeste()?[['clientes','Bases dos clientes']]:[['clinicas','Clínicas']]).concat([['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes'+(sugNovasN()?' ('+sugNovasN()+')':'')],['versoes','Versões']]).map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
   const amb=Nuvem.ambienteTeste()?'<span class="sit sit-nao_vem">Ambiente de teste</span>':'<span class="sit sit-chegou">Produção</span>';
   return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · ${esc(rotuloVersao(null))}</span></p></div><div style="margin-left:auto">${abas}</div></div>
   ${platErro?`<div class="faixa-plano bloqueada"><div>${esc(platErro)}</div></div>`:''}
@@ -4632,13 +4634,12 @@ function ficticiosCardHtml(){
   </div>`;
 }
 function bindFicticios(){
-  const c=document.getElementById('btnFicCarregar');
-  if(c) c.addEventListener('click',()=>{
+  document.querySelectorAll('#btnFicCarregar,[data-ficcarregar]').forEach(c=>c.addEventListener('click',()=>{
     if(clinicaBloqueada()){ avisarBloqueio(); return; }
     const prog=mostrarProgresso('Carregando dados fictícios');
     carregarDadosFicticios(prog).then(n=>{ prog.fechar(); avisar(n+' pacientes fictícios carregados, com agenda, financeiro e prontuários.'); render(); })
       .catch(e=>{ prog.fechar(); console.error(e); avisar('Não foi possível carregar: '+((e&&e.message)||e)); });
-  });
+  }));
   const r=document.getElementById('btnFicRemover');
   if(r) r.addEventListener('click',()=>customConfirm('Remover todos os dados fictícios desta base de teste? Os dados que você mesmo cadastrou ficam.',()=>{ const n=removerDadosFicticios(); avisar(n+' pacientes fictícios removidos.'); render(); }));
 }
@@ -4656,16 +4657,29 @@ function renderPlatClientes(){
   const l=outroClinicas.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   const linhas=l.map(f=>{ const s=situacaoFicha(f), e=espelhoDe(f.id);
     const cls={teste:'sit-confirmado',ativa:'sit-chegou',suspensa:'sit-faltou',vencido:'sit-nao_vem'}[s.cod]||'sit-agendado';
-    const p=personalizacoesDe(f), desat=e && JSON.stringify(personalizacoesDe(e))!==JSON.stringify(p) || (e && (e.plano!==f.plano || JSON.stringify(e.modulos||{})!==JSON.stringify(f.modulos||{})));
-    return `<tr><td><strong>${esc(f.nome)}</strong><div class="muted" style="font-size:12px">${esc(f.donoEmail||'')}</div></td>
-      <td>${esc(planoDe(f).nome)}</td><td><span class="sit ${cls}">${esc(s.txt)}</span></td>
-      <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f))}</strong>${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:''}</td>
-      <td>${e?`<span class="sit sit-chegou">Espelho pronto</span>${desat?'<div style="font-size:12px;color:var(--warn);margin-top:3px">Diferente do cliente: sincronize</div>':''}`:'<span class="muted">Sem espelho</span>'}</td>
-      <td class="actions">${e?`<button class="btn-p" data-espentrar="${esc(e.id)}">Entrar</button><button class="btn-s" data-espsinc="${esc(f.id)}">Sincronizar</button>`:`<button class="btn-p" data-espcriar="${esc(f.id)}">Criar espelho</button>`}
-        <button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button></td></tr>`; }).join('');
-  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Clientes (produção)</h2></div>
-    ${l.length?`<div class="overflow"><table><thead><tr><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão em uso</th><th>Espelho no teste</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum cliente na produção ainda.</p></div>'}
-    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">Só aparecem a versão, o plano e as personalizações de cada cliente. O espelho usa os pacientes fictícios padrão; os dados reais nunca saem da produção. Cadeiras e horários do cliente não são copiados (ficam na base dele): ajuste no espelho se o teste depender disso.</p></div></section>`;
+    const p=personalizacoesDe(f);
+    return `<tr class="base-linha" data-baseabrir="${esc(f.id)}" tabindex="0" title="Abrir a base de ${esc(f.nome)}"><td><strong>${esc(f.nome)}</strong><div class="muted" style="font-size:12px">${esc(f.donoEmail||'')}</div></td>
+      <td>${esc(planoDe(f).nome)}${Object.keys(f.modulos||{}).filter(k=>f.modulos[k]).length?`<div class="muted" style="font-size:12px">+ ${esc(Object.keys(f.modulos).filter(k=>f.modulos[k]).map(k=>MODULOS[k]?MODULOS[k].nome:k).join(', '))}</div>`:''}</td><td><span class="sit ${cls}">${esc(s.txt)}</span></td>
+      <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f))}</strong>${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
+      <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
+  const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td><strong>${esc(rotuloVersao(null))}</strong></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
+  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-s" data-ponterecarregar style="margin-left:auto">Atualizar</button></div>
+    <div class="overflow"><table><thead><tr><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão e melhorias aplicadas</th><th></th></tr></thead><tbody>${minha}${linhas}</tbody></table></div>
+    ${l.length?'':'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum cliente na produção ainda. Crie clientes pela Plataforma da produção.</p></div>'}
+    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">Ao abrir a base de um cliente, o sistema busca na produção a versão, o plano e as melhorias que ele usa. A base de teste não tem os pacientes reais: dentro dela você pode carregar os pacientes fictícios padrão. Cadeiras e horários do cliente ficam na base dele e não são copiados.</p></div></section>`;
+}
+async function abrirBaseCliente(cidProd,btn){
+  const f=outroClinicas.find(x=>x.id===cidProd); if(!f) return;
+  if(btn) btn.disabled=true;
+  const prog=mostrarProgresso('Abrindo a base de '+f.nome);
+  try{
+    prog('Buscando versão e melhorias na produção…');
+    const atual=(await Nuvem.clinicasOutro()).find(x=>x.id===cidProd)||f;
+    const e=espelhoDe(cidProd);
+    if(e) await Nuvem.sincronizarEspelho(e.id,atual); else await Nuvem.criarEspelho(atual);
+    prog('Entrando…');
+    Nuvem.entrarEspelho('espelho-'+String(cidProd).replace(/[^\w-]/g,'').slice(0,40));
+  }catch(err){ prog.fechar(); if(btn) btn.disabled=false; avisar('Não foi possível abrir a base: '+Nuvem.mapErro(err)); }
 }
 function abrirPersonalizacoesCliente(cidProd){
   const f=outroClinicas.find(x=>x.id===cidProd); if(!f) return;
@@ -4699,24 +4713,18 @@ function abrirPersonalizacoesCliente(cidProd){
 }
 function bindClientes(){
   bindPonte();
-  document.querySelectorAll('[data-espcriar]').forEach(b=>b.addEventListener('click',async()=>{
-    const f=outroClinicas.find(x=>x.id===b.getAttribute('data-espcriar')); if(!f) return;
-    b.disabled=true;
-    try{ await Nuvem.criarEspelho(f); platClinicas=null; carregarPlataforma(true); avisar('Espelho criado. Clique em Entrar: os pacientes fictícios são carregados na primeira vez.'); }
-    catch(e){ b.disabled=false; avisar(Nuvem.mapErro(e)); }
-  }));
-  document.querySelectorAll('[data-espsinc]').forEach(b=>b.addEventListener('click',async()=>{
-    const f=outroClinicas.find(x=>x.id===b.getAttribute('data-espsinc')), e=espelhoDe(f&&f.id); if(!f||!e) return;
-    try{ await Nuvem.sincronizarEspelho(e.id,f); platClinicas=null; carregarPlataforma(true); avisar('Espelho sincronizado com o plano e as personalizações do cliente.'); }catch(err){ avisar(Nuvem.mapErro(err)); }
-  }));
-  document.querySelectorAll('[data-espentrar]').forEach(b=>b.addEventListener('click',()=>Nuvem.entrarEspelho(b.getAttribute('data-espentrar'))));
-  document.querySelectorAll('[data-esppers]').forEach(b=>b.addEventListener('click',()=>abrirPersonalizacoesCliente(b.getAttribute('data-esppers'))));
+  document.querySelectorAll('[data-baseabrir]').forEach(el=>{
+    const abrir=e=>{ if(e.target.closest('[data-esppers]')) return; e.stopPropagation(); abrirBaseCliente(el.getAttribute('data-baseabrir'),el.tagName==='BUTTON'?el:null); };
+    el.addEventListener('click',abrir); if(el.tagName==='TR') el.addEventListener('keydown',e=>{ if(e.key==='Enter') abrir(e); });
+  });
+  document.querySelectorAll('[data-baseminha]').forEach(el=>el.addEventListener('click',e=>{ e.stopPropagation(); if(Nuvem.emEspelho()) Nuvem.entrarEspelho(''); else { currentTab='dashboard'; render(); } }));
+  document.querySelectorAll('[data-esppers]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); abrirPersonalizacoesCliente(b.getAttribute('data-esppers')); }));
 }
 // dentro de um espelho
 function faixaEspelhoHtml(){
   if(!(NUVEM && Nuvem.emEspelho())) return '';
   const f=fichaClinica()||{};
-  return `<div class="faixa-plano espelho"><div><strong>Espelho de ${esc((f.origem&&f.origem.nome)||f.nome||'cliente')}</strong> · plano ${esc(planoDe(f).nome)} · ${esc(rotuloVersao())}. Dados fictícios: teste à vontade, nada aqui afeta o cliente.</div><button class="btn-s" data-espsair>Voltar para a minha base</button></div>`;
+  return `<div class="faixa-plano espelho"><div><strong>Base de teste de ${esc((f.origem&&f.origem.nome)||f.nome||'cliente')}</strong> · plano ${esc(planoDe(f).nome)} · ${esc(rotuloVersao())}. ${temDadosFicticios()?'Com os pacientes fictícios.':'Sem pacientes ainda.'} Nada feito aqui afeta o cliente.</div>${temDadosFicticios()?'':'<button class="btn-p" data-ficcarregar>Carregar pacientes fictícios</button>'}<button class="btn-s" data-irbases>Outras bases</button><button class="btn-s" data-espsair>Voltar para a minha base</button></div>`;
 }
 function prepararEspelho(ac){
   // primeira entrada: cria a clínica, o seu usuário e carrega os dados fictícios
@@ -4731,6 +4739,7 @@ function prepararEspelho(ac){
 }
 function bindEspelho(){
   const b=document.querySelector('[data-espsair]'); if(b) b.addEventListener('click',()=>Nuvem.entrarEspelho(''));
+  const o=document.querySelector('[data-irbases]'); if(o) o.addEventListener('click',()=>{ currentTab='plataforma'; platAba='clientes'; render(); });
 }
 
 function openPatientForm(p){
