@@ -284,6 +284,13 @@ function ouvirRoadmap(cb){
   unsubs.push(un); return un;
 }
 function salvarItemRoadmap(it){ const c=Object.assign({},it); const id=c.id||novoId(); delete c.id; c.atualizadoEm=Date.now(); if(!c.criadoEm) c.criadoEm=Date.now(); return F.setDoc(F.doc(db,'roadmap',id),c).then(()=>id); }
+// números sequenciais das melhorias (#1, #2...): o contador nunca volta
+async function numerarRoadmap(ids){
+  const rc=F.doc(db,'plataforma','contador');
+  const ini=await F.runTransaction(db,async t=>{ const s=await t.get(rc); const u=(s.exists()&&+s.data().ultimo)||0; t.set(rc,{ultimo:u+ids.length}); return u+1; });
+  const wb=F.writeBatch(db); ids.forEach((id,i)=>wb.set(F.doc(db,'roadmap',id),{numero:ini+i},{merge:true})); await wb.commit();
+  return ini;
+}
 function apagarItemRoadmap(id){ return F.deleteDoc(F.doc(db,'roadmap',id)); }
 async function semearRoadmap(itens){
   const wb=F.writeBatch(db); itens.forEach(it=>{ const c=Object.assign({criadoEm:Date.now(),atualizadoEm:Date.now()},it); wb.set(F.doc(db,'roadmap',novoId()),c); }); await wb.commit();
@@ -597,7 +604,7 @@ window.Nuvem={
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
   clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, lerVitrine, salvarVitrine,
-  listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
+  listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };
 })();

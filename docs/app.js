@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.7.0';
+const APP_VERSION='2.8.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -1487,6 +1487,7 @@ function renderConfiguracoesPrincipal(){
   else if(configSubTab==='procedimentos') body=renderProcedimentos();
   else if(configSubTab==='tipodespesas') body=renderTiposDespesa();
   else if(configSubTab==='backup') body=renderBackup();
+  if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
 }
 function renderTiposDespesa(){
@@ -2779,6 +2780,7 @@ function render(){
   if(NUVEM) bindFormularios();
   if(NUVEM && currentTab==='plataforma') bindPlataforma();
   if(NUVEM) bindSugestoes();
+  if(NUVEM){ bindVersoes(); bindFicticios(); }
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
 }
@@ -2906,6 +2908,7 @@ function renderApp(){
   else if(currentTab==='plataforma') content=renderPlataforma();
   else content=renderStub(items.find(i=>i.id===currentTab)?.label||'');
   if(currentTab!=='plataforma') content=faixaPlanoHtml()+content;
+  if(currentTab==='dashboard' && NUVEM) content=faixaAprovacaoHtml()+content;
 
   const demo=(!NUVEM && /^https?:/.test(location.protocol))?'<div class="demo-banner">⚠️ Modo demonstração: a nuvem ainda não foi configurada (firebase-config.js). Os dados ficam só neste navegador.</div>':'';
   if(cel){
@@ -2929,7 +2932,7 @@ function renderApp(){
       <nav aria-label="Menu principal">${sidebar}</nav>
       <div class="sb-rodape">${temaSegHtml()}
         <div class="sb-usuario">${avatarHtml(u.nomeCompleto,u.id)}<div style="min-width:0;flex:1"><div class="sb-usuario-nome">${esc(nomeExibicao(u))}</div><div class="sb-usuario-tipo">${tipoLabel(u.tipo)}</div></div><button id="btnLogout" class="btn-icone peq" aria-label="Sair" title="Sair">${ICONES.sair}</button></div>
-        <div class="sb-versao">Versão ${APP_VERSION}</div>
+        <button class="sb-versao" data-novidades title="Novidades e histórico de versões">${esc(NUVEM?rotuloVersao():"Versão "+APP_VERSION)}</button>
       </div>
     </aside>
     <div class="main">
@@ -3924,17 +3927,17 @@ function carregarPlataforma(forcar){
   platCarregando=true; platErro='';
   Nuvem.listarClinicas().then(l=>{ platClinicas=l; }).catch(e=>{ console.error(e); platErro=Nuvem.mapErro(e); platClinicas=[]; })
     .finally(()=>{ platCarregando=false; if(currentTab==='plataforma') render(); });
-  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l) publicarVitrine(l); if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
+  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l){ publicarVitrine(l); numerarRoadmap(l); } if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
 }
 function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
 function renderPlataforma(){
   if(!(NUVEM && Nuvem.souAdmin())) return '<div class="card"><p class="muted">Área restrita.</p></div>';
   carregarPlataforma();
-  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
+  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes'],['versoes','Versões']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
   const amb=Nuvem.ambienteTeste()?'<span class="sit sit-nao_vem">Ambiente de teste</span>':'<span class="sit sit-chegou">Produção</span>';
-  return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · versão ${APP_VERSION}</span></p></div><div style="margin-left:auto">${abas}</div></div>
+  return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · ${esc(rotuloVersao(null))}</span></p></div><div style="margin-left:auto">${abas}</div></div>
   ${platErro?`<div class="faixa-plano bloqueada"><div>${esc(platErro)}</div></div>`:''}
-  ${platAba==='clinicas'?renderPlatClinicas():platAba==='sugestoes'?renderPlatSugestoes():renderPlatRoadmap()}`;
+  ${platAba==='clinicas'?renderPlatClinicas():platAba==='sugestoes'?renderPlatSugestoes():platAba==='versoes'?renderPlatVersoes():renderPlatRoadmap()}`;
 }
 function renderPlatClinicas(){
   if(!platClinicas) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando clínicas…</p></div></section>';
@@ -3950,11 +3953,11 @@ function renderPlatClinicas(){
     return `<tr><td><strong>${esc(f.nome)}</strong><div class="muted" style="font-size:12px">${esc(f.id)}</div></td>
       <td>${esc(f.donoEmail)}${f.contato?`<div class="muted" style="font-size:12px">${esc(f.contato)}</div>`:''}</td>
       <td>${esc(planoDe(f).nome)}${mods.length?`<div class="muted" style="font-size:12px">+ ${esc(mods.join(', '))}</div>`:''}${f.dentistasExtras?`<div class="muted" style="font-size:12px">+ ${f.dentistasExtras} dentista(s)</div>`:''}</td>
-      <td><span class="sit ${cls}">${esc(s.txt)}</span></td><td>${fmtBRL(mensalidadeDe(f))}</td>
+      <td><span class="sit ${cls}">${esc(s.txt)}</span></td><td style="white-space:nowrap">${esc(rotuloVersaoDe(f))}</td><td>${fmtBRL(mensalidadeDe(f))}</td>
       <td class="actions"><button class="btn-s" data-platgerir="${esc(f.id)}">Gerenciar</button></td></tr>`; }).join('');
   return `<div class="kpis">${kpi('Em teste',n('teste'),potencial?fmtBRL(potencial)+'/mês se todas assinarem':'')}${kpi('Assinantes',n('ativa'),fmtBRL(receita)+' por mês')}${kpi('Teste encerrado',n('vencido'),'Em modo de consulta')}${kpi('Suspensas',n('suspensa'),'')}</div>
   <section class="bloco"><div class="bloco-cab"><h2>Clínicas</h2><button class="btn-s" data-platrecarregar style="margin-left:auto">Atualizar</button><button class="btn-p" data-platnova>+ Nova clínica</button></div>
-  ${l.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Responsável</th><th>Plano</th><th>Situação</th><th>Mensalidade</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada ainda. Use "+ Nova clínica" para liberar um teste de 30 dias.</p></div>'}
+  ${l.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Responsável</th><th>Plano</th><th>Situação</th><th>Versão</th><th>Mensalidade</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada ainda. Use "+ Nova clínica" para liberar um teste de 30 dias.</p></div>'}
   <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">A sua clínica (a original) não aparece aqui: ela não tem plano e continua com acesso completo. Você gerencia o plano e a validade das clínicas, mas não vê os pacientes nem o financeiro delas.</p></div></section>`;
 }
 function slugDe(t){ return normTxt(t).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,24)||'clinica'; }
@@ -4019,6 +4022,8 @@ function abrirGerirClinica(id){
   const bg=modalPlat(`<h3 style="margin:0 0 4px">${esc(f.nome)}</h3><p class="muted" style="margin:0 0 8px">${esc(f.donoEmail)} · criada em ${f.criadaEm?new Date(f.criadaEm).toLocaleDateString('pt-BR'):'—'} · <strong>${esc(s.txt)}</strong>${f.testeAte&&f.status==='teste'?' (até '+new Date(f.testeAte).toLocaleDateString('pt-BR')+')':''}</p>
     ${planoCamposHtml(f)}
     <label>Observações</label><input data-gc="obs" value="${esc(f.obs||'')}" maxlength="200">
+    <label>Personalizações ativas · versão: <strong data-gc="rotulo">${esc(rotuloVersaoDe(f))}</strong></label>
+    <div class="perm">${(platRoadmap||[]).filter(i=>i.tipo==='personalizacao' && i.numero).sort((a,b)=>a.numero-b.numero).map(i=>`<label title="${esc(i.descricao||'')}"><input type="checkbox" data-gcpers="${i.numero}" ${personalizacoesDe(f).includes(i.numero)?'checked':''}> #${i.numero} ${esc(i.titulo)}${(i.clinicasAlvo||[]).includes(f.id)?'':' <span class="muted">(outra clínica)</span>'}</label>`).join('')||'<span class="muted">Nenhuma personalização no quadro de implementação.</span>'}</div>
     <label>Período de teste</label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${[7,15,30].map(d=>`<button class="btn-s" data-gcprorrogar="${d}">+${d} dias</button>`).join('')}${f.status==='teste'&&s.cod==='teste'?'<button class="btn-s" data-gcencerrar style="margin-left:auto">Encerrar teste agora</button>':''}</div>
     <p class="erro-campo" data-gc="erro" role="alert"></p>
@@ -4032,7 +4037,20 @@ function abrirGerirClinica(id){
     try{ await Nuvem.atualizarClinica(f.id,mud); bg.remove(); platClinicas=null; carregarPlataforma(true); if(conf) avisar(conf); }
     catch(e){ console.error(e); erro(Nuvem.mapErro(e)); }
   };
-  bg.querySelector('[data-gc="ok"]').addEventListener('click',()=>gravar(Object.assign(lerPlanoCampos(bg),{obs:bg.querySelector('[data-gc="obs"]').value.trim()}),'Plano atualizado. A clínica vê a mudança na hora.'));
+  bg.querySelector('[data-gc="ok"]').addEventListener('click',()=>{
+    const mud=Object.assign(lerPlanoCampos(bg),{obs:bg.querySelector('[data-gc="obs"]').value.trim()});
+    const novas=[...bg.querySelectorAll('[data-gcpers]:checked')].map(c=>+c.getAttribute('data-gcpers')).sort((a,b)=>a-b), antes=personalizacoesDe(f);
+    if(JSON.stringify(novas)!==JSON.stringify(antes)){
+      const tit=n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===n); return it?it.titulo:''; };
+      const hist=(f.personalizacoesHist||[]).slice();
+      novas.filter(n=>!antes.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'ativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
+      antes.filter(n=>!novas.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'desativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
+      const info=Object.assign({},f.personalizacoesInfo||{}); novas.forEach(n=>{ info[n]=tit(n)||info[n]||''; });
+      Object.assign(mud,{personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info});
+    }
+    gravar(mud,'Plano e personalizações atualizados. A clínica vê a mudança na hora.');
+  });
+  bg.querySelectorAll('[data-gcpers]').forEach(c=>c.addEventListener('change',()=>{ const p=[...bg.querySelectorAll('[data-gcpers]:checked')].map(x=>+x.getAttribute('data-gcpers')); bg.querySelector('[data-gc="rotulo"]').textContent=rotuloVersaoDe({personalizacoes:p}); }));
   bg.querySelectorAll('[data-gcprorrogar]').forEach(b=>b.addEventListener('click',()=>{
     const d=+b.getAttribute('data-gcprorrogar'); const base=Math.max(Date.now(),f.testeAte||0);
     gravar({status:'teste',testeAte:base+d*86400000},`Teste prorrogado até ${new Date(base+d*86400000).toLocaleDateString('pt-BR')}.`);
@@ -4050,9 +4068,9 @@ function renderPlatRoadmap(){
   const ord={alta:0,media:1,baixa:2};
   const col=([st,tit])=>{ const its=platRoadmap.filter(i=>(i.status||'ideia')===st).sort((a,b)=>(ord[a.prioridade]??1)-(ord[b.prioridade]??1)||(b.atualizadoEm||0)-(a.atualizadoEm||0));
     return `<section class="rm-col" aria-label="${esc(tit)}"><div class="rm-col-cab"><span>${esc(tit)}</span><span class="rm-cont">${its.length}</span></div>
-      ${its.map(i=>`<article class="rm-card"><div class="rm-tags"><span class="rm-prior p-${esc(i.prioridade||'media')}">${esc(RM_PRIOR[i.prioridade]||'Média')}</span><span class="rm-cat">${esc(i.categoria||'')}</span></div>
+      ${its.map(i=>`<article class="rm-card"><div class="rm-tags">${i.numero?`<span class="nv-num">#${i.numero}</span>`:''}${i.tipo==='personalizacao'?'<span class="rm-pers">Personalização</span>':''}<span class="rm-prior p-${esc(i.prioridade||'media')}">${esc(RM_PRIOR[i.prioridade]||'Média')}</span><span class="rm-cat">${esc(i.categoria||'')}</span></div>
         <h3>${esc(i.titulo)}</h3>${i.descricao?`<p>${esc(i.descricao)}</p>`:''}
-        <div class="rm-rod">${i.alvo?`<span>${esc(i.alvo)}</span>`:''}${i.versao?`<span>v${esc(i.versao)}</span>`:''}</div>
+        <div class="rm-rod">${i.tipo==='personalizacao'?`<span>${esc((i.clinicasAlvo||[]).map(c=>nomeClinicaPlat(c)).join(', ')||'Sem clínica')}</span>`:(i.alvo?`<span>${esc(i.alvo)}</span>`:'')}${i.versao?`<span>Ver ${esc(vCurta(i.versao))}</span>`:''}</div>
         <div class="rm-acoes">${st!=='ideia'?`<button class="btn-icone" data-rmmover="${esc(i.id)}" data-dir="-1" aria-label="Voltar etapa" title="Voltar etapa">‹</button>`:''}<button class="btn-s" data-rmeditar="${esc(i.id)}">Editar</button>${st!=='publicado'?`<button class="btn-icone" data-rmmover="${esc(i.id)}" data-dir="1" aria-label="Avançar etapa" title="Avançar etapa">›</button>`:''}</div></article>`).join('')||'<p class="muted rm-vazio">Nada aqui.</p>'}
     </section>`; };
   return `<section class="bloco"><div class="bloco-cab"><h2>Implementação e melhorias</h2><button class="btn-p" data-rmnovo style="margin-left:auto">+ Nova melhoria</button></div>
@@ -4066,6 +4084,10 @@ function abrirItemRoadmap(id){
   const bg=modalPlat(`<h3 style="margin:0 0 8px">${id?'Editar melhoria':'Nova melhoria'}</h3>
     <label>Título</label><input data-rm="titulo" value="${esc(it.titulo||'')}" maxlength="120">
     <label>Descrição</label><textarea class="ta" rows="4" data-rm="descricao" maxlength="2000">${esc(it.descricao||'')}</textarea>
+    <div class="row"><div><label>Tipo</label><select data-rm="tipo"><option value="geral" ${it.tipo!=='personalizacao'?'selected':''}>Melhoria geral (todas as clínicas)</option><option value="personalizacao" ${it.tipo==='personalizacao'?'selected':''}>Personalização (só clínicas escolhidas)</option></select></div>
+      <div><label>Número</label><input value="${it.numero?'#'+it.numero:'definido ao salvar'}" disabled></div></div>
+    <div data-rm="clinicas" style="display:${it.tipo==='personalizacao'?'block':'none'}"><label>Para quais clínicas</label><div class="perm">${(platClinicas||[]).map(c=>`<label><input type="checkbox" data-rmcli="${esc(c.id)}" ${(it.clinicasAlvo||[]).includes(c.id)?'checked':''}> ${esc(c.nome)}</label>`).join('')||'<span class="muted">Nenhuma clínica criada.</span>'}</div>
+      <p class="muted" style="font-size:12.5px;margin:4px 0 0">Depois de pronta, ligue em Clínicas → Gerenciar → Personalizações.</p></div>
     <div class="row"><div><label>Etapa</label><select data-rm="status">${RM_STATUS.map(([k,t])=>`<option value="${k}" ${it.status===k?'selected':''}>${t}</option>`).join('')}</select></div>
       <div><label>Prioridade</label><select data-rm="prioridade">${Object.keys(RM_PRIOR).map(k=>`<option value="${k}" ${it.prioridade===k?'selected':''}>${RM_PRIOR[k]}</option>`).join('')}</select></div></div>
     <div class="row"><div><label>Categoria</label><select data-rm="categoria">${RM_CATEG.map(c=>`<option ${it.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -4075,9 +4097,10 @@ function abrirItemRoadmap(id){
     <p class="erro-campo" data-rm="erro" role="alert"></p>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">${id?'<button class="btn-d" data-rm="apagar" style="margin-right:auto">Excluir</button>':''}<button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-rm="ok">Salvar</button></div>`);
   const q=k=>bg.querySelector(`[data-rm="${k}"]`);
+  q('tipo').addEventListener('change',()=>{ q('clinicas').style.display=q('tipo').value==='personalizacao'?'block':'none'; });
   q('ok').addEventListener('click',()=>{
     const titulo=q('titulo').value.trim(); if(!titulo){ q('erro').textContent='Informe o título.'; return; }
-    const novo=Object.assign({},it,{titulo,descricao:q('descricao').value.trim(),status:q('status').value,prioridade:q('prioridade').value,categoria:q('categoria').value,alvo:q('alvo').value.trim(),versao:q('versao').value.trim(),publico:q('publico').checked});
+    const novo=Object.assign({},it,{titulo,descricao:q('descricao').value.trim(),status:q('status').value,prioridade:q('prioridade').value,categoria:q('categoria').value,alvo:q('alvo').value.trim(),versao:q('versao').value.trim(),publico:q('tipo').value==='personalizacao'?false:q('publico').checked,tipo:q('tipo').value,clinicasAlvo:[...bg.querySelectorAll('[data-rmcli]:checked')].map(c=>c.getAttribute('data-rmcli'))});
     Nuvem.salvarItemRoadmap(novo).then(()=>{ bg.remove(); render(); }).catch(e=>{ q('erro').textContent=Nuvem.mapErro(e); });
   });
   if(id) q('apagar').addEventListener('click',()=>customConfirm('Excluir esta melhoria do quadro?',()=>{ Nuvem.apagarItemRoadmap(id).then(()=>render()); bg.remove(); }));
@@ -4269,6 +4292,297 @@ function bindSugestoesPlat(){
   document.querySelectorAll('[data-sugfiltro]').forEach(b=>b.addEventListener('click',()=>{ platSugFiltro=b.getAttribute('data-sugfiltro'); render(); }));
   const r=document.querySelector('[data-sugrecarregar]'); if(r) r.addEventListener('click',()=>{ platSugestoes=null; carregarSugestoesPlat(true); render(); });
   document.querySelectorAll('[data-sugresp]').forEach(b=>b.addEventListener('click',()=>abrirRespostaSugestao(b.getAttribute('data-sugresp'))));
+}
+
+// =====================================================================
+// Versões e personalizações
+// "Ver 2.8 (184)": 2.8 = versão comum a todas as clínicas;
+// 184 = personalização (melhoria #184 do quadro) ligada só nesta clínica.
+// =====================================================================
+const NOTAS=(window.NOTAS_VERSAO||[]);
+function vCurta(v){ return String(v||'').replace(/\.0$/,''); }
+function cmpVer(a,b){ const x=String(a||'0').split('.').map(Number), y=String(b||'0').split('.').map(Number); for(let i=0;i<3;i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d; } return 0; }
+function personalizacoesDe(f){ return [...new Set(((f&&f.personalizacoes)||[]).map(Number).filter(Boolean))].sort((a,b)=>a-b); }
+// para usar no código de uma personalização: if(temPersonalizacao(184)){ ... }
+function temPersonalizacao(n){ return personalizacoesDe(fichaClinica()).includes(+n); }
+function rotuloVersao(f){ const p=personalizacoesDe(f===undefined?fichaClinica():f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
+function rotuloVersaoDe(f){ const p=personalizacoesDe(f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
+
+// versão publicada na produção (o ambiente de teste consulta para saber o que falta aprovar)
+let versaoProducao=null, versaoProducaoLida=false;
+function lerVersaoProducao(){
+  if(versaoProducaoLida || !(NUVEM && Nuvem.ambienteTeste())) return; versaoProducaoLida=true;
+  fetch('https://odontogestao-c8218.web.app/versao.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null)
+    .then(j=>{ versaoProducao=(j&&j.versao)||''; if(view==='home' && podeAtualizarSozinho()) render(); })
+    .catch(()=>{ versaoProducao=''; });
+}
+function notasPendentes(){ return versaoProducao?NOTAS.filter(n=>cmpVer(n.v,versaoProducao)>0):[]; }
+function faixaAprovacaoHtml(){
+  if(!(NUVEM && Nuvem.ambienteTeste() && Nuvem.souAdmin())) return '';
+  lerVersaoProducao();
+  const pend=notasPendentes(), n=pend.reduce((s,x)=>s+x.itens.length,0);
+  if(versaoProducao===null) return '';
+  if(!versaoProducao) return `<div class="faixa-plano"><div><strong>Ambiente de teste · ${esc(rotuloVersao())}.</strong> Não foi possível consultar a versão da produção agora.</div><button class="lnk-forte" data-irversoes>Ver notas da versão</button></div>`;
+  if(!pend.length) return `<div class="faixa-plano"><div><strong>Ambiente de teste · ${esc(rotuloVersao())}.</strong> Igual à produção: nada aguardando aprovação.</div><button class="lnk-forte" data-irversoes>Ver notas da versão</button></div>`;
+  return `<div class="faixa-plano aprovacao"><div><strong>${esc(rotuloVersao())} aguardando sua aprovação</strong> (produção: Ver ${esc(vCurta(versaoProducao))}). ${n} melhoria${n>1?'s':''}: ${esc(pend.flatMap(x=>x.itens).slice(0,3).join(' · '))}${n>3?' …':''}</div><button class="btn-p" data-irversoes>Ver o que será aprovado</button></div>`;
+}
+function abrirNovidades(){
+  const f=fichaClinica();
+  const hist=((f&&f.personalizacoesHist)||[]).filter(h=>h.acao==='ativada');
+  const ativos=personalizacoesDe(f);
+  const info=(f&&f.personalizacoesInfo)||{};
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Novidades do OdontoGestão</h3><p class="muted" style="margin:0 0 10px">Você está na <strong>${esc(rotuloVersao())}</strong>.${ativos.length?' Os números entre parênteses são as personalizações feitas para a sua clínica.':''}</p>
+    ${ativos.length?`<h4 class="bv-tit" style="margin-top:4px">Personalizações da sua clínica</h4><ul class="nv-lista">${ativos.map(n=>{ const h=hist.filter(x=>+x.n===n).pop(); return `<li><span class="nv-num">#${n}</span><div><strong>${esc(info[n]||'Personalização')}</strong>${h?`<div class="muted">Ativada em ${new Date(h.em).toLocaleDateString('pt-BR')}${h.versao?' · Ver '+esc(vCurta(h.versao)):''}</div>`:''}</div></li>`; }).join('')}</ul>`:''}
+    <h4 class="bv-tit" style="margin-top:4px">Histórico de versões</h4>${historicoVersoesHtml(8)}
+    <div style="margin-top:14px;text-align:right"><button class="btn-p" data-fechar>Fechar</button></div>`);
+  return bg;
+}
+function historicoVersoesHtml(limite,destacar,lista){
+  const base=lista||NOTAS, l=limite?base.slice(0,limite):base;
+  return `<div class="nv-hist">${l.map(n=>`<div class="nv-ver${destacar&&destacar(n)?' pendente':''}"><div class="nv-ver-cab"><strong>Ver ${esc(vCurta(n.v))}</strong><span class="muted">${n.data?new Date(n.data+'T12:00:00').toLocaleDateString('pt-BR'):''}</span>${destacar&&destacar(n)?'<span class="sit sit-nao_vem">Aguardando aprovação</span>':''}</div><ul>${n.itens.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`;
+}
+function renderPlatVersoes(){
+  lerVersaoProducao();
+  const teste=Nuvem.ambienteTeste(), pend=notasPendentes();
+  const clin=(platClinicas||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const pers=(platRoadmap||[]).filter(i=>i.tipo==='personalizacao');
+  const tituloN=n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===+n); return it?it.titulo:''; };
+  return `<section class="bloco"><div class="bloco-cab"><h2>Versão</h2></div><div class="bloco-corpo">
+    <p style="margin:0 0 6px">Esta base: <strong>${esc(rotuloVersao())}</strong> · ${teste?'ambiente de teste':'produção'}${teste?` · produção: <strong>${versaoProducao===null?'consultando…':versaoProducao?'Ver '+esc(vCurta(versaoProducao)):'não consultada'}</strong>`:''}</p>
+    ${teste&&pend.length?`<p class="muted" style="margin:0">Itens marcados como "Aguardando aprovação" vão para todas as clínicas quando você aprovar.</p>`:''}
+  </div></section>
+  ${teste?`<section class="bloco"><div class="bloco-cab"><h2>Aguardando aprovação</h2></div><div class="bloco-corpo">${pend.length?historicoVersoesHtml(0,()=>true,pend):'<p class="muted" style="margin:0">Nada pendente: o teste está igual à produção.</p>'}</div></section>`:''}
+  <section class="bloco"><div class="bloco-cab"><h2>Versão de cada clínica</h2></div>
+    ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th></tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
+      return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(rotuloVersaoDe(f))}</td><td>${p.length?p.map(n=>`<div><span class="nv-num">#${n}</span> ${esc(tituloN(n)||(f.personalizacoesInfo||{})[n]||'')}</div>`).join(''):'<span class="muted">Nenhuma (só a versão comum)</span>'}</td></tr>`; }).join('')}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada.</p></div>'}
+    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">A Plataforma mostra só a versão e as personalizações de cada clínica. Os dados delas (pacientes, financeiro) não aparecem aqui.</p></div></section>
+  <section class="bloco"><div class="bloco-cab"><h2>Como fazer uma personalização</h2></div><div class="bloco-corpo"><ol class="nv-passos">
+    <li>No quadro <strong>Implementação</strong>, crie o item com tipo <strong>Personalização</strong> e marque a clínica que pediu. Ele recebe um número (#N).</li>
+    <li>Eu programo a personalização no código comum, desligada por padrão, e publico no <strong>ambiente de teste</strong>.</li>
+    <li>No teste, crie (ou use) uma clínica de teste com os <strong>dados fictícios</strong>, ligue a personalização #N nela (Clínicas → Gerenciar) e valide.</li>
+    <li>Aprovado: publico na produção (a versão vai para todos, mas a personalização fica desligada) e você liga a #N <strong>só na clínica do cliente</strong>. Ela passa a mostrar "${esc('Ver '+vCurta(APP_VERSION))} (N)".</li>
+    <li>Ligar e desligar fica registrado no histórico da clínica.</li></ol>
+    ${pers.length?`<p class="muted" style="margin:8px 0 0">Personalizações no quadro: ${pers.map(i=>'#'+(i.numero||'?')+' '+esc(i.titulo)).join(' · ')}</p>`:''}
+  </div></section>
+  <section class="bloco"><div class="bloco-cab"><h2>Histórico de versões</h2></div><div class="bloco-corpo">${historicoVersoesHtml(0,teste&&versaoProducao?(n=>cmpVer(n.v,versaoProducao)>0):null)}</div></section>`;
+}
+// numeração automática dos itens do quadro (#1, #2, ...): nunca se repete
+let numerando=false;
+function numerarRoadmap(lista){
+  if(numerando || !lista) return;
+  const sem=lista.filter(i=>!i.numero).sort((a,b)=>(a.criadoEm||0)-(b.criadoEm||0));
+  if(!sem.length) return;
+  numerando=true;
+  Nuvem.numerarRoadmap(sem.map(i=>i.id)).catch(e=>console.warn('numeração',e)).finally(()=>{ numerando=false; });
+}
+function bindVersoes(){
+  document.querySelectorAll('[data-irversoes]').forEach(b=>b.addEventListener('click',()=>{ currentTab='plataforma'; platAba='versoes'; render(); }));
+  document.querySelectorAll('[data-novidades]').forEach(b=>b.addEventListener('click',abrirNovidades));
+}
+
+// =====================================================================
+// Massa de dados FICTÍCIA para testes (só no ambiente de teste)
+// Os mesmos pacientes, dentistas, agenda e financeiro em todas as bases de
+// teste. As datas são relativas ao dia em que os dados são carregados.
+// Nada aqui corresponde a pessoas reais. Tudo leva a marca ficticio:true.
+// =====================================================================
+const FIC_DENTISTAS=[
+  {id:'fic-d1',tipo:'dentista',nomeCompleto:'Helena Duarte',sexo:'F',cro:'11111-AM',telefone:'(92) 90000-1001'},
+  {id:'fic-d2',tipo:'dentista',nomeCompleto:'Rafael Moura',sexo:'M',cro:'22222-AM',telefone:'(92) 90000-1002'},
+];
+const FIC_EQUIPE=[{id:'fic-r1',tipo:'recepcionista',nomeCompleto:'Carla Souza (recepção)',telefone:'(92) 90000-1003'}];
+// CPFs de teste com dígitos válidos (sequência baixa, de uso comum em testes)
+function cpfTeste(i){ const b=String(i).padStart(9,'0').split('').map(Number); const dv=(arr,p)=>{ let s=0; arr.forEach((n,k)=>s+=n*(p-k)); const r=(s*10)%11; return r===10?0:r; };
+  const d1=dv(b,10), d2=dv(b.concat(d1),11); const t=b.join('')+d1+d2; return t.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4'); }
+const FIC_PACIENTES=[
+  {nome:'Mariana Albuquerque Lima',nasc:-34,sexo:'Feminino',civil:'Casada',prof:'Professora',caso:'restauracoes',saude:{docHipertensao:true,tratamentoMedico:'Sim',tratamentoQual:'Hipertensão',medicamentosContinuos:'Losartana 50 mg'}},
+  {nome:'João Pedro Cavalcante',nasc:-41,sexo:'Masculino',civil:'Casado',prof:'Engenheiro civil',caso:'canal',saude:{docDiabetes:true,tratamentoMedico:'Sim',tratamentoQual:'Diabetes tipo 2',medicamentosContinuos:'Metformina 850 mg',fumante:'Sim'}},
+  {nome:'Beatriz Nogueira Prado',nasc:-27,sexo:'Feminino',civil:'Solteira',prof:'Designer',caso:'estetica',saude:{alergiaMedicamentos:'Dipirona'},harm:true},
+  {nome:'Carlos Eduardo Ramos',nasc:-58,sexo:'Masculino',civil:'Casado',prof:'Comerciante',caso:'implante',saude:{docCardiopatia:true,tratamentoMedico:'Sim',tratamentoQual:'Arritmia, acompanhado por cardiologista',medicamentosContinuos:'Ácido acetilsalicílico 100 mg'}},
+  {nome:'Luiza Fernandes Rocha',nasc:-9,sexo:'Feminino',civil:'Solteira',prof:'Estudante',caso:'infantil',resp:'Patrícia Fernandes Rocha (mãe)',saude:{}},
+  {nome:'Rafaela Teixeira Monteiro',nasc:-31,sexo:'Feminino',civil:'Solteira',prof:'Advogada',caso:'harmonizacao',saude:{},harm:true},
+  {nome:'Gustavo Henrique Barros',nasc:-23,sexo:'Masculino',civil:'Solteiro',prof:'Estudante universitário',caso:'orto',saude:{bruxismo:'Sim'}},
+  {nome:'Sônia Maria Vasconcelos',nasc:-67,sexo:'Feminino',civil:'Viúva',prof:'Aposentada',caso:'protese',saude:{docOsteoporose:true,tratamentoMedico:'Sim',tratamentoQual:'Osteoporose',medicamentosContinuos:'Alendronato semanal'}},
+  {nome:'André Luiz Pacheco',nasc:-45,sexo:'Masculino',civil:'Divorciado',prof:'Motorista',caso:'perio',saude:{fumante:'Sim',sangramentoGengival:'Sim'}},
+  {nome:'Camila Rodrigues Farias',nasc:-29,sexo:'Feminino',civil:'Casada',prof:'Enfermeira',caso:'gestante',saude:{gestante:'Sim',gestanteMeses:'5'}},
+  {nome:'Felipe Augusto Siqueira',nasc:-36,sexo:'Masculino',civil:'Casado',prof:'Analista de sistemas',caso:'avaliacao',saude:{alergiaLatex:'Sim'}},
+  {nome:'Paula Regina Menezes',nasc:-50,sexo:'Feminino',civil:'Casada',prof:'Contadora',caso:'restauracoes',saude:{docHipertensao:true,medicamentosContinuos:'Anlodipino 5 mg'}},
+];
+// procedimentos de cada caso: [dente ou '' (geral/arcada), palavra-chave, situação]
+const FIC_CASOS={
+  restauracoes:[['16','Resina Composta (3','Planejado'],['26','Resina Composta','Planejado'],['36','Resina Composta','Realizado anteriormente'],['','Controle de Biofilme','Planejado']],
+  canal:[['46','Pulpectomia','Planejado'],['46','Coroa de Zircônia','Planejado'],['','Radiografia Panorâmica','Planejado']],
+  estetica:[['11','Faceta','Planejado'],['21','Faceta','Planejado'],['','Clareamento Caseiro','Planejado']],
+  implante:[['36','Implante Unitário','Planejado'],['','Manutenção Periodontal','Planejado'],['','Radiografia Panorâmica','Realizado anteriormente']],
+  infantil:[['55','Decíduo','Planejado'],['','Profilaxia Infantil','Planejado'],['','Flúor','Planejado']],
+  harmonizacao:[['','Toxina Botulínica — Três Terços','Planejado'],['','Preenchimento Labial','Planejado']],
+  orto:[['','Aparelho Ortodôntico','Planejado'],['','Toxina Botulínica para Bruxismo','Planejado']],
+  protese:[['','Reembasamento de Prótese','Planejado'],['','Avaliação Odontogeriátrica','Realizado anteriormente']],
+  perio:[['','Controle de Biofilme','Planejado'],['','Manutenção Periodontal','Planejado'],['17','Exodontia de Resto Radicular','Planejado']],
+  gestante:[['','Controle de Biofilme','Planejado'],['24','Ionômero','Planejado']],
+  avaliacao:[],
+};
+const FIC_AUSENTES={implante:['36'],protese:['18','28','38','48'],perio:['16']};
+function procPorPalavra(kw,dente){
+  const k=normTxt(kw), lista=state.procedimentos||[];
+  const ok=pr=>dente?(pr.escopo||'dente')==='dente':(pr.escopo==='arcada'||pr.escopo==='geral');
+  return lista.find(pr=>normTxt(pr.nome).includes(k) && ok(pr)) || lista.find(pr=>normTxt(pr.nome).includes(k)) || lista.find(ok);
+}
+function imagemFicticia(tipo,rotulo){
+  const W=tipo==='pano'?1400:520, H=tipo==='pano'?700:680;
+  const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
+  const g=x.createRadialGradient(W/2,H/2,40,W/2,H/2,Math.max(W,H)/1.4); g.addColorStop(0,'#5d6670'); g.addColorStop(1,'#0e1114');
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  x.fillStyle='rgba(235,240,245,.82)';
+  const dentes=tipo==='pano'?16:3;
+  for(let arc=0;arc<(tipo==='pano'?2:1);arc++){
+    for(let i=0;i<dentes;i++){
+      const t=dentes===1?0.5:i/(dentes-1);
+      const cx=tipo==='pano'?W*0.14+t*W*0.72:W*(0.25+t*0.5);
+      const cy=tipo==='pano'?(arc===0?H*0.38:H*0.62)+Math.cos((t-0.5)*Math.PI)*-H*0.08*(arc===0?1:-1):H*0.45;
+      const w=tipo==='pano'?W*0.034:W*0.18, h=tipo==='pano'?H*0.17:H*0.62;
+      x.beginPath(); x.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2); x.fill();
+    }
+  }
+  x.fillStyle='rgba(255,196,64,.95)'; x.font=`bold ${tipo==='pano'?34:26}px sans-serif`; x.textAlign='center';
+  x.fillText('IMAGEM FICTÍCIA · SOMENTE TESTE',W/2,H-24);
+  x.font=`${tipo==='pano'?22:18}px sans-serif`; x.fillStyle='rgba(255,255,255,.8)'; x.fillText(rotulo,W/2,36);
+  return new Promise(r=>c.toBlob(b=>r(b),'image/jpeg',0.85));
+}
+function assinaturaFicticia(nome){
+  const c=document.createElement('canvas'); c.width=600; c.height=180; const x=c.getContext('2d');
+  x.fillStyle='#fff'; x.fillRect(0,0,600,180); x.strokeStyle='#14202a'; x.lineWidth=3; x.beginPath();
+  let px=40; x.moveTo(px,110); for(let i=0;i<26;i++){ px+=19; x.quadraticCurveTo(px-9,40+((i*37)%70),px,90+((i*23)%40)); } x.stroke();
+  x.font='italic 16px serif'; x.fillStyle='#667'; x.fillText('assinatura fictícia — '+nome,40,165);
+  return new Promise(r=>c.toBlob(b=>r(b),'image/png'));
+}
+function temDadosFicticios(){ return (state.patients||[]).some(p=>p.ficticio); }
+async function carregarDadosFicticios(prog){
+  if(temDadosFicticios()) throw new Error('Os dados fictícios já estão carregados.');
+  ensureProcedimentos();
+  const hoje=hojeISO(), dia=n=>addDaysStr(hoje,n);
+  const eu=currentUser();
+  // equipe
+  FIC_DENTISTAS.concat(FIC_EQUIPE).forEach(u=>{ if(!state.users.find(x=>x.id===u.id)) state.users.push(Object.assign({ficticio:true,email:'',username:u.id,permissions:defaultPerms(u.tipo)},u)); });
+  const dents=FIC_DENTISTAS.map(d=>state.users.find(x=>x.id===d.id));
+  state.agendamentos=state.agendamentos||[]; state.fluxoFinanceiro=state.fluxoFinanceiro||[];
+  const pacs=[];
+  for(let i=0;i<FIC_PACIENTES.length;i++){
+    const f=FIC_PACIENTES[i]; if(prog) prog('Paciente '+(i+1)+' de '+FIC_PACIENTES.length);
+    const ano=new Date().getFullYear()+f.nasc;
+    const p={id:'fic-p'+(i+1),ficticio:true,nome:f.nome,nascimento:`${ano}-${String((i%12)+1).padStart(2,'0')}-${String(5+i).padStart(2,'0')}`,
+      cpf:cpfTeste(1001+i),rg:String(1234500+i)+'-0',sexo:f.sexo,estadoCivil:f.civil,profissao:f.prof,
+      endereco:`Rua Exemplo, ${100+i*7} — Bairro Fictício — Manaus/AM`,telefone:`(92) 90000-${String(2001+i)}`,email:`paciente${i+1}@exemplo.test`,
+      convenio:i%4===0?'Particular':'',responsavel:f.resp||'',contatoEmergencia:'(92) 90000-9999',ultimaConsultaConfirmada:'',
+      anamneses:[],evolucao:[],orcamentos:[],documentos:[],examesClinicos:[],exames:{panoramicas:[],periapicais:[]},odonto:{dentes:{},gerais:[]}};
+    // anamneses
+    const an=Object.assign(defaultAnamnese(),{ultimaVisita:dia(-200-i*20),escovacaoDiaria:'3x ao dia',fioDental:i%2?'Sim':'Não',observacoes:'Paciente fictício para testes.'},f.saude||{});
+    const recA={id:'fic-an'+(i+1),tipo:'odontologica',dataPreenchimento:dia(-30-i),dados:an,finalizado:true};
+    if(i%3===0){ recA.origem='paciente'; recA.assinante=f.resp||f.nome; recA.docAssinante=p.cpf; recA.assinadoEm=new Date(Date.now()-(30+i)*86400000).toISOString(); recA.dispositivo='Dados fictícios'; recA.assinaturaId=await salvarImagem(await assinaturaFicticia(f.nome)); }
+    p.anamneses.push(recA);
+    if(f.harm){ const d={}; harmQuestions.forEach(q=>{ d[q.id]=q.type==='scale'?'3':q.type==='text'?'Resposta fictícia':(q.options?q.options[0]:'Não'); });
+      d.objetivo='Suavizar linhas de expressão'; d.expectativa='Aparência natural'; p.anamneses.push({id:'fic-ah'+(i+1),tipo:'harmonizacao',dataPreenchimento:dia(-25),dados:d,finalizado:true}); }
+    // odontograma
+    (FIC_AUSENTES[f.caso]||[]).forEach(n=>{ p.odonto.dentes[n]={status:n==='36'&&f.caso==='implante'?'extraido':'ausente',procedimentos:[]}; });
+    (FIC_CASOS[f.caso]||[]).forEach(([n,kw,sit])=>{
+      const pr=procPorPalavra(kw,!!n); if(!pr) return;
+      const it={id:'fic-pp'+(i+1)+'-'+Math.random().toString(36).slice(2,7),procId:pr.id,nome:pr.nome,especialidade:pr.especialidade,valor:pr.valor,tempoMin:pr.tempoMin,status:sit};
+      if(n){ p.odonto.dentes[n]=p.odonto.dentes[n]||{procedimentos:[]}; p.odonto.dentes[n].procedimentos=p.odonto.dentes[n].procedimentos||[]; p.odonto.dentes[n].procedimentos.push(it); }
+      else { it.arco=pr.escopo==='geral'?'':'ambos'; p.odonto.gerais.push(it); }
+    });
+    // plano confirmado + orçamento (mesma lógica do botão "Confirmar plano")
+    const itens=collectPlanoItems(p);
+    if(itens.length){
+      const order=getPlanoOrder(p,itens), byId={}; itens.forEach(it=>byId[it.id]=it);
+      const snap=order.map(id=>byId[id]); const plano={id:'fic-pl'+(i+1),data:dia(-40+i),itens:snap};
+      p.planosConfirmados=[plano];
+      const inc=snap.filter(it=>it.incluido), total=inc.reduce((s,it)=>s+(it.valor||0),0);
+      const o={id:'fic-or'+(i+1),data:plano.data,planoId:plano.id,status:'pendente',itens:inc.map(it=>({nome:it.nome,especialidade:it.especialidade,ref:it.ref,valor:it.valor})),total};
+      p.orcamentos.push(o);
+      if(i%5!==4){ // a maioria aprovada; alguns ficam pendentes
+        o.status='aprovado'; o.aprovadoPorId=eu.id; o.aprovadoPorNome=eu.nomeCompleto; o.dataAprovacao=dia(-38+i);
+        o.pagamento=i%3===0?{condicao:'avista',formaPagamento:'Pix'}:i%3===1?{condicao:'parcelado_sem',numParcelas:'3',intervaloDias:'30',formaPagamento:'Cartão de crédito'}:{condicao:'parcelado_com',valorEntrada:String(Math.round(total*0.3)),numParcelas:'2',intervaloDias:'30',formaPagamento:'Boleto'};
+        state.patients.push(p); generateFluxo(p,o); state.patients.pop();
+        state.fluxoFinanceiro.filter(e=>e.orcamentoId===o.id).forEach((e,k)=>{ e.ficticio=true; if(e.vencimento<hoje && !(i===1&&k===1)){ e.confirmado=true; e.dataPagamento=e.vencimento; } });
+      }
+    }
+    // exame clínico
+    if(i<6){ const d=dents[i%2]; p.examesClinicos.push({id:'fic-ex'+(i+1),data:dia(-35+i),hora:'09:30',dentistaId:d.id,dentistaNome:nomeExibicao(d),dentistaCro:d.cro,finalizado:true,
+      dados:{fc:String(70+i),pa:i%3===0?'140 x 90':'120 x 80',biotipo:'Normolíneo',deambulacao:'Normal',estadoEmocional:'Tranquilo',simetria:'Simétrica',ganglionar:'Não',extraoral:'Sem alterações.',intraoral:'Mucosa normocorada.',dentes:'Ver odontograma.',oclusao:'Classe I',diagnostico:'Diagnóstico fictício para teste.'}}); }
+    // radiografias fictícias
+    if(i<5){ if(prog) prog('Imagens do paciente '+(i+1));
+      p.exames.panoramicas.push({id:'fic-pano'+(i+1),momento:'inicio',dataUpload:dia(-36+i),imagemId:await salvarImagem(await imagemFicticia('pano','Panorâmica — '+f.nome))});
+      if(i<3) p.exames.periapicais.push({id:'fic-peri'+(i+1),dente:i===1?'46':'16',dataUpload:dia(-20+i),imagemId:await salvarImagem(await imagemFicticia('peri','Periapical — '+f.nome))}); }
+    // documentos
+    if(i<2){ const d=dents[i%2]; p.documentos.push({id:'fic-doc'+(i+1),tipo:i===0?'atestado':'declaracao',data:dia(-10),dentistaId:d.id,dentistaNome:nomeExibicao(d),dentistaCro:d.cro,finalidade:'trabalhistas',apresentacao:'',horarioEntrada:'09:00',horarioSaida:'10:00',local:'Manaus/AM',criadoEm:dia(-10),quantidade:i===0?'1':'',unidade:'dias',cid:'',cidAutorizadoPor:''}); }
+    pacs.push(p); state.patients.push(p);
+  }
+  // agenda: duas semanas para trás e uma para frente, dias úteis
+  if(prog) prog('Agenda e financeiro');
+  const horas=['08:00','09:00','10:30','14:00','15:30','16:30'];
+  let k=0;
+  for(let dd=-14; dd<=7; dd++){
+    const data=dia(dd), sem=new Date(data+'T00:00:00').getDay(); if(sem===0||sem===6) continue;
+    for(let h=0;h<4;h++){
+      const p=pacs[k%pacs.length], d=dents[(k+h)%2]; k++;
+      const plano=(p.planosConfirmados||[])[0], pend=(plano?plano.itens:[]).filter(it=>it.status!=='Realizado anteriormente');
+      const proc=dd!==0&&pend.length&&h%2===0?pend[(k)%pend.length]:null;
+      const a={id:'fic-ag'+k,ficticio:true,pacienteId:p.id,pacienteNome:p.nome,dentistaId:d.id,dentistaNome:nomeExibicao(d),data,horario:horas[(h+(dd&1))%horas.length],
+        tipo:proc?'procedimento':'avaliacao',procedimentoNome:proc?proc.nome:'Avaliação',procedimentoRefs:proc?[proc.id]:[],procedimentoRef:proc?proc.id:null,observacao:'',cadeira:(h%2)+1};
+      a.duracaoMin=duracaoAgendamento(a,p);
+      if(dd<0) a.status=k%9===0?'faltou':'confirmado';
+      else if(dd===0) a.status=['chegou','confirmado','agendado','confirmado'][h];
+      else a.status=h%2?'confirmado':'agendado';
+      if(dd>0 && dd<=1) a.lembreteEnviadoEm=h%2?new Date().toISOString():'';
+      state.agendamentos.push(a);
+      const ev={id:'fic-ev'+k,agendamentoId:a.id,data,hora:a.horario,procedimentoNome:a.procedimentoNome,dentistaNome:a.dentistaNome,procedimentoRef:a.procedimentoRef,procedimentoRefs:a.procedimentoRefs,observacao:'',confirmado:false,confirmadoEm:''};
+      if(dd<0){ ev.confirmado=true; ev.confirmadoEm=data; ev.confirmadoPorId=d.id; ev.confirmadoPorNome=d.nomeCompleto; ev.confirmadoPorCro=d.cro;
+        if(a.status==='faltou'){ ev.falta=true; ev.observacao=textoFaltaPadrao(); }
+        else { ev.observacao='Atendimento fictício realizado sem intercorrências.'; (a.procedimentoRefs||[]).forEach(id=>{ const r=findProcedimentoRecordById(p,id); if(r) r.status='Concluído'; }); p.ultimaConsultaConfirmada=data; } }
+      p.evolucao.push(ev);
+    }
+  }
+  // despesas da clínica
+  ensureFluxoTipos();
+  const desp=[['Aluguel',2500,-20,true],['Energia elétrica',480,-12,true],['Material odontológico',1350,-5,true],['Laboratório de prótese',900,3,false],['Internet e telefone',160,8,false],['Contador',650,-1,false]];
+  desp.forEach(([nome,valor,dd,pago],j)=>{ const cat=(state.despesasCatalogo||[]).find(d=>normTxt(d.nome).includes(normTxt(nome.split(' ')[0])));
+    state.fluxoFinanceiro.push({id:'fic-dp'+(j+1),ficticio:true,tipo:'despesa',categoria:cat?cat.categoria:'Despesas fixas',fornecedor:'Fornecedor fictício '+(j+1),label:cat?cat.nome:nome,valor,vencimento:dia(dd),confirmado:pago,dataPagamento:pago?dia(dd):''}); });
+  state.meta=state.meta||{}; state.meta.dadosFicticiosEm=new Date().toISOString();
+  saveData();
+  return pacs.length;
+}
+function removerDadosFicticios(){
+  const pacs=(state.patients||[]).filter(p=>p.ficticio);
+  pacs.forEach(p=>{ imagensDoPaciente(p).forEach(removerImagem); assinaturasDoPaciente(p).forEach(removerImagem); });
+  const ids=new Set(pacs.map(p=>p.id));
+  state.patients=state.patients.filter(p=>!p.ficticio);
+  state.agendamentos=(state.agendamentos||[]).filter(a=>!a.ficticio && !ids.has(a.pacienteId));
+  state.fluxoFinanceiro=(state.fluxoFinanceiro||[]).filter(e=>!e.ficticio && !ids.has(e.pacienteId));
+  state.users=state.users.filter(u=>!u.ficticio);
+  if(state.meta) delete state.meta.dadosFicticiosEm;
+  saveData();
+  return pacs.length;
+}
+function ficticiosCardHtml(){
+  if(!(NUVEM && Nuvem.ambienteTeste())) return '';
+  const u=currentUser(); if(!u || u.tipo!=='master') return '';
+  const tem=temDadosFicticios();
+  return `<div class="card"><h3>Dados fictícios para teste</h3>
+    <p class="muted">Só existe no ambiente de teste. Carrega a mesma massa de dados em qualquer base de teste: ${FIC_PACIENTES.length} pacientes fictícios com cadastro completo, anamneses (algumas assinadas), odontograma, plano, orçamentos, financeiro com parcelas pagas e vencidas, evolução, exames clínicos, radiografias de exemplo, atestado e declaração, agenda de três semanas e ${FIC_DENTISTAS.length} dentistas e 1 recepcionista fictícios. As datas acompanham o dia em que você carrega.</p>
+    ${tem?`<p><strong>Carregados em ${esc(fmtDataHoraBR(state.meta&&state.meta.dadosFicticiosEm||''))}.</strong></p><button class="btn-d" id="btnFicRemover">Remover dados fictícios</button>`
+      :'<button class="btn-p" id="btnFicCarregar">Carregar dados fictícios</button>'}
+  </div>`;
+}
+function bindFicticios(){
+  const c=document.getElementById('btnFicCarregar');
+  if(c) c.addEventListener('click',()=>{
+    if(clinicaBloqueada()){ avisarBloqueio(); return; }
+    const prog=mostrarProgresso('Carregando dados fictícios');
+    carregarDadosFicticios(prog).then(n=>{ prog.fechar(); avisar(n+' pacientes fictícios carregados, com agenda, financeiro e prontuários.'); render(); })
+      .catch(e=>{ prog.fechar(); console.error(e); avisar('Não foi possível carregar: '+((e&&e.message)||e)); });
+  });
+  const r=document.getElementById('btnFicRemover');
+  if(r) r.addEventListener('click',()=>customConfirm('Remover todos os dados fictícios desta base de teste? Os dados que você mesmo cadastrou ficam.',()=>{ const n=removerDadosFicticios(); avisar(n+' pacientes fictícios removidos.'); render(); }));
 }
 
 function openPatientForm(p){
