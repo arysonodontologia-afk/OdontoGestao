@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.8.0';
+const APP_VERSION='2.8.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -3015,6 +3015,7 @@ function renderDashboard(){
   }
   const resp=(NUVEM&&perms.pacientes)?(state.formularios||[]).filter(f=>f.status==='respondido'):[];
   if(resp.length) pend.push(`<button class="pend" data-formsresp="1"><span><span class="pend-tit">Formulários devolvidos</span><span class="pend-sub">Anamneses e termos assinados pelos pacientes, para revisar</span></span><span class="pend-num">${resp.length}</span></button>`);
+  const ps=pendenciaSugestoesHtml(); if(ps) pend.push(ps);
   const alv=(u.tipo==='master'||perms.clinica)?alvaraAviso(state.clinic):null;
   if(alv) pend.push(`<button class="pend" data-tab="configuracoes"><span><span class="pend-tit">Alvará sanitário</span><span class="pend-sub">${esc(alv.txt)}</span></span><span class="pend-num${alv.ruim?' ruim':''}">!</span></button>`);
   const ult=state.meta&&state.meta.ultimoBackup, dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
@@ -3926,14 +3927,14 @@ function carregarPlataforma(forcar){
   if(platCarregando || (platClinicas && !forcar)) return;
   platCarregando=true; platErro='';
   Nuvem.listarClinicas().then(l=>{ platClinicas=l; }).catch(e=>{ console.error(e); platErro=Nuvem.mapErro(e); platClinicas=[]; })
-    .finally(()=>{ platCarregando=false; if(currentTab==='plataforma') render(); });
+    .finally(()=>{ platCarregando=false; if(currentTab==='plataforma' || (currentTab==='dashboard' && view==='home' && podeAtualizarSozinho())) render(); });
   if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l){ publicarVitrine(l); numerarRoadmap(l); } if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
 }
 function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
 function renderPlataforma(){
   if(!(NUVEM && Nuvem.souAdmin())) return '<div class="card"><p class="muted">Área restrita.</p></div>';
-  carregarPlataforma();
-  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes'],['versoes','Versões']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
+  carregarPlataforma(); carregarSugestoesPlat();
+  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes'+(sugNovasN()?' ('+sugNovasN()+')':'')],['versoes','Versões']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
   const amb=Nuvem.ambienteTeste()?'<span class="sit sit-nao_vem">Ambiente de teste</span>':'<span class="sit sit-chegou">Produção</span>';
   return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · ${esc(rotuloVersao(null))}</span></p></div><div style="margin-left:auto">${abas}</div></div>
   ${platErro?`<div class="faixa-plano bloqueada"><div>${esc(platErro)}</div></div>`:''}
@@ -4238,34 +4239,65 @@ function bindSugestoes(){
   document.querySelectorAll('[data-bvplanos]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirBoasVindas(false); }));
 }
 
-// ---------- administrador: sugestões de todas as clínicas ----------
-let platSugestoes=null, platSugCarregando=false, platSugFiltro='abertas';
+// ---------- administrador: sugestões de todas as clínicas (produção + ambiente de teste) ----------
+let platSugestoes=null, platSugCarregando=false, platSugFiltro='abertas', platSugClinica='', testeLigado=null, testeClinicas=[], testeErro='';
 function carregarSugestoesPlat(forcar){
   if(platSugCarregando || (platSugestoes && !forcar) || !platClinicas) return;
   platSugCarregando=true;
-  Nuvem.listarSugestoes(['principal'].concat(platClinicas.map(c=>c.id))).then(l=>{ platSugestoes=l; })
-    .catch(e=>{ console.error(e); platSugestoes=[]; }).finally(()=>{ platSugCarregando=false; if(currentTab==='plataforma' && platAba==='sugestoes') render(); });
+  (async()=>{
+    let l=await Nuvem.listarSugestoes(['principal'].concat(platClinicas.map(c=>c.id)));
+    if(!Nuvem.ambienteTeste()){
+      try{
+        if(testeLigado===null) testeLigado=await Nuvem.testeConectado();
+        if(testeLigado){ testeClinicas=await Nuvem.clinicasTeste(); l=l.concat(await Nuvem.listarSugestoes(['principal'].concat(testeClinicas.map(c=>c.id)),'teste')); testeErro=''; }
+      }catch(e){ console.warn(e); testeErro=Nuvem.mapErro(e); }
+    }
+    platSugestoes=l.sort((a,b)=>b.criadoEm-a.criadoEm);
+  })().catch(e=>{ console.error(e); platSugestoes=platSugestoes||[]; })
+    .finally(()=>{ platSugCarregando=false; if(view==='home' && (currentTab==='plataforma'||currentTab==='dashboard') && podeAtualizarSozinho()) render(); });
 }
-function nomeClinicaPlat(cid,x){ if(cid==='principal') return 'Sua clínica'; const c=(platClinicas||[]).find(k=>k.id===cid); return c?c.nome:(x&&x.clinicaNome)||cid; }
+function nomeClinicaPlat(cid,x){
+  if(x && x.amb==='teste'){ if(cid==='principal') return 'Sua clínica (teste)'; const c=testeClinicas.find(k=>k.id===cid); return (c?c.nome:(x.clinicaNome||cid))+' (teste)'; }
+  if(cid==='principal') return 'Sua clínica'; const c=(platClinicas||[]).find(k=>k.id===cid); return c?c.nome:(x&&x.clinicaNome)||cid;
+}
+const sugChave=x=>(x.amb||'aqui')+'|'+x.cid+'|'+x.id;
+const sugAberta=x=>x.status==='recebida'||x.status==='analise';
+function sugNovasN(){ return (platSugestoes||[]).filter(x=>x.status==='recebida').length; }
+function resumoSugestoesPorClinica(){
+  const m=new Map();
+  (platSugestoes||[]).forEach(x=>{ const k=(x.amb||'aqui')+'|'+x.cid; const r=m.get(k)||{k,nome:nomeClinicaPlat(x.cid,x),total:0,novas:0,abertas:0}; r.total++; if(x.status==='recebida') r.novas++; if(sugAberta(x)) r.abertas++; m.set(k,r); });
+  return [...m.values()].sort((a,b)=>b.novas-a.novas||b.total-a.total);
+}
+function pendenciaSugestoesHtml(){
+  if(!(NUVEM && Nuvem.souAdmin())) return '';
+  carregarPlataforma(); carregarSugestoesPlat();
+  if(!platSugestoes) return '';
+  const n=sugNovasN(), ab=(platSugestoes||[]).filter(sugAberta).length, cl=resumoSugestoesPorClinica().filter(r=>r.abertas).length;
+  return `<button class="pend" data-irsugestoes><span><span class="pend-tit">Sugestões dos clientes</span><span class="pend-sub">${ab?ab+' aberta'+(ab>1?'s':'')+' de '+cl+' clínica'+(cl>1?'s':''):'Nenhuma aguardando resposta'}</span></span><span class="pend-num${n?' ruim':''}">${n}</span></button>`;
+}
 function renderPlatSugestoes(){
   if(!platClinicas) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando…</p></div></section>';
   carregarSugestoesPlat();
-  if(!platSugestoes) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando sugestões…</p></div></section>';
-  const abertas=x=>x.status==='recebida'||x.status==='analise';
-  const l=platSugestoes.filter(x=>platSugFiltro==='todas'||abertas(x));
-  const filtro=`<div class="seg" role="group" aria-label="Filtro">${[['abertas','Abertas ('+platSugestoes.filter(abertas).length+')'],['todas','Todas ('+platSugestoes.length+')']].map(([k,t])=>`<button data-sugfiltro="${k}" class="${platSugFiltro===k?'active':''}" aria-pressed="${platSugFiltro===k}">${t}</button>`).join('')}</div>`;
-  return `<section class="bloco"><div class="bloco-cab"><h2>Sugestões dos clientes</h2><div style="margin-left:auto;display:flex;gap:8px;align-items:center">${filtro}<button class="btn-s" data-sugrecarregar>Atualizar</button></div></div>
-    ${l.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Sugestão</th><th>Situação</th><th></th></tr></thead><tbody>${l.map(x=>{ const st=SUG_STATUS[x.status]||SUG_STATUS.recebida;
-      return `<tr><td><strong>${esc(nomeClinicaPlat(x.cid,x))}</strong><div class="muted" style="font-size:12px">${esc(x.autorNome||x.autorEmail||'')} · ${new Date(x.criadoEm).toLocaleDateString('pt-BR')}</div></td>
+  const ponte=Nuvem.ambienteTeste()?'':`<div class="faixa-plano"><div>${testeLigado?'<strong>Incluindo as sugestões do ambiente de teste.</strong> Elas aparecem marcadas com "(teste)".':'<strong>Ambiente de teste:</strong> conecte para ver aqui também as sugestões enviadas nas bases de teste.'}${testeErro?' <span style="color:var(--danger)">'+esc(testeErro)+'</span>':''}</div>${testeLigado?'':'<button class="btn-p" data-sugponte>Conectar ao ambiente de teste</button>'}</div>`;
+  if(!platSugestoes) return ponte+'<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando sugestões…</p></div></section>';
+  const resumo=resumoSugestoesPorClinica();
+  const l=platSugestoes.filter(x=>(platSugFiltro==='todas'||sugAberta(x)) && (!platSugClinica||(x.amb||'aqui')+'|'+x.cid===platSugClinica));
+  const filtro=`<div class="seg" role="group" aria-label="Filtro">${[['abertas','Abertas ('+platSugestoes.filter(sugAberta).length+')'],['todas','Todas ('+platSugestoes.length+')']].map(([k,t])=>`<button data-sugfiltro="${k}" class="${platSugFiltro===k?'active':''}" aria-pressed="${platSugFiltro===k}">${t}</button>`).join('')}</div>`;
+  const chips=resumo.length?`<div class="sug-chips"><button class="sug-chip${!platSugClinica?' ativo':''}" data-sugcli="">Todas as clínicas</button>${resumo.map(r=>`<button class="sug-chip${platSugClinica===r.k?' ativo':''}" data-sugcli="${esc(r.k)}">${esc(r.nome)} <span class="sug-chip-n">${r.total}</span>${r.novas?`<span class="sug-chip-novas">${r.novas} nova${r.novas>1?'s':''}</span>`:''}</button>`).join('')}</div>`:'';
+  return ponte+`<section class="bloco"><div class="bloco-cab"><h2>Sugestões dos clientes</h2><div style="margin-left:auto;display:flex;gap:8px;align-items:center">${filtro}<button class="btn-s" data-sugrecarregar>Atualizar</button></div></div>
+    ${chips?`<div class="bloco-corpo" style="padding-bottom:0">${chips}</div>`:''}
+    ${l.length?`<div class="overflow"><table><thead><tr><th style="width:64px">Nº</th><th>Clínica</th><th>Sugestão</th><th>Situação</th><th></th></tr></thead><tbody>${l.map(x=>{ const st=SUG_STATUS[x.status]||SUG_STATUS.recebida;
+      return `<tr><td><span class="nv-num">S-${x.numero||'?'}</span></td><td><strong>${esc(nomeClinicaPlat(x.cid,x))}</strong><div class="muted" style="font-size:12px">${esc(x.autorNome||x.autorEmail||'')} · ${new Date(x.criadoEm).toLocaleDateString('pt-BR')}</div></td>
         <td><div class="muted" style="font-size:12px">${esc(x.categoria||'')}</div>${esc(x.texto)}${x.resposta?`<div class="sug-resp"><strong>Sua resposta:</strong> ${esc(x.resposta)}</div>`:''}</td>
         <td><span class="sit ${st[1]}">${st[0]}</span>${x.noQuadro?'<div class="muted" style="font-size:12px;margin-top:4px">No quadro</div>':''}</td>
-        <td class="actions"><button class="btn-s" data-sugresp="${esc(x.cid)}|${esc(x.id)}">Responder</button></td></tr>`; }).join('')}</tbody></table></div>`
+        <td class="actions"><button class="btn-s" data-sugresp="${esc(sugChave(x))}">Responder</button></td></tr>`; }).join('')}</tbody></table></div>`
       :`<div class="bloco-corpo"><p class="muted" style="margin:0">${platSugFiltro==='abertas'?'Nenhuma sugestão aguardando resposta.':'Nenhuma sugestão recebida ainda.'}</p></div>`}
-    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">Cada sugestão fica guardada na base da clínica que enviou. A resposta aparece no Painel da clínica.</p></div></section>`;
+    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">Cada sugestão fica guardada na base da clínica que enviou e recebe um número (S-N). A resposta aparece no Painel da clínica.</p></div></section>`;
 }
 function abrirRespostaSugestao(chave){
-  const [cid,id]=chave.split('|'); const x=(platSugestoes||[]).find(k=>k.cid===cid&&k.id===id); if(!x) return;
-  const bg=modalPlat(`<h3 style="margin:0 0 4px">Responder sugestão</h3><p class="muted" style="margin:0 0 8px">${esc(nomeClinicaPlat(cid,x))} · ${esc(x.autorNome||'')} · ${esc(x.categoria||'')}</p>
+  const x=(platSugestoes||[]).find(k=>sugChave(k)===chave); if(!x) return;
+  const cid=x.cid, id=x.id, amb=x.amb==='teste'?'teste':undefined;
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Responder sugestão <span class="nv-num">S-${x.numero||'?'}</span></h3><p class="muted" style="margin:0 0 8px">${esc(nomeClinicaPlat(cid,x))} · ${esc(x.autorNome||'')} · ${esc(x.categoria||'')}</p>
     <div class="rev-corpo" style="max-height:none">${esc(x.texto)}</div>
     <label>Situação</label><select data-rs="st">${Object.keys(SUG_STATUS).map(k=>`<option value="${k}" ${x.status===k?'selected':''}>${SUG_STATUS[k][0]}</option>`).join('')}</select>
     <label>Resposta para a clínica</label><textarea class="ta" rows="4" data-rs="resp" maxlength="1000">${esc(x.resposta||'')}</textarea>
@@ -4279,19 +4311,23 @@ function abrirRespostaSugestao(chave){
     if(levar) mud.noQuadro=true;
     q('ok').disabled=true;
     try{
-      await Nuvem.responderSugestao(cid,id,mud);
-      if(levar) await Nuvem.salvarItemRoadmap({titulo:x.texto.length>90?x.texto.slice(0,88)+'…':x.texto,descricao:x.texto+'\n\nSugestão de '+(x.autorNome||'')+' — '+nomeClinicaPlat(cid,x)+'.',status:'ideia',prioridade:'media',categoria:'Outros',alvo:'Todos os planos',publico:false});
+      await Nuvem.responderSugestao(cid,id,mud,amb);
+      if(levar) await Nuvem.salvarItemRoadmap({titulo:x.texto.length>90?x.texto.slice(0,88)+'…':x.texto,descricao:x.texto+'\n\nSugestão S-'+(x.numero||'?')+' de '+(x.autorNome||'')+' — '+nomeClinicaPlat(cid,x)+'.',status:'ideia',prioridade:'media',categoria:'Outros',alvo:'Todos os planos',publico:false});
       Object.assign(x,mud); bg.remove(); render();
     }catch(e){ q('ok').disabled=false; q('erro').textContent=Nuvem.mapErro(e); }
   });
   q('apagar').addEventListener('click',()=>customConfirm('Excluir esta sugestão? Ela some também do Painel da clínica.',()=>{
-    Nuvem.apagarSugestao(id,cid).then(()=>{ platSugestoes=platSugestoes.filter(k=>!(k.cid===cid&&k.id===id)); bg.remove(); render(); }).catch(e=>avisar(Nuvem.mapErro(e)));
+    Nuvem.apagarSugestao(id,cid,amb).then(()=>{ platSugestoes=platSugestoes.filter(k=>sugChave(k)!==chave); bg.remove(); render(); }).catch(e=>avisar(Nuvem.mapErro(e)));
   }));
 }
 function bindSugestoesPlat(){
   document.querySelectorAll('[data-sugfiltro]').forEach(b=>b.addEventListener('click',()=>{ platSugFiltro=b.getAttribute('data-sugfiltro'); render(); }));
+  document.querySelectorAll('[data-sugcli]').forEach(b=>b.addEventListener('click',()=>{ platSugClinica=b.getAttribute('data-sugcli'); render(); }));
   const r=document.querySelector('[data-sugrecarregar]'); if(r) r.addEventListener('click',()=>{ platSugestoes=null; carregarSugestoesPlat(true); render(); });
   document.querySelectorAll('[data-sugresp]').forEach(b=>b.addEventListener('click',()=>abrirRespostaSugestao(b.getAttribute('data-sugresp'))));
+  const p=document.querySelector('[data-sugponte]');
+  if(p) p.addEventListener('click',()=>{ p.disabled=true; Nuvem.conectarTeste().then(()=>{ testeLigado=true; testeErro=''; platSugestoes=null; carregarSugestoesPlat(true); render(); })
+    .catch(e=>{ p.disabled=false; testeErro=e&&e.code==='auth/unauthorized-domain'?'Falta autorizar este endereço no projeto de teste (Authentication → Configurações → Domínios autorizados: odontogestao-c8218.web.app).':Nuvem.mapErro(e); render(); }); });
 }
 
 // =====================================================================
@@ -4376,6 +4412,7 @@ function numerarRoadmap(lista){
   Nuvem.numerarRoadmap(sem.map(i=>i.id)).catch(e=>console.warn('numeração',e)).finally(()=>{ numerando=false; });
 }
 function bindVersoes(){
+  document.querySelectorAll('[data-irsugestoes]').forEach(b=>b.addEventListener('click',()=>{ currentTab='plataforma'; platAba='sugestoes'; render(); }));
   document.querySelectorAll('[data-irversoes]').forEach(b=>b.addEventListener('click',()=>{ currentTab='plataforma'; platAba='versoes'; render(); }));
   document.querySelectorAll('[data-novidades]').forEach(b=>b.addEventListener('click',abrirNovidades));
 }

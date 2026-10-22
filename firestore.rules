@@ -147,7 +147,7 @@ service cloud.firestore {
           && request.resource.data.texto is string
           && request.resource.data.texto.size() > 3 && request.resource.data.texto.size() < 2000;
         allow update: if admin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'respondidoEm', 'noQuadro']);
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'respondidoEm', 'noQuadro', 'numero']);
         allow delete: if admin() || master()
           || (membro() && resource.data.autorEmail == meuEmail() && resource.data.status == 'recebida');
       }

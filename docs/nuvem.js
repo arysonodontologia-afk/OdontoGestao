@@ -242,16 +242,50 @@ function enviarSugestao(d){
   return F.setDoc(F.doc(colRef('sugestoes')),{texto:String(d.texto||'').slice(0,1990),categoria:d.categoria||'',autorNome:d.autorNome||'',autorEmail:meuEmail(),
     clinicaNome:d.clinicaNome||'',status:'recebida',resposta:'',criadoEm:F.serverTimestamp()});
 }
-function apagarSugestao(id,cid){ return F.deleteDoc(F.doc(db,'clinicas',cid||CLINICA,'sugestoes',id)); }
+function dbDe(amb){ return amb==='teste'&&T&&T.db?T.db:db; }
+function apagarSugestao(id,cid,amb){ return F.deleteDoc(F.doc(dbDe(amb),'clinicas',cid||CLINICA,'sugestoes',id)); }
 // administrador: sugestões de todas as clínicas
-async function listarSugestoes(cids){
-  const r=await Promise.allSettled(cids.map(cid=>F.getDocs(F.collection(db,'clinicas',cid,'sugestoes')).then(s=>s.docs.map(d=>sugLimpa(d,cid)))));
-  return r.filter(x=>x.status==='fulfilled').flatMap(x=>x.value).sort((a,b)=>b.criadoEm-a.criadoEm);
+async function listarSugestoes(cids,amb){
+  const base=dbDe(amb);
+  const r=await Promise.allSettled(cids.map(cid=>F.getDocs(F.collection(base,'clinicas',cid,'sugestoes')).then(s=>s.docs.map(d=>Object.assign(sugLimpa(d,cid),{amb:amb||'aqui'})))));
+  const l=r.filter(x=>x.status==='fulfilled').flatMap(x=>x.value).sort((a,b)=>b.criadoEm-a.criadoEm);
+  // número sequencial de cada sugestão (S-1, S-2...), dado na primeira vez que o administrador vê
+  const sem=l.filter(x=>!x.numero).sort((a,b)=>a.criadoEm-b.criadoEm);
+  if(sem.length){
+    try{
+      const rc=F.doc(base,'plataforma','contadorSugestoes');
+      const ini=await F.runTransaction(base,async t=>{ const s=await t.get(rc); const u=(s.exists()&&+s.data().ultimo)||0; t.set(rc,{ultimo:u+sem.length}); return u+1; });
+      await Promise.allSettled(sem.map((x,i)=>{ x.numero=ini+i; return F.updateDoc(F.doc(base,'clinicas',x.cid,'sugestoes',x.id),{numero:x.numero}); }));
+    }catch(e){ console.warn('numeração das sugestões',e); }
+  }
+  return l;
 }
-function responderSugestao(cid,id,mud){
+function responderSugestao(cid,id,mud,amb){
   const d=Object.assign({},mud); if('resposta' in d) d.respondidoEm=F.serverTimestamp();
-  return F.updateDoc(F.doc(db,'clinicas',cid,'sugestoes',id),d);
+  return F.updateDoc(F.doc(dbDe(amb),'clinicas',cid,'sugestoes',id),d);
 }
+// ---------- ponte para o ambiente de teste (só o administrador, só na produção) ----------
+// A produção lê as sugestões das clínicas do ambiente de teste, entrando com a mesma conta Google.
+const CFG_TESTE={apiKey:'AIzaSyB1jEndifAybW5e7XR3zSAIAIVSZRRpgHk',authDomain:'odontogestao-teste.firebaseapp.com',projectId:'odontogestao-teste',
+  storageBucket:'odontogestao-teste.firebasestorage.app',messagingSenderId:'832518528179',appId:'1:832518528179:web:730746b9467bce37e8a4c6'};
+let T=null;
+async function ponteTeste(){
+  if(T) return T;
+  const mApp=await import(SDK+'firebase-app.js');
+  const app2=mApp.initializeApp(window.ODONTO_CFG_TESTE||CFG_TESTE,'ambiente-teste');
+  const auth2=A.getAuth(app2); auth2.languageCode='pt-BR';
+  let db2; try{ db2=F.initializeFirestore(app2,{localCache:F.memoryLocalCache()}); }catch(e){ db2=F.getFirestore(app2); }
+  T={auth:auth2,db:db2,user:null};
+  await new Promise(r=>{ let feito=false; const un=A.onAuthStateChanged(auth2,u=>{ T.user=u; if(!feito){ feito=true; r(); } }); setTimeout(()=>{ if(!feito){ feito=true; r(); } },4000); });
+  return T;
+}
+async function testeConectado(){ if(ambienteTeste()) return false; const t=await ponteTeste(); return !!(t.user && normEmail(t.user.email)===ADMIN_EMAIL); }
+async function conectarTeste(){
+  const t=await ponteTeste(); const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account',login_hint:ADMIN_EMAIL});
+  const c=await A.signInWithPopup(t.auth,prov); t.user=(c&&c.user)||t.auth.currentUser;
+  if(!t.user || normEmail(t.user.email)!==ADMIN_EMAIL){ try{ await A.signOut(t.auth); }catch(_){} t.user=null; throw new Error('Entre com '+ADMIN_EMAIL+' para ler o ambiente de teste.'); }
+}
+async function clinicasTeste(){ const t=await ponteTeste(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.map(d=>({id:d.id,nome:(d.data()||{}).nome||d.id})); }
 // vitrine (planos e melhorias previstas que as clínicas veem)
 async function lerVitrine(){ try{ const s=await F.getDoc(F.doc(db,'plataforma','vitrine')); return s.exists()?s.data():null; }catch(e){ return null; } }
 function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); }
@@ -603,7 +637,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, lerVitrine, salvarVitrine,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, testeConectado, conectarTeste, clinicasTeste, lerVitrine, salvarVitrine,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };

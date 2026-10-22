@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.8.1', data:'2026-10-22', itens:[
+    'Sugestões numeradas (S-N) e quantidade enviada por clínica',
+    'Painel do administrador avisa as sugestões novas',
+    'Produção lê também as sugestões do ambiente de teste (marcadas "teste")',
+  ]},
   {v:'2.8.0', data:'2026-10-22', itens:[
     'Número da versão e das personalizações no sistema: "Ver 2.8 (184)"',
     'Notas de versão: no ambiente de teste aparece o que está aguardando aprovação',
