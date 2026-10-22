@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.6.1';
+const APP_VERSION='2.7.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -656,10 +656,22 @@ function duracaoAgendamento(a,paciente){
   return (state.clinic&&+state.clinic.duracaoPadrao)||30;
 }
 function duracaoDe(a){ return a.duracaoMin || duracaoAgendamento(a, state.patients.find(x=>x.id===a.pacienteId)); }
+// ---- cadeiras (consultórios) ----
+// Padrão: 1 cadeira, então dois dentistas no mesmo horário é conflito. Planos Clínico e Completo podem ter mais.
+function nCadeiras(){ if(!temRecurso('cadeiras')) return 1; return Math.max(1,Math.min(20,parseInt(state.clinic&&state.clinic.cadeiras,10)||1)); }
+function cadeiraDe(a){ const n=parseInt(a&&a.cadeira,10)||1; return Math.min(n,nCadeiras()); }
+function nomeCadeira(n){ const l=(state.clinic&&state.clinic.cadeirasNomes)||[]; return (l[n-1]&&String(l[n-1]).trim())||('Cadeira '+n); }
+function sobrepoe(a,ini,fim){ const i2=hhmmParaMin(a.horario), f2=i2+duracaoDe(a); return ini<f2 && i2<fim; }
+function cadeiraLivre(novo){
+  const ini=hhmmParaMin(novo.horario), fim=ini+(novo.duracaoMin||30);
+  const ocup=new Set((state.agendamentos||[]).filter(x=>x.id!==novo.id && x.data===novo.data && statusAg(x)!=='cancelado' && sobrepoe(x,ini,fim)).map(cadeiraDe));
+  for(let n=1;n<=nCadeiras();n++) if(!ocup.has(n)) return n;
+  return 0;
+}
 function conflitosAgenda(novo){
   const ini=hhmmParaMin(novo.horario), fim=ini+(novo.duracaoMin||30);
-  return (state.agendamentos||[]).filter(x=>x.id!==novo.id && x.data===novo.data && statusAg(x)!=='cancelado' && (x.dentistaId===novo.dentistaId || x.pacienteId===novo.pacienteId))
-    .filter(x=>{ const i2=hhmmParaMin(x.horario), f2=i2+duracaoDe(x); return ini<f2 && i2<fim; });
+  return (state.agendamentos||[]).filter(x=>x.id!==novo.id && x.data===novo.data && statusAg(x)!=='cancelado' && (x.dentistaId===novo.dentistaId || x.pacienteId===novo.pacienteId || cadeiraDe(x)===cadeiraDe(novo)))
+    .filter(x=>sobrepoe(x,ini,fim));
 }
 function statusAg(a){ return a.status||'agendado'; }
 function evolDoAgendamento(a){ const pc=pacPorId(a.pacienteId); return pc?(pc.evolucao||[]).find(e=>e.agendamentoId===a.id):null; }
@@ -831,7 +843,7 @@ function agendaCardsList(list){
         <div class="ag-proc">${esc(a.procedimentoNome)}</div>
         ${extra?`<div class="ag-extra muted">${extra}</div>`:''}
       </div>
-      <span class="ag-dentista">${avatarHtml(a.dentistaNome,a.dentistaId,'av-peq')}${esc(a.dentistaNome)}</span>
+      <span class="ag-dentista">${avatarHtml(a.dentistaNome,a.dentistaId,'av-peq')}${esc(a.dentistaNome)}${nCadeiras()>1?`<span class="ag-cad">${esc(nomeCadeira(cadeiraDe(a)))}</span>`:''}</span>
       <div class="ag-card-actions">
         ${agStatusSelect(a)}
         ${podeChegou(a)?`<button class="btn-p" data-agchegou="${a.id}">Chegou</button>`:''}
@@ -863,7 +875,7 @@ function renderAgendaLembretes(){
   ${lista.length?`<div class="overflow"><table><thead><tr><th>Horário</th><th>Paciente</th><th>Telefone</th><th>Dentista</th><th>Situação</th><th>Resposta do paciente</th><th>Lembrete</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum atendimento a lembrar neste dia.</p>'}
   </div>`;
 }
-let agendaSelId=null, agendaDiaModo='grade', agDentFiltro='';
+let agendaSelId=null, agendaDiaModo='grade', agDentFiltro='', agendaGradePor='dentista';
 function rotuloPeriodoAgenda(){
   if(agendaViewMode==='lembretes'){ if(!agendaLembData) agendaLembData=addDaysStr(hojeISO(),1); return fmtDiaSemana(agendaLembData)+', '+fmtDataLonga(agendaLembData); }
   if(agendaViewMode==='semana'){ const w=weekDates(agendaViewDate); return fmtIntervalo(w[0],w[6]); }
@@ -928,7 +940,10 @@ function renderAgendaDia(){
   if(agendaDiaModo==='lista'){
     principal=`<section class="bloco"><div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${modos}</div><div class="bloco-corpo">${agendaCardsList(todos)}</div></section>`;
   } else {
-    const dents=dentistasDaAgenda(ativos);
+    const porCad=nCadeiras()>1 && agendaGradePor==='cadeira';
+    const dents=porCad?Array.from({length:nCadeiras()},(_,i)=>({id:'cad:'+(i+1),nome:nomeCadeira(i+1),cad:i+1})):dentistasDaAgenda(ativos);
+    const colDe=a=>porCad?'cad:'+cadeiraDe(a):(a.dentistaId||'?');
+    const porSel=nCadeiras()>1?`<div class="seg" role="group" aria-label="Colunas da grade"><button data-aggradepor="dentista" class="${!porCad?'active':''}">Por dentista</button><button data-aggradepor="cadeira" class="${porCad?'active':''}">Por cadeira</button></div>`:'';
     if(!dents.length) principal=`<section class="bloco"><div class="bloco-cab"><h2>Grade do dia</h2>${modos}</div><div class="bloco-corpo">${semDentistaAviso()}</div></section>`;
     else {
       const its=ativos.map(a=>({a,ini:hhmmParaMin(a.horario),fim:hhmmParaMin(a.horario)+duracaoDe(a)}));
@@ -939,13 +954,13 @@ function renderAgendaDia(){
       const pxMin=SLOT_PX/SLOT_MIN, altura=(fim-ini)*pxMin;
       const horas=[]; for(let m=ini;m<fim;m+=60) horas.push(`<div class="gr-hora" style="height:${60*pxMin}px">${minParaHHMM(m)}</div>`);
       const cols=dents.map(d=>{
-        const meus=faixasSobrepostas(its.filter(i=>(i.a.dentistaId||'?')===d.id));
+        const meus=faixasSobrepostas(its.filter(i=>colDe(i.a)===d.id));
         const blocos=meus.map(i=>{
           const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
           const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64;
           return `<button class="gr-bloco gb-${st}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+AG_STATUS[st][0])}">
             ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${esc(a.pacienteNome)}</strong></span>`
-            :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}</span>`}
+            :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
           </button>`;
         }).join('');
         const iv=(state.clinic&&state.clinic.intervalo)||{}; let pausa='';
@@ -954,12 +969,12 @@ function renderAgendaDia(){
         if(hc && hc.aberto){ const ab=hhmmParaMin(hc.ini), fe=hhmmParaMin(hc.fim); if(ab>ini) fora+=`<div class="gr-fora" style="top:0;height:${(ab-ini)*pxMin}px"></div>`; if(fe<fim) fora+=`<div class="gr-fora" style="top:${(fe-ini)*pxMin}px;height:${(fim-fe)*pxMin}px"></div>`; }
         return `<div class="gr-col" data-agcol="${esc(d.id)}" data-agini="${ini}" style="height:${altura}px;background-size:100% ${SLOT_PX}px" title="Clique num horário livre para agendar">${fora}${pausa}${blocos}</div>`;
       }).join('');
-      const cab=dents.map(d=>{ const n=ativos.filter(a=>(a.dentistaId||'?')===d.id).length; return `<div class="gr-dent">${avatarHtml(d.nome,d.id)}<div><div class="gr-dent-nome">${esc(d.nome)}</div><div class="muted">${n} atendimento${n===1?'':'s'}</div></div></div>`; }).join('');
+      const cab=dents.map(d=>{ const n=ativos.filter(a=>colDe(a)===d.id).length; return `<div class="gr-dent">${d.cad?`<span class="gr-cad-ico" aria-hidden="true">${d.cad}</span>`:avatarHtml(d.nome,d.id)}<div><div class="gr-dent-nome">${esc(d.nome)}</div><div class="muted">${n} atendimento${n===1?'':'s'}</div></div></div>`; }).join('');
       let agora='';
       if(agendaViewDate===hojeISO()){ const m=hhmmParaMin(agoraHHMM()); if(m>=ini && m<=fim) agora=`<div class="gr-agora" style="top:${(m-ini)*pxMin}px" aria-hidden="true"></div>`; }
       const tpl=`64px repeat(${dents.length},minmax(200px,1fr))`;
       principal=`<section class="bloco" aria-label="Grade de horários">
-        <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${hc&&!hc.aberto?'<span class="sit sit-agendado">Clínica fechada neste dia</span>':''}${cancelados?`<button class="lnk-forte" data-agdiamodo="lista">${cancelados} cancelado${cancelados>1?'s':''}, ver na lista</button>`:''}<div style="margin-left:auto">${modos}</div></div>
+        <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'}</h2>${hc&&!hc.aberto?'<span class="sit sit-agendado">Clínica fechada neste dia</span>':''}${cancelados?`<button class="lnk-forte" data-agdiamodo="lista">${cancelados} cancelado${cancelados>1?'s':''}, ver na lista</button>`:''}<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">${porSel}${modos}</div></div>
         <div class="gr-rolagem"><div class="gr" style="min-width:${64+dents.length*200}px">
           <div class="gr-topo" style="grid-template-columns:${tpl}"><div></div>${cab}</div>
           <div class="gr-corpo" style="grid-template-columns:${tpl}"><div class="gr-horas">${horas.join('')}</div>${cols}${agora}</div>
@@ -1070,6 +1085,7 @@ function openAgendamentoForm(a){
     <div><label>Data</label><input type="date" id="agDataForm" value="${a?a.data:agendaViewDate}" required></div>
     <div><label>Horário</label><input type="time" id="agHorarioForm" value="${a?a.horario:''}" required></div>
     <div><label>Dentista</label><select id="agDentista" required>${dentistaOptionsHtml(a?a.dentistaId:'', false)}</select></div>
+    ${nCadeiras()>1?`<div><label>Cadeira</label><select id="agCadeira"><option value="">Escolher a livre</option>${Array.from({length:nCadeiras()},(_,i)=>i+1).map(n=>`<option value="${n}" ${a&&cadeiraDe(a)===n&&a.cadeira?'selected':''}>${esc(nomeCadeira(n))}</option>`).join('')}</select></div>`:''}
   </div>
   ${semDentistaAviso()}
   <label>Tipo de atendimento</label>
@@ -1120,6 +1136,8 @@ function openAgendamentoForm(a){
       observacao: document.getElementById('agObs').value
     };
     data.duracaoMin=duracaoAgendamento(data,paciente);
+    const selCad=document.getElementById('agCadeira');
+    if(nCadeiras()>1){ data.cadeira=selCad&&selCad.value?parseInt(selCad.value,10):(cadeiraLivre(data)||1); } else data.cadeira=1;
     const conflitos=conflitosAgenda(data);
     const gravar=()=>{
       state.agendamentos=state.agendamentos||[];
@@ -1149,8 +1167,9 @@ function openAgendamentoForm(a){
       render();
     };
     if(conflitos.length){
-      const det=conflitos.map(x=>`${x.dentistaId===data.dentistaId?'Dentista ocupado':'Paciente já agendado'}: ${x.horario}–${minParaHHMM(hhmmParaMin(x.horario)+duracaoDe(x))} (${x.pacienteNome}, ${x.dentistaNome})`).join('; ');
-      confirmarAcao('Conflito de horário! '+det+'. Deseja agendar mesmo assim (encaixe)?','Agendar mesmo assim',gravar);
+      const det=conflitos.map(x=>`${x.dentistaId===data.dentistaId?'Dentista ocupado':x.pacienteId===data.pacienteId?'Paciente já agendado':(nCadeiras()>1?nomeCadeira(cadeiraDe(x))+' ocupada':'Cadeira ocupada')}: ${x.horario}–${minParaHHMM(hhmmParaMin(x.horario)+duracaoDe(x))} (${x.pacienteNome}, ${x.dentistaNome})`).join('; ');
+      const dica=nCadeiras()===1 && conflitos.some(x=>x.dentistaId!==data.dentistaId && x.pacienteId!==data.pacienteId)?(temRecurso('cadeiras')?' Se a clínica tem mais de uma cadeira, informe a quantidade em Configurações.':' Atender dois pacientes ao mesmo tempo exige mais de uma cadeira (planos Clínico e Completo).'):'';
+      confirmarAcao('Conflito de horário! '+det+'.'+dica+' Deseja agendar mesmo assim (encaixe)?','Agendar mesmo assim',gravar);
     } else gravar();
   });
 }
@@ -2653,6 +2672,9 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     <div class="cl-grade" style="margin-top:14px">
       <div class="cl-campo"><label for="clIntIni">Intervalo (almoço)</label><div class="cl-duplo"><input type="time" id="clIntIni" value="${esc((d.intervalo&&d.intervalo.ini)||'')}" aria-label="Início do intervalo"${dis}><input type="time" id="clIntFim" value="${esc((d.intervalo&&d.intervalo.fim)||'')}" aria-label="Fim do intervalo"${dis}></div><div class="cl-dica">Deixe vazio se não houver.</div></div>
       <div class="cl-campo"><label for="clDur">Duração padrão da consulta</label><select id="clDur"${dis}>${[15,20,30,40,45,60].map(m=>`<option value="${m}" ${+d.duracaoPadrao===m?'selected':''}>${m} minutos</option>`).join('')}</select></div>
+      ${temRecurso('cadeiras')?`<div class="cl-campo"><label for="clCad">Cadeiras de atendimento</label><select id="clCad"${dis}>${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}" ${(parseInt(d.cadeiras,10)||1)===n?'selected':''}>${n} cadeira${n>1?'s':''}</option>`).join('')}</select><div class="cl-dica">Com mais de uma, dentistas diferentes podem atender no mesmo horário.</div></div>
+      <div class="cl-campo"><label for="clCadNomes">Nomes das cadeiras (opcional)</label><input id="clCadNomes" value="${esc(((d.cadeirasNomes)||[]).join(', '))}" placeholder="Ex.: Sala 1, Sala 2"${dis}><div class="cl-dica">Separe por vírgula, na ordem.</div></div>`
+      :`<div class="cl-campo"><label>Cadeiras de atendimento</label><input value="1 cadeira" disabled><div class="cl-dica">Mais de uma cadeira: planos Clínico e Completo.</div></div>`}
     </div>
   </section>
   <section class="cl-secao">
@@ -2705,6 +2727,7 @@ function bindClinicaForm(formId,aoSalvar){
     c.end={cep:val('clCep'),logradouro:val('clLogr'),numero:val('clNum'),complemento:val('clCompl'),bairro:val('clBairro'),cidade:val('clCidade'),uf:val('clUf')};
     c.horarios={}; DIAS_CLINICA.forEach(([k])=>{ c.horarios[k]={aberto:q('hAb_'+k).checked,ini:q('hIni_'+k).value||'08:00',fim:q('hFim_'+k).value||'18:00'}; });
     c.intervalo={ini:val('clIntIni'),fim:val('clIntFim')}; c.duracaoPadrao=parseInt(val('clDur'),10)||30;
+    if(q('clCad')){ c.cadeiras=parseInt(val('clCad'),10)||1; c.cadeirasNomes=String(val('clCadNomes')||'').split(',').map(x=>x.trim()).slice(0,c.cadeiras); }
     if(logoPendente!==undefined){ if(logoPendente) c.logo=logoPendente; else delete c.logo; }
     const erros=[];
     if(!c.nome) erros.push('o nome da clínica');
@@ -3814,8 +3837,8 @@ async function bootFormularioPublico(token,cid){
 const SUPORTE_WHATSAPP='5592985081590';
 const PLANOS={
   essencial:{nome:'Essencial',preco:49.90,recursos:[],dentistas:1,usuarios:2,desc:'Agenda, cadastro de pacientes, lembretes e anamnese'},
-  clinico:{nome:'Clínico',preco:79.90,recursos:['prontuario','formularios'],dentistas:1,usuarios:0,desc:'Essencial + prontuário completo e formulários assinados'},
-  completo:{nome:'Completo',preco:119.90,recursos:['prontuario','formularios','financeiro'],dentistas:3,usuarios:0,desc:'Clínico + financeiro, relatórios e permissões'},
+  clinico:{nome:'Clínico',preco:79.90,recursos:['prontuario','formularios','cadeiras'],dentistas:1,usuarios:0,desc:'Essencial + prontuário completo e formulários assinados'},
+  completo:{nome:'Completo',preco:119.90,recursos:['prontuario','formularios','financeiro','cadeiras'],dentistas:3,usuarios:0,desc:'Clínico + financeiro, relatórios e permissões'},
 };
 const MODULOS={
   prontuario:{nome:'Prontuário clínico',preco:39.90},
@@ -4093,7 +4116,7 @@ const VANTAGENS=[
 const RECURSOS_TXT={
   base:['Agenda no computador e no celular','Cadastro de pacientes','Lembretes de consulta pelo WhatsApp','Anamnese odontológica e de harmonização'],
   prontuario:['Odontograma, exame clínico e plano de tratamento','Orçamento e evolução','Radiografias e documentos (atestado, declaração)'],
-  formularios:['Anamnese e termo enviados pelo WhatsApp, com assinatura do paciente'],
+  formularios:['Anamnese e termo enviados pelo WhatsApp, com assinatura do paciente','Várias cadeiras: atendimentos no mesmo horário com dentistas diferentes'],
   financeiro:['Financeiro: parcelas, despesas e inadimplência','Relatórios e tabela de valores','Permissões por usuário'],
 };
 let vitrineCache=null, vitrineLida=false;
@@ -4656,6 +4679,7 @@ function bindEvents(){
   if(btnTopNovoAg) btnTopNovoAg.addEventListener('click',()=>{ currentTab='agenda'; patientDetailId=null; if(agendaViewMode==='lembretes') agendaViewMode='dia'; render(); openAgendamentoForm(null); });
   document.querySelectorAll('[data-agsel]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); const id=b.getAttribute('data-agsel'); agendaSelId=id&&agendaSelId!==id?id:null; render(); }));
   document.querySelectorAll('[data-agdiamodo]').forEach(b=>b.addEventListener('click',()=>{ agendaDiaModo=b.getAttribute('data-agdiamodo'); render(); }));
+  document.querySelectorAll('[data-aggradepor]').forEach(b=>b.addEventListener('click',()=>{ agendaGradePor=b.getAttribute('data-aggradepor'); render(); }));
   document.querySelectorAll('[data-agdent]').forEach(b=>b.addEventListener('click',()=>{ agDentFiltro=b.getAttribute('data-agdent'); render(); }));
   document.querySelectorAll('[data-agchegou]').forEach(b=>b.addEventListener('click',()=>mudarStatusAg(b.getAttribute('data-agchegou'),'chegou')));
   document.querySelectorAll('[data-lote]').forEach(b=>b.addEventListener('click',()=>abrirLoteLembretes(b.getAttribute('data-lote'))));
@@ -4666,7 +4690,9 @@ function bindEvents(){
     openAgendamentoForm(null);
     const h=document.getElementById('agHorarioForm'), d=document.getElementById('agDentista');
     if(h) h.value=minParaHHMM(m);
-    if(d && [...d.options].some(o=>o.value===col.getAttribute('data-agcol'))) d.value=col.getAttribute('data-agcol');
+    const colId=col.getAttribute('data-agcol');
+    if(colId.indexOf('cad:')===0){ const c=document.getElementById('agCadeira'); if(c) c.value=colId.slice(4); }
+    else if(d && [...d.options].some(o=>o.value===colId)) d.value=colId;
     const area=document.getElementById('agendaFormArea'); if(area) area.scrollIntoView({behavior:'smooth',block:'start'});
   }));
   const navAg=(dir)=>{
