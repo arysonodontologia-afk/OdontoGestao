@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "odontogestao-c8218"
+    "default": "odontogestao-c8218",
+    "teste": "COLOQUE-O-ID-DO-PROJETO-DE-TESTE"
   }
 }

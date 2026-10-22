@@ -2,7 +2,8 @@
 // OdontoGestão — camada de nuvem (Firebase Authentication + Firestore)
 // ---------------------------------------------------------------------
 // • Login por e-mail/senha ou Google; só entra quem o Master cadastrou.
-// • Os dados ficam em clinicas/{CLINICA}/... no Firestore (São Paulo).
+// • Cada clínica tem seus dados em clinicas/{id}/... no Firestore (São Paulo).
+//   O índice membros/{e-mail} diz em qual clínica cada pessoa entra.
 // • Coleções grandes são guardadas em "baldes": cada documento reúne
 //   vários itens (pacientes, agendamentos...). Isso reduz muito o número
 //   de leituras cobradas a cada abertura do sistema. Cada item é gravado
@@ -16,7 +17,11 @@
 const CFG = window.FIREBASE_CONFIG || {};
 const ATIVA = !!(CFG.apiKey && CFG.projectId);
 const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
-const CLINICA = window.ODONTO_CLINICA_ID || 'principal';
+let CLINICA = 'principal';                 // clínica original (sem ficha de plano)
+// administrador da plataforma: o mesmo e-mail das regras do Firestore (só muda o que aparece na tela;
+// quem garante o acesso são as regras)
+const ADMIN_EMAIL = window.ODONTO_ADMIN_EMAIL || 'aryson.odontologia@gmail.com';
+const PROJETO_PRODUCAO = 'odontogestao-c8218';
 
 // Número de baldes por coleção. NÃO altere depois que houver dados.
 const COLS = {
@@ -136,7 +141,7 @@ function ouvirFormularios(){
   },erro));
 }
 // página pública
-async function iniciarPublico(){ await carregarSDK(true); }
+async function iniciarPublico(cid){ await carregarSDK(true); if(cid) CLINICA=String(cid).replace(/[^\w-]/g,''); }
 async function lerFormularioPublico(token){
   try{ const s=await F.getDocFromServer(ref('formularios',token)); if(!s.exists()) return null; const x=s.data(); return Object.assign({},x,{expiraEm:ms(x.expiraEm)}); }
   catch(e){ if(e && e.code==='permission-denied') return null; throw e; }
@@ -182,8 +187,83 @@ async function sair(forcar){
   return 'ok';
 }
 
+// ---------- clínica de cada pessoa ----------
+let ficha=null, unFicha=null;
+const fichaLimpa=x=>x?Object.assign({},x,{testeAte:ms(x.testeAte),criadaEm:ms(x.criadaEm),ativadaEm:ms(x.ativadaEm)}):null;
+async function descobrirClinica(){
+  let cid='principal';
+  try{
+    let s; try{ s=await F.getDocFromServer(F.doc(db,'membros',meuEmail())); }catch(e){ s=await F.getDoc(F.doc(db,'membros',meuEmail())); }
+    if(s.exists() && s.data().cid) cid=String(s.data().cid);
+  }catch(e){ console.warn('Índice de clínicas indisponível; usando a clínica principal.',e); }
+  CLINICA=cid; return cid;
+}
+async function lerFicha(){
+  try{ const s=await F.getDoc(F.doc(db,'clinicas',CLINICA)); ficha=s.exists()?fichaLimpa(s.data()):null; }
+  catch(e){ ficha=null; }
+  return ficha;
+}
+function ouvirFicha(){
+  if(unFicha) return;
+  unFicha=F.onSnapshot(F.doc(db,'clinicas',CLINICA),s=>{
+    const nova=s.exists()?fichaLimpa(s.data()):null;
+    if(JSON.stringify(nova)!==JSON.stringify(ficha)){ ficha=nova; if(hooks.onFicha) hooks.onFicha(ficha); }
+  },e=>console.warn(e));
+  unsubs.push(()=>{ unFicha(); unFicha=null; });
+}
+const souAdmin=()=>!!usuario && usuario.emailVerified && meuEmail()===ADMIN_EMAIL;
+const ambienteTeste=()=>!!CFG.projectId && CFG.projectId!==PROJETO_PRODUCAO;
+
+// índice e-mail -> clínica, gravado junto com os acessos
+function idxOp(email,del){ return del?{r:F.doc(db,'membros',email),del:true}:{r:F.doc(db,'membros',email),d:{cid:CLINICA}}; }
+async function reindexar(emails){
+  // um por vez: se um e-mail já pertence a outra clínica, os demais seguem
+  const r=await Promise.allSettled([...new Set(emails.filter(Boolean).map(normEmail))].map(e=>F.setDoc(F.doc(db,'membros',e),{cid:CLINICA})));
+  return r.filter(x=>x.status==='rejected').length;
+}
+
+// 'livre' | 'aqui' | 'outra' — antes de cadastrar um e-mail num usuário
+async function situacaoEmail(email){
+  try{ const s=await F.getDoc(F.doc(db,'membros',normEmail(email))); if(!s.exists()) return 'livre'; return s.data().cid===CLINICA?'aqui':'outra'; }
+  catch(e){ if(e && e.code==='permission-denied') return 'outra'; return 'livre'; }
+}
+
+// ---------- plataforma (somente o administrador) ----------
+async function listarClinicas(){
+  const s=await F.getDocs(F.collection(db,'clinicas'));
+  return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id}));
+}
+async function criarClinica(dados){
+  const cid=(dados.slug||'clinica')+'-'+novoId().slice(-5);
+  const dono=normEmail(dados.donoEmail);
+  const ex=await F.getDoc(F.doc(db,'membros',dono));
+  if(ex.exists()){ const e=new Error('Este e-mail já está ligado a outra clínica ('+ex.data().cid+').'); e.code='email-em-uso'; throw e; }
+  const wb=F.writeBatch(db);
+  wb.set(F.doc(db,'clinicas',cid),{nome:dados.nome,donoEmail:dono,plano:dados.plano,modulos:dados.modulos||{},dentistasExtras:+dados.dentistasExtras||0,
+    status:'teste',testeAte:F.Timestamp.fromMillis(Date.now()+(+dados.dias||30)*86400000),criadaEm:F.serverTimestamp(),obs:dados.obs||'',contato:dados.contato||''});
+  wb.set(F.doc(db,'membros',dono),{cid});
+  await wb.commit();
+  return cid;
+}
+async function atualizarClinica(cid,mud){
+  const d=Object.assign({},mud);
+  if(typeof d.testeAte==='number') d.testeAte=F.Timestamp.fromMillis(d.testeAte);
+  if(d.status==='ativa' && !d.ativadaEm) d.ativadaEm=F.serverTimestamp();
+  await F.updateDoc(F.doc(db,'clinicas',cid),d);   // update troca o campo inteiro (módulos desmarcados somem)
+}
+function ouvirRoadmap(cb){
+  const un=F.onSnapshot(F.collection(db,'roadmap'),s=>cb(s.docs.map(d=>Object.assign({},d.data(),{id:d.id}))),e=>{ console.error(e); cb(null,e); });
+  unsubs.push(un); return un;
+}
+function salvarItemRoadmap(it){ const c=Object.assign({},it); const id=c.id||novoId(); delete c.id; c.atualizadoEm=Date.now(); if(!c.criadoEm) c.criadoEm=Date.now(); return F.setDoc(F.doc(db,'roadmap',id),c).then(()=>id); }
+function apagarItemRoadmap(id){ return F.deleteDoc(F.doc(db,'roadmap',id)); }
+async function semearRoadmap(itens){
+  const wb=F.writeBatch(db); itens.forEach(it=>{ const c=Object.assign({criadoEm:Date.now(),atualizadoEm:Date.now()},it); wb.set(F.doc(db,'roadmap',novoId()),c); }); await wb.commit();
+}
+
 // ---------- acesso ----------
 async function carregarAcesso(){
+  await descobrirClinica();
   const r=ref('acessos',meuEmail());
   let s;
   try{ s=await F.getDocFromServer(r); }catch(e){ s=await F.getDoc(r); }   // sem internet: cópia local
@@ -319,6 +399,7 @@ function aplicar(key,mudados,removidos){
 
 async function conectar(ac){
   acesso=ac; souMaster=ac.tipo==='master';
+  await lerFicha(); ouvirFicha();
   const pode=p=>souMaster || !!(ac.perms&&ac.perms[p]);
   const t=[ouvirConfig(),ouvirUsuarios()];
   if(pode('usuarios')) t.push(ouvirAcessos());
@@ -335,6 +416,14 @@ async function conectar(ac){
   st.formularios=formularios;
   pronto=true; status();
   return st;
+}
+
+// Volta o estado do app para o que está na nuvem (clínica em modo de consulta)
+function restaurar(st){
+  if(!pronto || !st) return;
+  st.clinic=srvCfg.clinica?JSON.parse(srvCfg.clinica):null; st.meta=srvCfg.meta?JSON.parse(srvCfg.meta):{};
+  st.users=[...srvUsers.keys()].sort((a,b)=>posicao('users',a)-posicao('users',b)).map(id=>JSON.parse(srvUsers.get(id)));
+  for(const key in COLS){ const m=srv[key]; if(m) st[key]=[...m.entries()].sort((a,b)=>a[1].p-b[1].p).map(([,v])=>JSON.parse(v.s)); }
 }
 
 // ---------- gravação: compara com o que está na nuvem e envia só o que mudou ----------
@@ -392,10 +481,10 @@ function salvar(st){
     const des=hooks.acessosDesejados();
     for(const [e,o] of des){
       const s=canon(o);
-      if(srvAc.get(e)!==s && podeMexerAcesso(e,o)){ ops.push({r:ref('acessos',e),d:o}); srvAc.set(e,s); }
+      if(srvAc.get(e)!==s && podeMexerAcesso(e,o)){ ops.push({r:ref('acessos',e),d:o}); if(!srvAc.has(e)) ops.push(idxOp(e)); srvAc.set(e,s); }
     }
     for(const [e,s] of [...srvAc]){
-      if(!des.has(e) && e!==meuEmail() && podeMexerAcesso(e,JSON.parse(s))){ ops.push({r:ref('acessos',e),del:true}); srvAc.delete(e); }
+      if(!des.has(e) && e!==meuEmail() && podeMexerAcesso(e,JSON.parse(s))){ ops.push({r:ref('acessos',e),del:true}); ops.push(idxOp(e,true)); srvAc.delete(e); }
     }
   }
   if(avisosTam.length && hooks.onAlertaTamanho) hooks.onAlertaTamanho(avisosTam);
@@ -478,6 +567,8 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar,
+  listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };
 })();

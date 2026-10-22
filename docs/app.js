@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.4.2';
+const APP_VERSION='2.5.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -49,6 +49,7 @@ function atualizarBannerSalvar(){
 }
 let saveChain=Promise.resolve();
 function saveData(){
+  if(NUVEM && clinicaBloqueada()){ avisarBloqueio(); try{ Nuvem.restaurar(state); }catch(e){} setTimeout(()=>{ if(view==='home') render(); },0); return; }
   if(NUVEM){
     try{ Nuvem.salvar(state); }
     catch(e){ console.error(e); saveErro='falha ao preparar o envio para a nuvem ('+e.message+')'; atualizarBannerSalvar(); }
@@ -327,7 +328,7 @@ function confirmarAcao(message,labelSim,onSim){
 }
 function lembreteBackupHtml(){
   const u=currentUser(); if(!u) return '';
-  const perms=Object.assign(defaultPerms(u.tipo),u.permissions||{});
+  const perms=permsDe(u);
   if(!perms.usuarios || !state.patients.length) return '';
   const ult=state.meta&&state.meta.ultimoBackup;
   const dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/86400000):null;
@@ -1259,7 +1260,15 @@ function renderFinanceiroPrincipal(){
   return `<h2 style="margin:0 0 10px 0">Financeiro</h2><div class="tabs">${bar}</div>${body}`;
 }
 let configSubTab='clinica';
-function permsDe(u){ return Object.assign(defaultPerms(u.tipo), u.permissions||{}); }
+// permissões dadas ao usuário (gravadas no acesso); permsDe aplica também os limites do plano
+function permsBrutos(u){ return Object.assign(defaultPerms(u.tipo), u.permissions||{}); }
+function permsDe(u){
+  const p=Object.assign(defaultPerms(u.tipo), u.permissions||{});
+  // o plano da clínica limita o que qualquer usuário pode usar
+  if(!temRecurso('financeiro')) p.financeiro=false;
+  if(!temRecurso('prontuario')) p.procedimentos=false;
+  return p;
+}
 function isoLocal(d){ const pd=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${pd(d.getMonth()+1)}-${pd(d.getDate())}`; }
 function hojeISO(){ return isoLocal(new Date()); }
 function agoraHHMM(){ const d=new Date(); const pd=n=>String(n).padStart(2,'0'); return pd(d.getHours())+':'+pd(d.getMinutes()); }
@@ -1447,7 +1456,7 @@ function renderTabelaValores(){
   ${cards||'<div class="card"><p class="muted">Nenhum procedimento encontrado.</p></div>'}`;
 }
 function renderConfiguracoesPrincipal(){
-  const u=currentUser(); const perms=Object.assign(defaultPerms(u.tipo), u.permissions||{});
+  const u=currentUser(); const perms=permsDe(u);
   const subTabs=[{id:'clinica', label:'🏥 Clínica'}];
   if(perms.procedimentos) subTabs.push({id:'procedimentos', label:'🦷 Procedimentos'});
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
@@ -2192,6 +2201,7 @@ const ICONES={
   check:ICO('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   dente:ICO('<path d="M7.2 3.5c-2.4 0-4 1.9-4 4.6 0 2.2.8 3.6 1.5 5.4.7 1.9.9 3.6 1.3 5.3.3 1.3.9 2.2 1.8 2.2 1.2 0 1.5-1.3 1.8-2.9.3-1.6.7-3.4 2.4-3.4s2.1 1.8 2.4 3.4c.3 1.6.6 2.9 1.8 2.9.9 0 1.5-.9 1.8-2.2.4-1.7.6-3.4 1.3-5.3.7-1.8 1.5-3.2 1.5-5.4 0-2.7-1.6-4.6-4-4.6-1.9 0-2.9 1-4.8 1s-2.9-1-4.8-1z"/>'),
   dashboard:ICO('<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>'),
+  plataforma:ICO('<rect x="3.5" y="4" width="17" height="6" rx="1.6"/><rect x="3.5" y="14" width="17" height="6" rx="1.6"/><path d="M7 7h.01M7 17h.01"/>'),
   usuarios:ICO('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.7 3.8-5.6 7.5-5.6s6.7 1.9 7.5 5.6"/>'),
   pacientes:ICO('<circle cx="9" cy="8.5" r="3.2"/><path d="M2.8 19.5c.6-3.2 3.2-5 6.2-5s5.6 1.8 6.2 5"/><path d="M15.5 5.6a3.1 3.1 0 0 1 0 5.8M18 14.8c1.7.7 2.9 2.4 3.2 4.7"/>'),
   agenda:ICO('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14h3"/>'),
@@ -2373,7 +2383,7 @@ async function bootNuvem(){
     await Nuvem.iniciar({
       estado:()=>state, onAuth:aoMudarLogin, acessosDesejados,
       onErroLogin:m=>{ nuvemErro=m; if(view==='nuvemLogin') render(); },
-      onRemoto:aoMudarRemoto, onStatus:atualizarStatusNuvem, onErro:aoErroNuvem,
+      onRemoto:aoMudarRemoto, onStatus:atualizarStatusNuvem, onErro:aoErroNuvem, onFicha:aoMudarFicha,
       onAcessoMudou, onAlertaTamanho:l=>console.warn('Documentos perto do limite:',l),
     });
   }catch(e){
@@ -2408,6 +2418,7 @@ async function aoMudarLogin(u){
     } else {
       try{ ensureProcedimentos(); }catch(e){ console.error(e); }
       view='home'; currentTab=modoCelular()?'agenda':'dashboard';
+      try{ conferirIndice(); }catch(e){ console.warn(e); }
     }
     render();
   }catch(e){
@@ -2416,11 +2427,22 @@ async function aoMudarLogin(u){
     nuvemErro='Não foi possível carregar: '+Nuvem.mapErro(e); view='nuvemSemAcesso'; render();
   }
 }
+function aoMudarFicha(){
+  if(view!=='home') return;
+  if(podeAtualizarSozinho()) render(); else aoMudarRemoto();
+}
+// índice e-mail -> clínica para os usuários que já existiam antes das várias clínicas
+function conferirIndice(){
+  const u=currentUser(); if(!u || clinicaBloqueada() || !(u.tipo==='master'||permsDe(u).usuarios)) return;
+  const marca=Nuvem.clinicaId()+':1'; if(state.meta && state.meta.indiceClinica===marca) return;
+  const emails=state.users.map(x=>x.email).concat([Nuvem.meuEmail()]);
+  Nuvem.reindexar(emails).then(falhas=>{ if(!falhas){ state.meta=state.meta||{}; state.meta.indiceClinica=marca; saveData(); } }).catch(e=>console.warn(e));
+}
 function acessosDesejados(){
   const m=new Map();
   (state.users||[]).forEach(u=>{
     const e=normEmail(u.email); if(!e || !emailValido(e) || m.has(e)) return;
-    m.set(e,{userId:u.id, tipo:u.tipo, perms:permsDe(u), ativo:!u.inativo});
+    m.set(e,{userId:u.id, tipo:u.tipo, perms:permsBrutos(u), ativo:!u.inativo});
   });
   return m;
 }
@@ -2471,7 +2493,7 @@ function aoErroNuvem(e){
   atualizarBannerSalvar();
 }
 function onAcessoMudou(novo,ant){
-  if(novo && ant && novo.ativo===true && novo.tipo===ant.tipo && JSON.stringify(permsDe({tipo:novo.tipo,permissions:novo.perms}))===JSON.stringify(permsDe({tipo:ant.tipo,permissions:ant.perms}))){
+  if(novo && ant && novo.ativo===true && novo.tipo===ant.tipo && JSON.stringify(permsBrutos({tipo:novo.tipo,permissions:novo.perms}))===JSON.stringify(permsBrutos({tipo:ant.tipo,permissions:ant.perms}))){
     if(novo.userId!==session){ session=novo.userId; nuvemAcesso=novo; }
     return;
   }
@@ -2716,9 +2738,13 @@ function render(){
   else app.innerHTML=renderApp();
   const pa=document.getElementById('printArea'); if(pa) pa.innerHTML=printSheetHtml;
   if(NUVEM) bindNuvemEvents();
+  if(NUVEM && Nuvem.ambienteTeste() && !document.getElementById('faixaAmbiente')){
+    const fa=document.createElement('div'); fa.id='faixaAmbiente'; fa.textContent='Ambiente de teste · '+Nuvem.projeto(); document.body.appendChild(fa);
+  }
   bindTema();
   bindEvents();
   if(NUVEM) bindFormularios();
+  if(NUVEM && currentTab==='plataforma') bindPlataforma();
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
 }
@@ -2731,7 +2757,7 @@ function renderSetupClinic(){
   <p class="cl-sub">Estes dados aparecem nos documentos e na agenda. Só o nome, telefone, e-mail e cidade são obrigatórios agora; o resto pode ser completado depois em Configurações.</p>
   ${NUVEM?`<div class="cl-importar"><div><strong>Já usava a versão anterior?</strong><div class="muted">Exporte o backup nela (Configurações, Backup) e importe aqui. Pacientes, agenda, financeiro, radiografias e os dados da clínica vêm juntos.</div></div>
   <button id="btnImportBackup" class="btn-s">Importar backup</button><input type="file" id="fileImportBackup" accept=".odb" style="display:none"></div>`:''}
-  ${clinicaFormHtml(dadosClinica(),'fClinic',true,true)}
+  ${clinicaFormHtml(Object.assign(dadosClinica(),(!state.clinic&&fichaClinica())?{nome:fichaClinica().nome}:{}),'fClinic',true,true)}
   </div>`;
 }
 
@@ -2760,17 +2786,19 @@ function renderLogin(){
 function currentUser(){ return state.users.find(u=>u.id===session); }
 
 function menuItems(){
-  const u=currentUser(); const p=Object.assign(defaultPerms(u.tipo), u.permissions||{});
+  const u=currentUser(); const p=permsDe(u);
+  const pront=temRecurso('prontuario'), fin=temRecurso('financeiro');
   return [
     {id:'dashboard', label:'Painel', grupo:'Atendimento', enabled:true},
     {id:'agenda', label:'Agenda', grupo:'Atendimento', enabled:true},
     {id:'pacientes', label:'Pacientes', grupo:'Atendimento', enabled:p.pacientes},
     {id:'financeiro', label:'Financeiro', grupo:'Gestão', enabled:p.financeiro},
-    {id:'tabelavalores', label:'Tabela de valores', grupo:'Gestão', enabled:true},
-    {id:'relatorios', label:'Relatórios', grupo:'Gestão', enabled:true},
+    {id:'tabelavalores', label:'Tabela de valores', grupo:'Gestão', enabled:pront},
+    {id:'relatorios', label:'Relatórios', grupo:'Gestão', enabled:pront||fin},
     {id:'estoque', label:'Estoque', grupo:'Gestão', enabled:true, stub:true},
     {id:'usuarios', label:'Usuários', grupo:'Administração', enabled:p.usuarios},
     {id:'configuracoes', label:'Configurações', grupo:'Administração', enabled:true},
+    {id:'plataforma', label:'Plataforma', grupo:'Administração', enabled:!!(NUVEM && Nuvem.souAdmin()) && !modoCelular()},
   ];
 }
 const ATALHO_BUSCA=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||'')?'⌘K':'Ctrl K';
@@ -2841,7 +2869,9 @@ function renderApp(){
   else if(currentTab==='tabelavalores') content=renderTabelaValores();
   else if(currentTab==='relatorios') content=renderRelatorios();
   else if(currentTab==='configuracoes') content=renderConfiguracoesPrincipal();
+  else if(currentTab==='plataforma') content=renderPlataforma();
   else content=renderStub(items.find(i=>i.id===currentTab)?.label||'');
+  if(currentTab!=='plataforma') content=faixaPlanoHtml()+content;
 
   const demo=(!NUVEM && /^https?:/.test(location.protocol))?'<div class="demo-banner">⚠️ Modo demonstração: a nuvem ainda não foi configurada (firebase-config.js). Os dados ficam só neste navegador.</div>':'';
   if(cel){
@@ -2906,7 +2936,7 @@ function renderDashboard(){
   const conf=agHoje.filter(a=>['confirmado','chegou','atendido'].includes(statusAgExib(a))).length;
   ks.push(kpi('Presença confirmada',`${conf} <small>de ${n}</small>`,'','agenda','',`<div class="kpi-barra"><span style="width:${n?Math.round(conf/n*100):0}%"></span></div>`));
   let evs=[], orcN=0, orcV=0, venc=[];
-  if(perms.pacientes){
+  if(perms.pacientes && temRecurso('prontuario')){
     state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
     if(u.tipo==='dentista') evs=evs.filter(e=>semTitulo(e.dentistaNome)===semTitulo(u.nomeCompleto));
     state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
@@ -2920,7 +2950,7 @@ function renderDashboard(){
     const nomeMes=new Date().toLocaleDateString('pt-BR',{month:'long'});
     ks.push(kpi('Recebido em '+nomeMes,fmtMoney(rec).replace(',00',''),prev?fmtMoney(prev).replace(',00','')+' ainda previstos no mês':'Nada mais previsto no mês','fin'));
     ks.push(kpi('Parcelas vencidas',venc.length,venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' em atraso':'Nenhuma em atraso','rel:inadimplencia',venc.length?'var(--danger)':''));
-  } else if(perms.pacientes){
+  } else if(perms.pacientes && temRecurso('prontuario')){
     ks.push(kpi('Evoluções a confirmar',evs.length,evs.length?'Prontuários aguardando o dentista':'Prontuários em dia','rel:evolpendentes'));
     ks.push(kpi('Orçamentos sem resposta',orcN,orcN?'Há mais de 7 dias, '+fmtMoney(orcV).replace(',00','')+' parados':'Nenhum parado','rel:orcpendentes'));
   }
@@ -2935,7 +2965,7 @@ function renderDashboard(){
   const agendaBloco=`<section class="bloco"><div class="bloco-cab"><h2>Agenda de hoje</h2>${filtro}<button class="lnk-forte"${filtro?'':' style="margin-left:auto"'} data-dashgo="agenda">Abrir agenda</button></div>
     ${linhas?`<div class="overflow"><table class="t-agenda"><thead><tr><th style="width:70px">Horário</th><th>Paciente</th><th>Dentista</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum atendimento agendado para hoje.</p></div>'}</section>`;
   const pend=[];
-  if(perms.pacientes){
+  if(perms.pacientes && temRecurso('prontuario')){
     pend.push(`<button class="pend" data-dashgo="rel:evolpendentes"><span><span class="pend-tit">Evoluções a confirmar</span><span class="pend-sub">${u.tipo==='dentista'?'Seus prontuários de atendimentos já feitos':'Prontuários de atendimentos já feitos'}</span></span><span class="pend-num">${evs.length}</span></button>`);
     pend.push(`<button class="pend" data-dashgo="rel:orcpendentes"><span><span class="pend-tit">Orçamentos sem resposta</span><span class="pend-sub">${orcN?'Há mais de 7 dias, '+fmtMoney(orcV).replace(',00','')+' parados':'Nenhum parado há mais de 7 dias'}</span></span><span class="pend-num">${orcN}</span></button>`);
   }
@@ -3075,11 +3105,16 @@ function openUserForm(u){
       if(state.users.some(x=>x.id!==data.id && normEmail(x.email)===em)){ avisar('Já existe outro usuário com este e-mail.'); return; }
       if(u && emailTravado(u) && em!==normEmail(u.email)){ avisar('Somente o Master pode alterar o e-mail de acesso.'); return; }
       data.email=em;
+      if(!u || normEmail(u.email)!==em){
+        const sit=await Nuvem.situacaoEmail(em);
+        if(sit==='outra'){ avisar('Este e-mail já está ligado a outra clínica no OdontoGestão. Use outro e-mail para este usuário.'); return; }
+      }
     }
     const novaSenha=NUVEM?'':document.getElementById('fPassword').value;
     if(isNew && !novaSenha && !NUVEM){ avisar('Informe a senha.'); return; }
     if(novaSenha && novaSenha.length<6){ avisar('A senha precisa ter pelo menos 6 caracteres.'); return; }
     if(novaSenha) Object.assign(data, await hashSenha(novaSenha));
+    const lim=limitePlanoMsg(Object.assign({},u||{},data),u); if(lim){ avisar(lim); return; }
     if(isNew) state.users.push(data);
     else { Object.assign(u, data); if(novaSenha) delete u.password; }
     saveData();
@@ -3194,9 +3229,10 @@ function renderPatientDetail(id){
     {id:'orcamento', label:'💵 Orçamento'},
     {id:'financeiro', label:'💰 Financeiro'},
   ];
-  const podeFin=permsDe(currentUser()).financeiro;
-  if(patientDetailTab==='financeiro' && !podeFin) patientDetailTab='dados';
-  const tabBar=tabs.filter(t=>t.id!=='financeiro'||podeFin).map(t=>`<button data-opentab="${t.id}" class="${patientDetailTab===t.id?'active':''}">${t.label}</button>`).join('');
+  const podeFin=permsDe(currentUser()).financeiro, pront=temRecurso('prontuario');
+  const visivel=t=>t.id==='financeiro'?podeFin:(pront||t.id==='dados'||t.id==='anamnese');
+  if(!tabs.some(t=>t.id===patientDetailTab && visivel(t))) patientDetailTab='dados';
+  const tabBar=tabs.filter(visivel).map(t=>`<button data-opentab="${t.id}" class="${patientDetailTab===t.id?'active':''}">${t.label}</button>`).join('');
   let body='';
   if(patientDetailTab==='dados') body=renderDadosPessoais(p);
   else if(patientDetailTab==='anamnese') body=renderAnamneseTab(p);
@@ -3278,7 +3314,7 @@ function renderAnamneseList(p){
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <button class="btn-p" data-newanamnese="odontologica">+ Nova Anamnese Odontológica</button>
     <button class="btn-p" data-newanamnese="harmonizacao">+ Nova Anamnese de Harmonização Facial</button>
-  </div></div>${NUVEM?formsEnviadosHtml(p):''}`;
+  </div></div>${NUVEM&&temRecurso('formularios')?formsEnviadosHtml(p):''}`;
 }
 
 function anamneseOdontoCampos(a){
@@ -3441,7 +3477,7 @@ Por estar de acordo, assino este termo de forma livre e esclarecida.`;
 
 function formsDoPaciente(pid){ return (state.formularios||[]).filter(f=>f.pacienteId===pid).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)); }
 function formSituacao(f){ if(f.status==='respondido') return 'respondido'; return f.expiraEm && f.expiraEm<Date.now()?'vencido':'pendente'; }
-function linkFormulario(token){ return location.origin+location.pathname+'?f='+encodeURIComponent(token); }
+function linkFormulario(token){ const c=Nuvem.clinicaId(); return location.origin+location.pathname+'?'+(c&&c!=='principal'?'c='+encodeURIComponent(c)+'&':'')+'f='+encodeURIComponent(token); }
 function fmtDH(v){ if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}); }
 function fmtDM(ms){ return new Date(ms).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
 function assinaturasDoPaciente(p){
@@ -3495,6 +3531,7 @@ function formsEnviadosHtml(p){
 function podeUsar(perm){ const u=currentUser(); if(!u) return false; if(u.tipo==='master') return true; return !!permsDe(u)[perm]; }
 
 function abrirEnvioFormulario(p,tipo){
+  if(clinicaBloqueada()){ avisarBloqueio(); return; }
   const bg=document.createElement('div'); bg.className='modal-bg';
   const modelo=(state.meta&&state.meta.termoModelo)||TERMO_PADRAO;
   bg.innerHTML=`<div class="modal env-form" style="text-align:left" role="dialog" aria-label="Enviar ${esc(FORM_TIPOS[tipo])}">
@@ -3689,12 +3726,12 @@ function padAssinatura(cv,aoMudar){
     }
   };
 }
-async function bootFormularioPublico(token){
+async function bootFormularioPublico(token,cid){
   const app=document.getElementById('app');
   document.body.classList.add('pagina-publica');
   app.innerHTML=pubTela(null,'<p class="muted" style="text-align:center;margin:30px 0">Abrindo o formulário…</p>');
   let f=null;
-  try{ await Nuvem.iniciarPublico(); f=await Nuvem.lerFormularioPublico(token); }
+  try{ await Nuvem.iniciarPublico(cid); f=await Nuvem.lerFormularioPublico(token); }
   catch(e){
     console.error(e);
     app.innerHTML=pubTela(null,'<h1>Sem conexão</h1><p>Não foi possível abrir o formulário. Verifique a internet e tente de novo.</p><button class="btn-p pub-enviar" onclick="location.reload()">Tentar de novo</button>');
@@ -3749,6 +3786,271 @@ async function bootFormularioPublico(token){
       erro(e&&e.code==='permission-denied'?'Este link venceu ou já foi respondido. Peça um novo link à clínica.':e&&e.code==='unavailable'?'Sem internet no momento. Verifique a conexão e toque em Enviar de novo.':'Não foi possível enviar. Tente de novo em instantes.');
     }
   });
+}
+
+// =====================================================================
+// Planos, módulos e período de teste (ficha da clínica na nuvem)
+// =====================================================================
+const SUPORTE_WHATSAPP='5592985081590';
+const PLANOS={
+  essencial:{nome:'Essencial',preco:49.90,recursos:[],dentistas:1,usuarios:2,desc:'Agenda, cadastro de pacientes, lembretes e anamnese'},
+  clinico:{nome:'Clínico',preco:79.90,recursos:['prontuario','formularios'],dentistas:1,usuarios:0,desc:'Essencial + prontuário completo e formulários assinados'},
+  completo:{nome:'Completo',preco:119.90,recursos:['prontuario','formularios','financeiro'],dentistas:3,usuarios:0,desc:'Clínico + financeiro, relatórios e permissões'},
+};
+const MODULOS={
+  prontuario:{nome:'Prontuário clínico',preco:39.90},
+  financeiro:{nome:'Financeiro e relatórios',preco:49.90},
+  formularios:{nome:'Formulários com assinatura',preco:19.90},
+};
+const PRECO_DENTISTA_EXTRA=19.90;
+function fichaClinica(){ return NUVEM&&window.Nuvem&&Nuvem.ficha?Nuvem.ficha():null; }
+function planoDe(f){ return PLANOS[f&&f.plano]||PLANOS.completo; }
+function temRecurso(r){ const f=fichaClinica(); if(!f) return true; return planoDe(f).recursos.includes(r) || !!(f.modulos&&f.modulos[r]); }
+function limiteDentistas(){ const f=fichaClinica(); return f?planoDe(f).dentistas+(+f.dentistasExtras||0):Infinity; }
+function limiteUsuarios(){ const f=fichaClinica(); const n=f?planoDe(f).usuarios:0; return n?n+(+f.dentistasExtras||0):Infinity; }
+function mensalidadeDe(f){
+  let v=planoDe(f).preco;
+  Object.keys(f.modulos||{}).forEach(k=>{ if(f.modulos[k] && MODULOS[k] && !planoDe(f).recursos.includes(k)) v+=MODULOS[k].preco; });
+  return v+(+f.dentistasExtras||0)*PRECO_DENTISTA_EXTRA;
+}
+function situacaoFicha(f){
+  if(!f) return {cod:'livre',txt:'Sem plano (acesso completo)'};
+  if(f.status==='ativa') return {cod:'ativa',txt:'Assinatura ativa'};
+  if(f.status==='suspensa') return {cod:'suspensa',txt:'Suspensa'};
+  const dias=Math.ceil(((f.testeAte||0)-Date.now())/86400000);
+  if(dias>0) return {cod:'teste',dias,txt:'Teste: '+dias+' dia'+(dias>1?'s':'')+' restante'+(dias>1?'s':'')};
+  return {cod:'vencido',txt:'Teste encerrado'};
+}
+function clinicaBloqueada(){ const s=situacaoFicha(fichaClinica()).cod; return s==='suspensa'||s==='vencido'; }
+function msgContatoPlataforma(){ return 'https://wa.me/'+SUPORTE_WHATSAPP+'?text='+encodeURIComponent('Olá! Sou da '+((state.clinic&&state.clinic.nome)||'clínica')+' e quero continuar usando o OdontoGestão.'); }
+function faixaPlanoHtml(){
+  const f=fichaClinica(); if(!f) return '';
+  const s=situacaoFicha(f), u=currentUser();
+  if(s.cod==='suspensa'||s.cod==='vencido')
+    return `<div class="faixa-plano bloqueada" role="alert"><div><strong>${s.cod==='vencido'?'O período de teste terminou.':'O acesso desta clínica está suspenso.'}</strong> O sistema está em modo de consulta: você vê todas as informações e pode fazer backup, mas não pode cadastrar nem alterar nada. Nenhum dado foi apagado.</div><a class="btn-p" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Quero continuar</a></div>`;
+  if(s.cod==='teste' && u && (u.tipo==='master'||permsDe(u).usuarios))
+    return `<div class="faixa-plano"><div><strong>Período de teste do plano ${esc(planoDe(f).nome)}:</strong> ${s.dias===1?'último dia':'faltam '+s.dias+' dias'} (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}). Ao final, seus dados continuam guardados.</div><a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar sobre assinatura</a></div>`;
+  return '';
+}
+let ultimoAvisoBloqueio=0;
+function avisarBloqueio(){
+  if(Date.now()-ultimoAvisoBloqueio<4000) return; ultimoAvisoBloqueio=Date.now();
+  avisar(situacaoFicha(fichaClinica()).cod==='vencido'?'O período de teste terminou e o sistema está em modo de consulta. Nada foi alterado. Para continuar usando, fale com o OdontoGestão.':'O acesso desta clínica está suspenso e o sistema está em modo de consulta. Nada foi alterado.');
+}
+// limites do plano ao cadastrar, editar ou reativar um usuário
+function limitePlanoMsg(novo,antigo){
+  const f=fichaClinica(); if(!f || novo.inativo) return '';
+  const outros=state.users.filter(x=>x.id!==novo.id && usuarioAtivo(x));
+  const nD=outros.filter(ehDentista).length+(ehDentista(novo)?1:0), nU=outros.length+1;
+  const jaContavaD=antigo&&usuarioAtivo(antigo)&&ehDentista(antigo), jaContavaU=antigo&&usuarioAtivo(antigo);
+  if(ehDentista(novo) && !jaContavaD && nD>limiteDentistas()) return `O plano ${planoDe(f).nome} permite ${limiteDentistas()} dentista${limiteDentistas()>1?'s':''}. Desative outro dentista ou fale com o OdontoGestão para incluir mais um (R$ ${PRECO_DENTISTA_EXTRA.toFixed(2).replace('.',',')}/mês).`;
+  if(!jaContavaU && nU>limiteUsuarios()) return `O plano ${planoDe(f).nome} permite ${limiteUsuarios()} usuários. Desative outro usuário ou fale com o OdontoGestão para mudar de plano.`;
+  return '';
+}
+
+// =====================================================================
+// Painel da plataforma: só o administrador (você) vê
+// =====================================================================
+let platAba='clinicas', platClinicas=null, platErro='', platRoadmap=null, platRoadmapOuvindo=false, platCarregando=false;
+const RM_STATUS=[
+  ['ideia','Sugestões'],['planejado','Planejado'],['desenvolvimento','Em desenvolvimento'],['teste','No ambiente de teste'],['publicado','Publicado para os clientes'],
+];
+const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','Visual','Legal e LGPD','Outros'];
+const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
+const RM_SEMENTE=[
+  {titulo:'Várias clínicas, planos e período de teste',descricao:'Cada clínica com seus dados separados, plano Essencial/Clínico/Completo, módulos avulsos e teste de 30 dias com modo de consulta no final.',categoria:'Plataforma',prioridade:'alta',status:'teste',alvo:'Todos os planos'},
+  {titulo:'Painel da plataforma e quadro de melhorias',descricao:'Gestão das clínicas (criar, prorrogar teste, ativar, suspender) e este quadro.',categoria:'Plataforma',prioridade:'alta',status:'teste',alvo:'Somente administrador'},
+  {titulo:'Ambiente de teste separado',descricao:'Toda atualização vai primeiro para o projeto de teste; só depois de aprovada vai para as clínicas.',categoria:'Plataforma',prioridade:'alta',status:'teste',alvo:'Somente administrador'},
+  {titulo:'Cobrança automática da mensalidade',descricao:'Assinatura por Pix/cartão/boleto (ex.: Asaas ou Mercado Pago), com modo de consulta automático em caso de atraso.',categoria:'Plataforma',prioridade:'alta',status:'planejado',alvo:'Todos os planos'},
+  {titulo:'Termo de uso e de privacidade (LGPD)',descricao:'Aceite no primeiro acesso de cada clínica: dados são da clínica, onde ficam, o que acontece no fim do teste.',categoria:'Legal e LGPD',prioridade:'alta',status:'planejado',alvo:'Todos os planos'},
+  {titulo:'Botão de suporte dentro do sistema',descricao:'Atalho para o WhatsApp de suporte e central de ajuda simples.',categoria:'Plataforma',prioridade:'media',status:'planejado',alvo:'Todos os planos'},
+  {titulo:'Página de planos e preços',descricao:'Página pública para divulgar os planos e iniciar o teste de 30 dias.',categoria:'Plataforma',prioridade:'media',status:'planejado',alvo:'Divulgação'},
+  {titulo:'Financeiro no celular (layout da prévia aprovada)',descricao:'Saldo do mês, vencidas com botão Cobrar e recebimentos do dia.',categoria:'Visual',prioridade:'media',status:'planejado',alvo:'Completo / módulo Financeiro'},
+  {titulo:'Confirmação automática de consultas pelo WhatsApp',descricao:'Envio e leitura automática da resposta do paciente, sem clicar mensagem por mensagem. Tem custo por mensagem.',categoria:'Comunicação',prioridade:'alta',status:'ideia',alvo:'Premium (futuro)'},
+  {titulo:'Pix e boleto com baixa automática',descricao:'Gerar cobrança da parcela do paciente e dar baixa sozinho quando pago.',categoria:'Financeiro',prioridade:'alta',status:'ideia',alvo:'Completo / Premium'},
+  {titulo:'Controle de estoque',descricao:'Materiais, entradas, saídas e alerta de estoque mínimo.',categoria:'Clínico',prioridade:'media',status:'ideia',alvo:'Módulo avulso'},
+  {titulo:'Emissão de nota fiscal de serviço (NFS-e)',descricao:'Emitir a nota a partir do recebimento.',categoria:'Financeiro',prioridade:'media',status:'ideia',alvo:'Premium (futuro)'},
+  {titulo:'CRM de orçamentos e retornos',descricao:'Lista de orçamentos não aprovados e pacientes sem retorno, com lembrete pelo WhatsApp.',categoria:'Comunicação',prioridade:'media',status:'ideia',alvo:'Completo'},
+  {titulo:'Convênios odontológicos',descricao:'Tabela por convênio e guias.',categoria:'Financeiro',prioridade:'baixa',status:'ideia',alvo:'Módulo avulso'},
+  {titulo:'Recursos com inteligência artificial',descricao:'Evolução clínica ditada por voz e resumo do prontuário.',categoria:'Clínico',prioridade:'baixa',status:'ideia',alvo:'Premium (futuro)'},
+  {titulo:'Anamnese e termo pelo WhatsApp com assinatura',descricao:'Paciente preenche e assina no celular; clínica revisa e salva no prontuário.',categoria:'Clínico',prioridade:'alta',status:'publicado',alvo:'Clínico e Completo',versao:'2.4.0'},
+  {titulo:'Desativar e excluir usuários',descricao:'Desativados somem da agenda e dos atendimentos e perdem o acesso.',categoria:'Plataforma',prioridade:'media',status:'publicado',alvo:'Todos os planos',versao:'2.4.2'},
+];
+function carregarPlataforma(forcar){
+  if(platCarregando || (platClinicas && !forcar)) return;
+  platCarregando=true; platErro='';
+  Nuvem.listarClinicas().then(l=>{ platClinicas=l; }).catch(e=>{ console.error(e); platErro=Nuvem.mapErro(e); platClinicas=[]; })
+    .finally(()=>{ platCarregando=false; if(currentTab==='plataforma') render(); });
+  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
+}
+function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
+function renderPlataforma(){
+  if(!(NUVEM && Nuvem.souAdmin())) return '<div class="card"><p class="muted">Área restrita.</p></div>';
+  carregarPlataforma();
+  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
+  const amb=Nuvem.ambienteTeste()?'<span class="sit sit-nao_vem">Ambiente de teste</span>':'<span class="sit sit-chegou">Produção</span>';
+  return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · versão ${APP_VERSION}</span></p></div><div style="margin-left:auto">${abas}</div></div>
+  ${platErro?`<div class="faixa-plano bloqueada"><div>${esc(platErro)}</div></div>`:''}
+  ${platAba==='clinicas'?renderPlatClinicas():renderPlatRoadmap()}`;
+}
+function renderPlatClinicas(){
+  if(!platClinicas) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando clínicas…</p></div></section>';
+  const l=platClinicas.slice().sort((a,b)=>(b.criadaEm||0)-(a.criadaEm||0));
+  const sit=l.map(situacaoFicha);
+  const n=c=>sit.filter(s=>s.cod===c).length;
+  const receita=l.filter(f=>f.status==='ativa').reduce((s,f)=>s+mensalidadeDe(f),0);
+  const potencial=l.filter(f=>situacaoFicha(f).cod==='teste').reduce((s,f)=>s+mensalidadeDe(f),0);
+  const kpi=(r,v,sub)=>`<div class="kpi" style="cursor:default"><div class="kpi-rot">${r}</div><div class="kpi-num">${v}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}</div>`;
+  const linhas=l.map(f=>{ const s=situacaoFicha(f);
+    const mods=Object.keys(f.modulos||{}).filter(k=>f.modulos[k]).map(k=>MODULOS[k]?MODULOS[k].nome:k);
+    const cls={teste:'sit-confirmado',ativa:'sit-chegou',suspensa:'sit-faltou',vencido:'sit-nao_vem'}[s.cod]||'sit-agendado';
+    return `<tr><td><strong>${esc(f.nome)}</strong><div class="muted" style="font-size:12px">${esc(f.id)}</div></td>
+      <td>${esc(f.donoEmail)}${f.contato?`<div class="muted" style="font-size:12px">${esc(f.contato)}</div>`:''}</td>
+      <td>${esc(planoDe(f).nome)}${mods.length?`<div class="muted" style="font-size:12px">+ ${esc(mods.join(', '))}</div>`:''}${f.dentistasExtras?`<div class="muted" style="font-size:12px">+ ${f.dentistasExtras} dentista(s)</div>`:''}</td>
+      <td><span class="sit ${cls}">${esc(s.txt)}</span></td><td>${fmtBRL(mensalidadeDe(f))}</td>
+      <td class="actions"><button class="btn-s" data-platgerir="${esc(f.id)}">Gerenciar</button></td></tr>`; }).join('');
+  return `<div class="kpis">${kpi('Em teste',n('teste'),potencial?fmtBRL(potencial)+'/mês se todas assinarem':'')}${kpi('Assinantes',n('ativa'),fmtBRL(receita)+' por mês')}${kpi('Teste encerrado',n('vencido'),'Em modo de consulta')}${kpi('Suspensas',n('suspensa'),'')}</div>
+  <section class="bloco"><div class="bloco-cab"><h2>Clínicas</h2><button class="btn-s" data-platrecarregar style="margin-left:auto">Atualizar</button><button class="btn-p" data-platnova>+ Nova clínica</button></div>
+  ${l.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Responsável</th><th>Plano</th><th>Situação</th><th>Mensalidade</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada ainda. Use "+ Nova clínica" para liberar um teste de 30 dias.</p></div>'}
+  <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">A sua clínica (a original) não aparece aqui: ela não tem plano e continua com acesso completo. Você gerencia o plano e a validade das clínicas, mas não vê os pacientes nem o financeiro delas.</p></div></section>`;
+}
+function slugDe(t){ return normTxt(t).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,24)||'clinica'; }
+function planoCamposHtml(f){
+  f=f||{plano:'clinico',modulos:{},dentistasExtras:0};
+  return `<div class="row"><div><label>Plano</label><select data-pc="plano">${Object.keys(PLANOS).map(k=>`<option value="${k}" ${f.plano===k?'selected':''}>${PLANOS[k].nome} — ${fmtBRL(PLANOS[k].preco)}</option>`).join('')}</select></div>
+    <div><label>Dentistas a mais</label><input type="number" min="0" max="50" data-pc="extras" value="${+f.dentistasExtras||0}"></div></div>
+    <p class="muted" data-pc="desc" style="margin:6px 0 0;font-size:12.5px">${esc(planoDe(f).desc)}</p>
+    <label>Módulos avulsos</label><div class="perm">${Object.keys(MODULOS).map(k=>`<label><input type="checkbox" data-pcmod="${k}" ${f.modulos&&f.modulos[k]?'checked':''}> ${MODULOS[k].nome} (+${fmtBRL(MODULOS[k].preco)})</label>`).join('')}</div>
+    <p class="muted" data-pc="total" style="margin:8px 0 0"></p>`;
+}
+function lerPlanoCampos(bg){
+  const modulos={}; bg.querySelectorAll('[data-pcmod]').forEach(c=>{ if(c.checked) modulos[c.getAttribute('data-pcmod')]=true; });
+  return {plano:bg.querySelector('[data-pc="plano"]').value,modulos,dentistasExtras:Math.max(0,+bg.querySelector('[data-pc="extras"]').value||0)};
+}
+function ligarPlanoCampos(bg){
+  const upd=()=>{ const f=lerPlanoCampos(bg); const p=planoDe(f);
+    bg.querySelector('[data-pc="desc"]').textContent=p.desc+' · até '+(p.dentistas+f.dentistasExtras)+' dentista(s)'+(p.usuarios?' e '+(p.usuarios+f.dentistasExtras)+' usuários':'');
+    bg.querySelectorAll('[data-pcmod]').forEach(c=>{ const incl=p.recursos.includes(c.getAttribute('data-pcmod')); c.disabled=incl; if(incl) c.checked=false; c.parentNode.style.opacity=incl?.5:1; });
+    bg.querySelector('[data-pc="total"]').innerHTML='Mensalidade: <strong>'+fmtBRL(mensalidadeDe(lerPlanoCampos(bg)))+'</strong>'; };
+  bg.querySelectorAll('[data-pc],[data-pcmod]').forEach(el=>el.addEventListener('input',upd)); upd();
+}
+function modalPlat(html){
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal env-form" style="text-align:left">${html}</div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.remove(); });
+  bg.querySelectorAll('[data-fechar]').forEach(b=>b.addEventListener('click',()=>bg.remove()));
+  return bg;
+}
+function abrirNovaClinica(){
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Nova clínica</h3><p class="muted" style="margin:0 0 8px">Libera um teste. O responsável entra com o e-mail informado (Google ou "Primeiro acesso") e faz o cadastro da clínica.</p>
+    <div class="row"><div><label>Nome da clínica</label><input data-nc="nome" maxlength="80"></div><div><label>WhatsApp do responsável</label><input data-nc="contato" inputmode="tel" placeholder="(92) 99999-9999"></div></div>
+    <label>E-mail do responsável (login)</label><input data-nc="email" type="email" autocomplete="off">
+    ${planoCamposHtml()}
+    <div class="row"><div><label>Dias de teste</label><input data-nc="dias" type="number" min="1" max="120" value="30"></div><div><label>Observações</label><input data-nc="obs" maxlength="200"></div></div>
+    <p class="erro-campo" data-nc="erro" role="alert"></p>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-nc="ok">Criar e liberar teste</button></div>`);
+  ligarPlanoCampos(bg);
+  const q=k=>bg.querySelector(`[data-nc="${k}"]`);
+  q('contato').addEventListener('input',e=>{ e.target.value=mascaraTel(e.target.value); });
+  q('ok').addEventListener('click',async()=>{
+    const nome=q('nome').value.trim(), email=normEmail(q('email').value);
+    if(nome.length<3){ q('erro').textContent='Informe o nome da clínica.'; return; }
+    if(!emailValido(email)){ q('erro').textContent='Informe um e-mail válido.'; return; }
+    const pc=lerPlanoCampos(bg);
+    q('ok').disabled=true; q('ok').textContent='Criando…';
+    try{
+      const cid=await Nuvem.criarClinica(Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc));
+      bg.remove(); platClinicas=null; carregarPlataforma(true);
+      const dias=+q('dias').value||30;
+      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${location.origin}${location.pathname}\n2. Entre com o e-mail ${email}: use "Entrar com Google" (se for Gmail) ou "Primeiro acesso" para criar uma senha.\n3. Preencha o cadastro da clínica e comece a usar.\n\nAo final do teste, todas as suas informações continuam guardadas.`;
+      const fone=telefoneWhatsApp(q('contato').value);
+      if(fone){ const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank'); if(!w) mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg); }
+      else mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg);
+    }catch(e){ console.error(e); q('ok').disabled=false; q('ok').textContent='Criar e liberar teste'; q('erro').textContent=e.code==='email-em-uso'?e.message:Nuvem.mapErro(e); }
+  });
+}
+function abrirGerirClinica(id){
+  const f=(platClinicas||[]).find(x=>x.id===id); if(!f) return;
+  const s=situacaoFicha(f);
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">${esc(f.nome)}</h3><p class="muted" style="margin:0 0 8px">${esc(f.donoEmail)} · criada em ${f.criadaEm?new Date(f.criadaEm).toLocaleDateString('pt-BR'):'—'} · <strong>${esc(s.txt)}</strong>${f.testeAte&&f.status==='teste'?' (até '+new Date(f.testeAte).toLocaleDateString('pt-BR')+')':''}</p>
+    ${planoCamposHtml(f)}
+    <label>Observações</label><input data-gc="obs" value="${esc(f.obs||'')}" maxlength="200">
+    <label>Período de teste</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${[7,15,30].map(d=>`<button class="btn-s" data-gcprorrogar="${d}">+${d} dias</button>`).join('')}</div>
+    <p class="erro-campo" data-gc="erro" role="alert"></p>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      ${f.status==='suspensa'?'<button class="btn-s" data-gcstatus="ativa">Reativar assinatura</button>':'<button class="btn-d" data-gcstatus="suspensa">Suspender</button>'}
+      ${f.status!=='ativa'?'<button class="btn-s" data-gcstatus="ativa">Ativar assinatura</button>':''}
+      <button class="btn-s" data-fechar>Fechar</button><button class="btn-p" data-gc="ok">Salvar plano</button></div>`);
+  ligarPlanoCampos(bg);
+  const erro=t=>{ bg.querySelector('[data-gc="erro"]').textContent=t; };
+  const gravar=async(mud,conf)=>{
+    try{ await Nuvem.atualizarClinica(f.id,mud); bg.remove(); platClinicas=null; carregarPlataforma(true); if(conf) avisar(conf); }
+    catch(e){ console.error(e); erro(Nuvem.mapErro(e)); }
+  };
+  bg.querySelector('[data-gc="ok"]').addEventListener('click',()=>gravar(Object.assign(lerPlanoCampos(bg),{obs:bg.querySelector('[data-gc="obs"]').value.trim()}),'Plano atualizado. A clínica vê a mudança na hora.'));
+  bg.querySelectorAll('[data-gcprorrogar]').forEach(b=>b.addEventListener('click',()=>{
+    const d=+b.getAttribute('data-gcprorrogar'); const base=Math.max(Date.now(),f.testeAte||0);
+    gravar({status:'teste',testeAte:base+d*86400000},`Teste prorrogado até ${new Date(base+d*86400000).toLocaleDateString('pt-BR')}.`);
+  }));
+  bg.querySelectorAll('[data-gcstatus]').forEach(b=>b.addEventListener('click',()=>{
+    const st=b.getAttribute('data-gcstatus');
+    const txt=st==='suspensa'?`Suspender ${f.nome}? A clínica passa para o modo de consulta (vê tudo, não altera nada). Nenhum dado é apagado.`:`Ativar a assinatura de ${f.nome}? A clínica volta a usar o sistema normalmente.`;
+    customConfirm(txt,()=>gravar({status:st},st==='ativa'?'Assinatura ativa.':'Clínica suspensa.'));
+  }));
+}
+function renderPlatRoadmap(){
+  if(!platRoadmap) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando…</p></div></section>';
+  const ord={alta:0,media:1,baixa:2};
+  const col=([st,tit])=>{ const its=platRoadmap.filter(i=>(i.status||'ideia')===st).sort((a,b)=>(ord[a.prioridade]??1)-(ord[b.prioridade]??1)||(b.atualizadoEm||0)-(a.atualizadoEm||0));
+    return `<section class="rm-col" aria-label="${esc(tit)}"><div class="rm-col-cab"><span>${esc(tit)}</span><span class="rm-cont">${its.length}</span></div>
+      ${its.map(i=>`<article class="rm-card"><div class="rm-tags"><span class="rm-prior p-${esc(i.prioridade||'media')}">${esc(RM_PRIOR[i.prioridade]||'Média')}</span><span class="rm-cat">${esc(i.categoria||'')}</span></div>
+        <h3>${esc(i.titulo)}</h3>${i.descricao?`<p>${esc(i.descricao)}</p>`:''}
+        <div class="rm-rod">${i.alvo?`<span>${esc(i.alvo)}</span>`:''}${i.versao?`<span>v${esc(i.versao)}</span>`:''}</div>
+        <div class="rm-acoes">${st!=='ideia'?`<button class="btn-icone" data-rmmover="${esc(i.id)}" data-dir="-1" aria-label="Voltar etapa" title="Voltar etapa">‹</button>`:''}<button class="btn-s" data-rmeditar="${esc(i.id)}">Editar</button>${st!=='publicado'?`<button class="btn-icone" data-rmmover="${esc(i.id)}" data-dir="1" aria-label="Avançar etapa" title="Avançar etapa">›</button>`:''}</div></article>`).join('')||'<p class="muted rm-vazio">Nada aqui.</p>'}
+    </section>`; };
+  return `<section class="bloco"><div class="bloco-cab"><h2>Implementação e melhorias</h2><button class="btn-p" data-rmnovo style="margin-left:auto">+ Nova melhoria</button></div>
+    <div class="bloco-corpo"><p class="muted" style="margin:0">Fluxo de cada atualização: <strong>Sugestão → Planejado → Em desenvolvimento → No ambiente de teste</strong> (você valida) <strong>→ Publicado para os clientes</strong>.${platRoadmap.length?'':' <button class="lnk-forte" data-rmsemear>Carregar as sugestões que já conversamos</button>'}</p></div></section>
+  <div class="rm-quadro">${RM_STATUS.map(col).join('')}</div>`;
+}
+function abrirItemRoadmap(id){
+  const it=id?(platRoadmap||[]).find(x=>x.id===id):{status:'ideia',prioridade:'media',categoria:'Plataforma'};
+  if(!it) return;
+  const alvos=['Todos os planos','Essencial','Clínico','Completo','Módulo avulso','Premium (futuro)','Somente administrador'].concat((platClinicas||[]).map(c=>'Somente: '+c.nome));
+  const bg=modalPlat(`<h3 style="margin:0 0 8px">${id?'Editar melhoria':'Nova melhoria'}</h3>
+    <label>Título</label><input data-rm="titulo" value="${esc(it.titulo||'')}" maxlength="120">
+    <label>Descrição</label><textarea class="ta" rows="4" data-rm="descricao" maxlength="2000">${esc(it.descricao||'')}</textarea>
+    <div class="row"><div><label>Etapa</label><select data-rm="status">${RM_STATUS.map(([k,t])=>`<option value="${k}" ${it.status===k?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Prioridade</label><select data-rm="prioridade">${Object.keys(RM_PRIOR).map(k=>`<option value="${k}" ${it.prioridade===k?'selected':''}>${RM_PRIOR[k]}</option>`).join('')}</select></div></div>
+    <div class="row"><div><label>Categoria</label><select data-rm="categoria">${RM_CATEG.map(c=>`<option ${it.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div><label>Para quem</label><input data-rm="alvo" list="rmAlvos" value="${esc(it.alvo||'')}"><datalist id="rmAlvos">${alvos.map(a=>`<option value="${esc(a)}">`).join('')}</datalist></div>
+      <div><label>Versão (quando publicado)</label><input data-rm="versao" value="${esc(it.versao||'')}" placeholder="${APP_VERSION}"></div></div>
+    <p class="erro-campo" data-rm="erro" role="alert"></p>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">${id?'<button class="btn-d" data-rm="apagar" style="margin-right:auto">Excluir</button>':''}<button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-rm="ok">Salvar</button></div>`);
+  const q=k=>bg.querySelector(`[data-rm="${k}"]`);
+  q('ok').addEventListener('click',()=>{
+    const titulo=q('titulo').value.trim(); if(!titulo){ q('erro').textContent='Informe o título.'; return; }
+    const novo=Object.assign({},it,{titulo,descricao:q('descricao').value.trim(),status:q('status').value,prioridade:q('prioridade').value,categoria:q('categoria').value,alvo:q('alvo').value.trim(),versao:q('versao').value.trim()});
+    Nuvem.salvarItemRoadmap(novo).then(()=>{ bg.remove(); render(); }).catch(e=>{ q('erro').textContent=Nuvem.mapErro(e); });
+  });
+  if(id) q('apagar').addEventListener('click',()=>customConfirm('Excluir esta melhoria do quadro?',()=>{ Nuvem.apagarItemRoadmap(id).then(()=>render()); bg.remove(); }));
+}
+function bindPlataforma(){
+  document.querySelectorAll('[data-plataba]').forEach(b=>b.addEventListener('click',()=>{ platAba=b.getAttribute('data-plataba'); render(); }));
+  const nova=document.querySelector('[data-platnova]'); if(nova) nova.addEventListener('click',abrirNovaClinica);
+  const rec=document.querySelector('[data-platrecarregar]'); if(rec) rec.addEventListener('click',()=>{ platClinicas=null; carregarPlataforma(true); render(); });
+  document.querySelectorAll('[data-platgerir]').forEach(b=>b.addEventListener('click',()=>abrirGerirClinica(b.getAttribute('data-platgerir'))));
+  const rn=document.querySelector('[data-rmnovo]'); if(rn) rn.addEventListener('click',()=>abrirItemRoadmap(null));
+  const rs=document.querySelector('[data-rmsemear]'); if(rs) rs.addEventListener('click',()=>{ rs.disabled=true; Nuvem.semearRoadmap(RM_SEMENTE).catch(e=>avisar(Nuvem.mapErro(e))); });
+  document.querySelectorAll('[data-rmeditar]').forEach(b=>b.addEventListener('click',()=>abrirItemRoadmap(b.getAttribute('data-rmeditar'))));
+  document.querySelectorAll('[data-rmmover]').forEach(b=>b.addEventListener('click',()=>{
+    const it=(platRoadmap||[]).find(x=>x.id===b.getAttribute('data-rmmover')); if(!it) return;
+    const i=RM_STATUS.findIndex(s=>s[0]===(it.status||'ideia'))+(+b.getAttribute('data-dir'));
+    if(i<0||i>=RM_STATUS.length) return;
+    const novo=Object.assign({},it,{status:RM_STATUS[i][0]}); if(novo.status==='publicado' && !novo.versao) novo.versao=APP_VERSION;
+    Nuvem.salvarItemRoadmap(novo).catch(e=>avisar(Nuvem.mapErro(e)));
+  }));
 }
 
 function openPatientForm(p){
@@ -3972,6 +4274,7 @@ function bindEvents(){
     const id=b.getAttribute('data-desativauser')||b.getAttribute('data-reativauser'), desativar=b.hasAttribute('data-desativauser');
     const alvo=state.users.find(u=>u.id===id);
     if(!alvo || !podeExcluirUsuario(alvo)){ avisar('Este usuário não pode ser alterado.'); return; }
+    if(!desativar){ const lim=limitePlanoMsg(Object.assign({},alvo,{inativo:false}),Object.assign({},alvo)); if(lim){ avisar(lim); return; } }
     const fazer=()=>{ if(desativar) alvo.inativo=true; else delete alvo.inativo; saveData(); render(); };
     if(desativar) customConfirm(`Desativar ${nomeExibicao(alvo)}? Ele não conseguirá mais entrar no sistema e deixará de aparecer na agenda e na escolha de dentista. Você pode reativar quando quiser.`,fazer);
     else fazer();
@@ -4638,7 +4941,7 @@ function bindEvents(){
 
 async function boot(){
   const tokenForm=new URLSearchParams(location.search).get('f');
-  if(NUVEM && tokenForm) return bootFormularioPublico(tokenForm);
+  if(NUVEM && tokenForm) return bootFormularioPublico(tokenForm, new URLSearchParams(location.search).get('c'));
   if(NUVEM) return bootNuvem();
   document.getElementById('app').innerHTML='<div class="wrap"><div class="card center"><p class="muted">Carregando…</p></div></div>';
   await carregarDados();

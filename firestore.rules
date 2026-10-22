@@ -25,7 +25,50 @@ service cloud.firestore {
     }
     function tipoComum(t) { return t in ['administrativo', 'dentista', 'recepcionista']; }
 
+    // Administrador da plataforma (você): cria clínicas, define planos e
+    // período de teste e mantém o quadro de melhorias. NÃO lê os dados
+    // (pacientes, financeiro...) das clínicas dos clientes.
+    function admin() { return logado() && meuEmail() == emailDoDono().lower(); }
+    function caminhoClinica(cid) { return /databases/$(database)/documents/clinicas/$(cid); }
+    function acessoEm(cid) { return /databases/$(database)/documents/clinicas/$(cid)/acessos/$(meuEmail()); }
+    function podeEm(cid, p) {
+      return logado() && exists(acessoEm(cid)) && get(acessoEm(cid)).data.ativo == true
+        && (get(acessoEm(cid)).data.tipo == 'master' || get(acessoEm(cid)).data.perms.get(p, false) == true);
+    }
+
+    // Índice e-mail -> clínica (para saber em qual clínica cada pessoa entra).
+    match /membros/{email} {
+      // (consultar um e-mail ainda livre é permitido, para avisar antes de cadastrar)
+      allow get: if (logado() && email == meuEmail()) || admin()
+        || (logado() && resource == null)
+        || (resource != null && podeEm(resource.data.cid, 'usuarios'));
+      allow list: if admin();
+      allow create, update: if admin()
+        || (podeEm(request.resource.data.cid, 'usuarios')
+            && (resource == null || resource.data.cid == request.resource.data.cid));
+      allow delete: if admin() || podeEm(resource.data.cid, 'usuarios');
+    }
+
+    // Quadro de implementação e melhorias: só o administrador da plataforma.
+    match /roadmap/{id} { allow read, write: if admin(); }
+
     match /clinicas/{cid} {
+      // Ficha da clínica: plano, módulos e validade do teste. Só o
+      // administrador da plataforma altera; quem trabalha na clínica lê.
+      allow get: if admin() || membro();
+      allow list: if admin();
+      allow write: if admin();
+
+      // Clínica liberada para gravar: assinatura ativa ou teste dentro do prazo.
+      // Sem ficha (a clínica original, "principal") = liberada.
+      function liberada() {
+        return !exists(caminhoClinica(cid))
+          || get(caminhoClinica(cid)).data.status == 'ativa'
+          || (get(caminhoClinica(cid)).data.status == 'teste' && get(caminhoClinica(cid)).data.testeAte > request.time);
+      }
+      function souDonoDaFicha() {
+        return exists(caminhoClinica(cid)) && get(caminhoClinica(cid)).data.donoEmail == meuEmail();
+      }
       function caminhoAcesso() { return /databases/$(database)/documents/clinicas/$(cid)/acessos/$(meuEmail()); }
       function ac() { return get(caminhoAcesso()).data; }
       function membro() { return logado() && exists(caminhoAcesso()) && ac().ativo == true; }
@@ -39,15 +82,16 @@ service cloud.firestore {
         allow list: if pode('usuarios');
 
         // primeiro acesso do responsável
-        allow create: if logado() && email == meuEmail() && meuEmail() == emailDoDono().lower()
+        allow create: if logado() && email == meuEmail()
+          && ((cid == 'principal' && meuEmail() == emailDoDono().lower()) || souDonoDaFicha())
           && request.resource.data.tipo == 'master' && request.resource.data.ativo == true;
 
-        allow create, update: if master();
+        allow create, update: if master() && liberada();
 
         // Administrativo: só usuários comuns, só com as permissões padrão
         // (ou sem mudar as que o Master definiu), e o e-mail precisa ser o
         // mesmo do cadastro do usuário.
-        allow create, update: if pode('usuarios')
+        allow create, update: if pode('usuarios') && liberada()
           && email != meuEmail()
           && tipoComum(request.resource.data.tipo)
           && (resource == null || resource.data.tipo != 'master')
@@ -62,8 +106,8 @@ service cloud.firestore {
 
       match /usuarios/{uid} {
         allow read: if membro();
-        allow create, update: if master();
-        allow create, update: if pode('usuarios')
+        allow create, update: if master() && liberada();
+        allow create, update: if pode('usuarios') && liberada()
           && tipoComum(request.resource.data.tipo)
           && (resource == null || resource.data.tipo != 'master')
           && (request.resource.data.get('permissions', null) == padrao(request.resource.data.tipo)
@@ -77,17 +121,19 @@ service cloud.firestore {
         allow delete: if pode('usuarios') && uid != ac().userId && resource.data.tipo != 'master';
       }
 
-      match /config/clinica { allow read: if membro(); allow write: if pode('clinica'); }
-      match /config/meta    { allow read, write: if membro(); }
+      // Depois do teste (ou com a assinatura suspensa) tudo continua legível,
+      // mas nada pode ser alterado: os dados da clínica nunca são apagados.
+      match /config/clinica { allow read: if membro(); allow write: if pode('clinica') && liberada(); }
+      match /config/meta    { allow read: if membro(); allow write: if membro() && liberada(); }
 
-      match /pacientes/{b}     { allow read, write: if pode('pacientes'); }
-      match /imagens/{id}      { allow read, write: if pode('pacientes'); }
-      match /agendamentos/{b}  { allow read, write: if membro(); }
-      match /avisos/{b}        { allow read, write: if membro(); }
-      match /fluxo/{b}         { allow read, write: if pode('financeiro'); }
-      match /despesas/{b}      { allow read, write: if pode('financeiro'); }
-      match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos'); }
-      match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos'); }
+      match /pacientes/{b}     { allow read: if pode('pacientes'); allow write: if pode('pacientes') && liberada(); }
+      match /imagens/{id}      { allow read: if pode('pacientes'); allow write: if pode('pacientes') && liberada(); }
+      match /agendamentos/{b}  { allow read: if membro(); allow write: if membro() && liberada(); }
+      match /avisos/{b}        { allow read: if membro(); allow write: if membro() && liberada(); }
+      match /fluxo/{b}         { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
+      match /despesas/{b}      { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
+      match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
+      match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
 
       // Formulários enviados ao paciente pelo WhatsApp (anamnese e termo).
       // O documento é um código aleatório longo: só quem recebeu o link abre.
@@ -97,7 +143,7 @@ service cloud.firestore {
         function aberto() { return resource.data.status == 'pendente' && resource.data.expiraEm > request.time; }
         allow get: if pode('pacientes') || aberto();
         allow list, delete: if pode('pacientes');
-        allow create: if pode('pacientes') && token.size() >= 24
+        allow create: if pode('pacientes') && liberada() && token.size() >= 24
           && request.resource.data.status == 'pendente'
           && request.resource.data.expiraEm is timestamp
           && request.resource.data.tipo in ['odontologica', 'harmonizacao', 'termo'];
