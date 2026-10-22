@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.5.1';
+const APP_VERSION='2.5.2';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2288,8 +2288,11 @@ function renderTelaNuvem(){
         <label>E-mail de acesso</label><input value="${esc(em)}" disabled>
         <label>Nome completo</label><input id="pmNome" value="${esc((au&&au.displayName)||'')}" required>
         <label>Telefone / WhatsApp</label><input id="pmTel" required>
-        <div class="row"><div><label>Sexo</label><select id="pmSexo"><option value="">Não informado</option><option value="F">Feminino</option><option value="M">Masculino</option></select></div>
-        <div><label>CRO, se atende como dentista</label><input id="pmCro" placeholder="Ex.: 10101-AM"></div></div>
+        <label>Você vai atender pacientes como dentista?</label>
+        <select id="pmAtende"><option value="">Selecione</option><option value="sim">Sim, também atendo (apareço na agenda)</option><option value="nao">Não, só administro a clínica</option></select>
+        <div id="pmDentista" style="display:none"><div class="row"><div><label>Sexo</label><select id="pmSexo"><option value="">Selecione</option><option value="F">Feminino</option><option value="M">Masculino</option></select></div>
+        <div><label>CRO</label><input id="pmCro" placeholder="Ex.: 10101-AM"></div></div></div>
+        <p class="muted" style="font-size:12.5px;margin:6px 0 0">Quem não atende não aparece na agenda nem na escolha de dentista. Dá para mudar depois em Usuários.</p>
         ${msgsNuvem()}
         <button class="btn-p login-btn">Concluir</button>
       </form>`);
@@ -2362,15 +2365,20 @@ function bindNuvemEvents(){
   if(q('nvSair')) q('nvSair').addEventListener('click',()=>Nuvem.sair(true));
   if(q('nvTentar')) q('nvTentar').addEventListener('click',()=>{ nuvemErro=''; aoMudarLogin(Nuvem.usuarioAuth()); });
   const fP=q('fPerfilMaster');
+  if(fP){ const at=q('pmAtende'); at.addEventListener('change',()=>{ q('pmDentista').style.display=at.value==='sim'?'block':'none'; }); }
   if(fP) fP.addEventListener('submit',ev=>{
     ev.preventDefault();
     const em=Nuvem.meuEmail();
+    const atende=q('pmAtende').value;
     const u={id:nuvemAcesso.userId, tipo:'master', username:em.split('@')[0], nomeCompleto:q('pmNome').value.trim(),
-      telefone:q('pmTel').value.trim(), email:em, cro:q('pmCro').value.trim().toUpperCase(), sexo:q('pmSexo').value, permissions:defaultPerms('master')};
+      telefone:q('pmTel').value.trim(), email:em, atende:atende==='sim', cro:atende==='sim'?q('pmCro').value.trim().toUpperCase():'', sexo:q('pmSexo').value, permissions:defaultPerms('master')};
     u.nomeCompleto=semTitulo(u.nomeCompleto);
-    if(!u.nomeCompleto){ nuvemErro='Informe seu nome.'; render(); return; }
-    if(u.cro && !/^\d{3,6}-[A-Z]{2}$/.test(u.cro)){ nuvemErro='Informe o CRO no formato 10101-AM.'; render(); return; }
-    if(u.cro && !u.sexo){ nuvemErro='Informe o sexo, para o sistema usar Dr. ou Dra.'; render(); return; }
+    // mostra o erro sem redesenhar a tela (não apaga o que já foi digitado)
+    const erroP=t=>{ let el=fP.querySelector('.login-erro'); if(!el){ el=document.createElement('div'); el.className='login-erro'; fP.insertBefore(el,fP.querySelector('button.login-btn')); } el.textContent=t; el.scrollIntoView({block:'center'}); };
+    if(!u.nomeCompleto) return erroP('Informe seu nome.');
+    if(!atende) return erroP('Diga se você vai atender pacientes como dentista.');
+    if(u.atende && !/^\d{3,6}-[A-Z]{2}$/.test(u.cro)) return erroP('Para atender, informe o CRO no formato 10101-AM.');
+    if(u.atende && !u.sexo) return erroP('Informe o sexo, para o sistema usar Dr. ou Dra.');
     state.users=state.users.filter(x=>x.id!==u.id && normEmail(x.email)!==em);
     state.users.unshift(u); session=u.id; saveData();
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
@@ -2916,7 +2924,10 @@ function renderStub(label){
 function semTitulo(n){ return String(n||'').replace(/^\s*(dr\(a\)|dra|dr|prof[a]?)\.?\s+/i,'').trim(); }
 function usuarioAtivo(u){ return !!u && !u.inativo; }
 function dentistaAtivo(u){ return ehDentista(u) && usuarioAtivo(u); }
-function ehDentista(u){ return !!u && (u.tipo==='dentista' || (u.tipo==='master' && !!String(u.cro||'').trim())); }
+// Master só entra na agenda/atendimentos se marcou que atende (com CRO). Administrativo e recepção nunca.
+// (cadastros antigos sem a marcação: Master com CRO continua atendendo, até alguém desmarcar)
+function masterAtende(u){ return !!u && u.tipo==='master' && !!String(u.cro||'').trim() && (u.atende===true || u.atende===undefined); }
+function ehDentista(u){ return !!u && (u.tipo==='dentista' || masterAtende(u)); }
 function tituloDe(u){ if(!ehDentista(u)) return ''; return u.sexo==='F'?'Dra.':u.sexo==='M'?'Dr.':'Dr(a).'; }
 function nomeExibicao(u){ if(!u) return ''; const t=tituloDe(u); return (t?t+' ':'')+semTitulo(u.nomeCompleto); }
 function nomeCumprimento(u){ if(!u) return ''; const t=tituloDe(u), p=semTitulo(u.nomeCompleto).split(/\s+/)[0]||''; return (t?t+' ':'')+p; }
@@ -3014,8 +3025,9 @@ function userFormFields(tipo, u, isNew){
     <div><label>${NUVEM?'E-mail de acesso (login)':'Email'}</label><input id="fEmail" type="email" value="${esc(u.email)}" required ${NUVEM&&emailTravado(u)?'readonly title="Somente o Master altera o e-mail de acesso"':''}></div>
   </div>
   ${NUVEM?'<p class="muted" style="margin:6px 0 0">A pessoa entra com este e-mail: pelo botão <strong>Entrar com Google</strong> (se for uma conta Google) ou em <strong>Primeiro acesso · criar senha</strong>.</p>':''}
-  <div id="croWrap" style="display:${tipo==='dentista'||tipo==='master'?'block':'none'}">
-    <label>${tipo==='master'?'CRO, se você também atende como dentista (ex: 10101-AM)':'CRO (ex: 10101-AM)'}</label><input id="fCro" value="${esc(u.cro)}">
+  ${tipo==='master'?`<label class="chk-linha" style="margin-top:14px"><input type="checkbox" id="fAtende" ${masterAtende(u)?'checked':''}> Atende pacientes como dentista (aparece na agenda e na escolha de dentista)</label>`:''}
+  <div id="croWrap" style="display:${tipo==='dentista'||(tipo==='master'&&masterAtende(u))?'block':'none'}">
+    <label>CRO (ex: 10101-AM)</label><input id="fCro" value="${esc(u.cro)}">
   </div>
   </div>`;
 }
@@ -3072,16 +3084,19 @@ function openUserForm(u){
   if(tipoSel) tipoSel.addEventListener('change',e=>{
     document.getElementById('croWrap').style.display = e.target.value==='dentista' ? 'block':'none';
   });
+  const fAt=document.getElementById('fAtende');
+  if(fAt) fAt.addEventListener('change',()=>{ document.getElementById('croWrap').style.display=fAt.checked?'block':'none'; });
   document.getElementById('btnCancelUser').addEventListener('click',()=>{ document.getElementById('userFormArea').innerHTML=''; });
   document.getElementById('fUser').addEventListener('submit', async ev=>{
     ev.preventDefault();
     const tipoVal = isNew ? document.getElementById('fTipo').value : u.tipo;
     const cro = document.getElementById('fCro') ? document.getElementById('fCro').value.trim() : '';
-    if((tipoVal==='dentista' || (tipoVal==='master' && cro)) && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
-      avisar('Informe um CRO válido, ex: 10101-AM'); return;
+    const atendeVal = tipoVal==='master' && !!(document.getElementById('fAtende') && document.getElementById('fAtende').checked);
+    if((tipoVal==='dentista' || atendeVal) && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
+      avisar(atendeVal?'Para atender como dentista, informe o CRO (ex: 10101-AM).':'Informe um CRO válido, ex: 10101-AM'); return;
     }
     const sexoVal=document.getElementById('fSexo')?document.getElementById('fSexo').value:'';
-    if((tipoVal==='dentista' || (tipoVal==='master' && cro)) && !sexoVal){ avisar('Informe o sexo do dentista, para o sistema usar Dr. ou Dra. corretamente.'); return; }
+    if((tipoVal==='dentista' || atendeVal) && !sexoVal){ avisar('Informe o sexo do dentista, para o sistema usar Dr. ou Dra. corretamente.'); return; }
     const data = {
       id: isNew? uid() : u.id,
       tipo: tipoVal,
@@ -3090,7 +3105,8 @@ function openUserForm(u){
       sexo: document.getElementById('fSexo')?document.getElementById('fSexo').value:'',
       telefone: document.getElementById('fTelefone').value.trim(),
       email: document.getElementById('fEmail').value.trim(),
-      cro: (tipoVal==='dentista'||tipoVal==='master')? cro.toUpperCase() : '',
+      cro: (tipoVal==='dentista'||atendeVal)? cro.toUpperCase() : (tipoVal==='master'?String((u&&u.cro)||'').toUpperCase():''),
+      atende: tipoVal==='master' ? atendeVal : undefined,
       permissions: isNew ? defaultPerms(tipoVal) : (isMaster ? {
         usuarios: document.getElementById('pUsuarios').checked,
         pacientes: document.getElementById('pPacientes').checked,
