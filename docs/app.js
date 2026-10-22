@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.6.0';
+const APP_VERSION='2.6.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2179,7 +2179,7 @@ const MQ_ESCURO=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark
 function aplicarTema(){
   const t=temaEscolhido(); const d=t==='auto'?(MQ_ESCURO.matches?'dark':'light'):t;
   document.documentElement.setAttribute('data-theme',d);
-  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute('content',d==='dark'?'#0C1216':'#F5F6F8');
+  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute('content',/odontogestao-teste/.test(location.hostname)?'#C9861A':(d==='dark'?'#0C1216':'#F5F6F8'));
 }
 function definirTema(t){ try{ localStorage.setItem('odonto-tema',t); }catch(e){} aplicarTema(); render(); }
 try{ MQ_ESCURO.addEventListener('change',()=>{ if(temaEscolhido()==='auto') aplicarTema(); }); }catch(e){}
@@ -3758,7 +3758,7 @@ async function bootFormularioPublico(token,cid){
     return;
   }
   if(!f){ app.innerHTML=pubTela(null,'<h1>Link indisponível</h1><p>Este link já foi usado, venceu ou foi cancelado pela clínica. Se precisar, peça um novo link à clínica.</p>'); return; }
-  if(f.clinicaNome) document.title=f.clinicaNome;
+  if(f.clinicaNome) document.title=(/odontogestao-teste/.test(location.hostname)?'TESTE · ':'')+f.clinicaNome;
   const termo=f.tipo==='termo', nome=(f.pacienteNome||'').split(' ')[0];
   let campos='';
   if(f.tipo==='odontologica') campos=`<div class="pub-cartao">${anamneseOdontoCampos(defaultAnamnese())}</div>`;

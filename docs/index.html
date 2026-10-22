@@ -16,14 +16,25 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icones/icone-192.png">
 <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
-<link rel="stylesheet" href="estilo.css?v=2.6.0">
+<script>
+// Ambiente de teste: ícone, nome e cor diferentes para não confundir com a produção
+if(/odontogestao-teste/.test(location.hostname)){
+  document.title='TESTE · OdontoGestão';
+  document.querySelector('link[rel=manifest]').href='manifest-teste.json';
+  document.querySelector('link[rel=icon]').href='icones/teste-icone-192.png';
+  document.querySelector('link[rel=apple-touch-icon]').href='icones/teste-apple-touch-icon.png';
+  document.querySelector('meta[name=apple-mobile-web-app-title]').content='Odonto TESTE';
+  document.querySelector('meta[name=theme-color]').content='#C9861A';
+}
+</script>
+<link rel="stylesheet" href="estilo.css?v=2.6.1">
 </head>
 <body>
 <div id="app"><div class="wrap"><p class="muted" style="text-align:center;margin-top:30vh">Carregando…</p></div></div>
 <div id="printArea"></div>
-<script src="firebase-config.js?v=2.6.0"></script>
-<script src="nuvem.js?v=2.6.0"></script>
-<script src="app.js?v=2.6.0"></script>
+<script src="firebase-config.js?v=2.6.1"></script>
+<script src="nuvem.js?v=2.6.1"></script>
+<script src="app.js?v=2.6.1"></script>
 <script>
 if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e)));
