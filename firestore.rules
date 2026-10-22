@@ -51,6 +51,8 @@ service cloud.firestore {
 
     // Quadro de implementação e melhorias: só o administrador da plataforma.
     match /roadmap/{id} { allow read, write: if admin(); }
+    // Vitrine: planos e melhorias previstas que as clínicas podem ver.
+    match /plataforma/{doc} { allow read: if logado(); allow write: if admin(); }
 
     match /clinicas/{cid} {
       // Ficha da clínica: plano, módulos e validade do teste. Só o
@@ -134,6 +136,21 @@ service cloud.firestore {
       match /despesas/{b}      { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
+
+      // Sugestões de melhoria enviadas pela equipe da clínica.
+      // Ficam na base da clínica; o administrador da plataforma lê e responde.
+      match /sugestoes/{id} {
+        allow read: if membro() || admin();
+        allow create: if membro()
+          && request.resource.data.status == 'recebida'
+          && request.resource.data.autorEmail == meuEmail()
+          && request.resource.data.texto is string
+          && request.resource.data.texto.size() > 3 && request.resource.data.texto.size() < 2000;
+        allow update: if admin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'respondidoEm', 'noQuadro']);
+        allow delete: if admin() || master()
+          || (membro() && resource.data.autorEmail == meuEmail() && resource.data.status == 'recebida');
+      }
 
       // Formulários enviados ao paciente pelo WhatsApp (anamnese e termo).
       // O documento é um código aleatório longo: só quem recebeu o link abre.

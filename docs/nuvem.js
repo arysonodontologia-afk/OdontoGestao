@@ -228,6 +228,34 @@ async function situacaoEmail(email){
   catch(e){ if(e && e.code==='permission-denied') return 'outra'; return 'livre'; }
 }
 
+// ---------- sugestões de melhoria (cada clínica na sua base) ----------
+let sugestoes=[];
+const sugLimpa=(d,cid)=>{ const x=d.data(); return Object.assign({},x,{id:d.id,cid:cid||CLINICA,criadoEm:ms(x.criadoEm)||Date.now(),respondidoEm:ms(x.respondidoEm)}); };
+function ouvirSugestoes(){
+  unsubs.push(F.onSnapshot(colRef('sugestoes'),s=>{
+    sugestoes=s.docs.map(d=>sugLimpa(d)).sort((a,b)=>b.criadoEm-a.criadoEm);
+    const st=hooks.estado(); if(st) st.sugestoes=sugestoes;
+    if(pronto && hooks.onRemoto) hooks.onRemoto('sugestoes');
+  },e=>console.warn('sugestões',e)));
+}
+function enviarSugestao(d){
+  return F.setDoc(F.doc(colRef('sugestoes')),{texto:String(d.texto||'').slice(0,1990),categoria:d.categoria||'',autorNome:d.autorNome||'',autorEmail:meuEmail(),
+    clinicaNome:d.clinicaNome||'',status:'recebida',resposta:'',criadoEm:F.serverTimestamp()});
+}
+function apagarSugestao(id,cid){ return F.deleteDoc(F.doc(db,'clinicas',cid||CLINICA,'sugestoes',id)); }
+// administrador: sugestões de todas as clínicas
+async function listarSugestoes(cids){
+  const r=await Promise.allSettled(cids.map(cid=>F.getDocs(F.collection(db,'clinicas',cid,'sugestoes')).then(s=>s.docs.map(d=>sugLimpa(d,cid)))));
+  return r.filter(x=>x.status==='fulfilled').flatMap(x=>x.value).sort((a,b)=>b.criadoEm-a.criadoEm);
+}
+function responderSugestao(cid,id,mud){
+  const d=Object.assign({},mud); if('resposta' in d) d.respondidoEm=F.serverTimestamp();
+  return F.updateDoc(F.doc(db,'clinicas',cid,'sugestoes',id),d);
+}
+// vitrine (planos e melhorias previstas que as clínicas veem)
+async function lerVitrine(){ try{ const s=await F.getDoc(F.doc(db,'plataforma','vitrine')); return s.exists()?s.data():null; }catch(e){ return null; } }
+function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); }
+
 // ---------- plataforma (somente o administrador) ----------
 async function listarClinicas(){
   const s=await F.getDocs(F.collection(db,'clinicas'));
@@ -405,6 +433,7 @@ async function conectar(ac){
   if(pode('usuarios')) t.push(ouvirAcessos());
   for(const key in COLS){ const c=COLS[key]; if(!c.perm || pode(c.perm)) t.push(ouvirBaldes(key)); }
   if(pode('pacientes')) t.push(ouvirFormularios());
+  ouvirSugestoes();
   ouvirMeuAcesso();
   await Promise.all(t);
   const st={clinic:srvCfg.clinica?JSON.parse(srvCfg.clinica):null, meta:srvCfg.meta?JSON.parse(srvCfg.meta):{}};
@@ -413,7 +442,7 @@ async function conectar(ac){
     const m=srv[key];
     st[key]=m?[...m.entries()].sort((a,b)=>a[1].p-b[1].p).map(([,v])=>JSON.parse(v.s)):[];
   }
-  st.formularios=formularios;
+  st.formularios=formularios; st.sugestoes=sugestoes;
   pronto=true; status();
   return st;
 }
@@ -567,7 +596,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, lerVitrine, salvarVitrine,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };

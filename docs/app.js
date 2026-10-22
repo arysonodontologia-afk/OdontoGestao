@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.5.2';
+const APP_VERSION='2.6.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2383,6 +2383,7 @@ function bindNuvemEvents(){
     state.users.unshift(u); session=u.id; saveData();
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
     nuvemErro=''; view='home'; currentTab=modoCelular()?'agenda':'dashboard'; render();
+    conferirBoasVindas();
   });
 }
 async function bootNuvem(){
@@ -2427,6 +2428,7 @@ async function aoMudarLogin(u){
       try{ ensureProcedimentos(); }catch(e){ console.error(e); }
       view='home'; currentTab=modoCelular()?'agenda':'dashboard';
       try{ conferirIndice(); }catch(e){ console.warn(e); }
+      try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
     }
     render();
   }catch(e){
@@ -2753,6 +2755,7 @@ function render(){
   bindEvents();
   if(NUVEM) bindFormularios();
   if(NUVEM && currentTab==='plataforma') bindPlataforma();
+  if(NUVEM) bindSugestoes();
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
 }
@@ -2996,6 +2999,7 @@ function renderDashboard(){
     <div class="col-a">${agendaBloco}</div>
     <div class="col-b">
       ${pend.length?`<section class="bloco"><div class="bloco-corpo"><h2 class="lat-tit" style="margin-bottom:2px">Pendências</h2>${pend.join('')}</div></section>`:''}
+      ${sugestoesBlocoHtml()}
       ${avisosHtml(u,true)}
       ${backup}
     </div>
@@ -3845,7 +3849,7 @@ function faixaPlanoHtml(){
   if(s.cod==='suspensa'||s.cod==='vencido')
     return `<div class="faixa-plano bloqueada" role="alert"><div><strong>${s.cod==='vencido'?'O período de teste terminou.':'O acesso desta clínica está suspenso.'}</strong> O sistema está em modo de consulta: você vê todas as informações e pode fazer backup, mas não pode cadastrar nem alterar nada. Nenhum dado foi apagado.</div><a class="btn-p" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Quero continuar</a></div>`;
   if(s.cod==='teste' && u && (u.tipo==='master'||permsDe(u).usuarios))
-    return `<div class="faixa-plano"><div><strong>Período de teste do plano ${esc(planoDe(f).nome)}:</strong> ${s.dias===1?'último dia':'faltam '+s.dias+' dias'} (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}). Ao final, seus dados continuam guardados.</div><a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar sobre assinatura</a></div>`;
+    return `<div class="faixa-plano"><div><strong>Período de teste do plano ${esc(planoDe(f).nome)}:</strong> ${s.dias===1?'último dia':'faltam '+s.dias+' dias'} (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}). Ao final, seus dados continuam guardados.</div><button class="lnk-forte" data-bvplanos>Ver planos</button><a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar sobre assinatura</a></div>`;
   return '';
 }
 let ultimoAvisoBloqueio=0;
@@ -3897,17 +3901,17 @@ function carregarPlataforma(forcar){
   platCarregando=true; platErro='';
   Nuvem.listarClinicas().then(l=>{ platClinicas=l; }).catch(e=>{ console.error(e); platErro=Nuvem.mapErro(e); platClinicas=[]; })
     .finally(()=>{ platCarregando=false; if(currentTab==='plataforma') render(); });
-  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
+  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l) publicarVitrine(l); if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
 }
 function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
 function renderPlataforma(){
   if(!(NUVEM && Nuvem.souAdmin())) return '<div class="card"><p class="muted">Área restrita.</p></div>';
   carregarPlataforma();
-  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
+  const abas=`<div class="seg" role="tablist" aria-label="Plataforma">${[['clinicas','Clínicas'],['implementacao','Implementação e melhorias'],['sugestoes','Sugestões dos clientes']].map(([id,t])=>`<button role="tab" data-plataba="${id}" class="${platAba===id?'active':''}" aria-selected="${platAba===id}">${t}</button>`).join('')}</div>`;
   const amb=Nuvem.ambienteTeste()?'<span class="sit sit-nao_vem">Ambiente de teste</span>':'<span class="sit sit-chegou">Produção</span>';
   return `<div class="pg-cab"><div><h1>Plataforma OdontoGestão</h1><p>Visível só para você. ${amb} <span class="muted">Projeto ${esc(Nuvem.projeto())} · versão ${APP_VERSION}</span></p></div><div style="margin-left:auto">${abas}</div></div>
   ${platErro?`<div class="faixa-plano bloqueada"><div>${esc(platErro)}</div></div>`:''}
-  ${platAba==='clinicas'?renderPlatClinicas():renderPlatRoadmap()}`;
+  ${platAba==='clinicas'?renderPlatClinicas():platAba==='sugestoes'?renderPlatSugestoes():renderPlatRoadmap()}`;
 }
 function renderPlatClinicas(){
   if(!platClinicas) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando clínicas…</p></div></section>';
@@ -3979,7 +3983,7 @@ function abrirNovaClinica(){
       const cid=await Nuvem.criarClinica(Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc));
       bg.remove(); platClinicas=null; carregarPlataforma(true);
       const dias=+q('dias').value||30;
-      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${location.origin}${location.pathname}\n2. Entre com o e-mail ${email}: use "Entrar com Google" (se for Gmail) ou "Primeiro acesso" para criar uma senha.\n3. Preencha o cadastro da clínica e comece a usar.\n\nAo final do teste, todas as suas informações continuam guardadas.`;
+      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${location.origin}${location.pathname}\n2. Entre com o e-mail ${email}: use "Entrar com Google" (se for Gmail) ou "Primeiro acesso" para criar uma senha.\n3. Preencha o cadastro da clínica e comece a usar.\n\nPlanos do OdontoGestão:\n• Essencial ${fmtBRL(PLANOS.essencial.preco)}/mês: agenda, pacientes, lembretes pelo WhatsApp e anamnese\n• Clínico ${fmtBRL(PLANOS.clinico.preco)}/mês: + prontuário completo e anamnese/termo assinados pelo celular\n• Completo ${fmtBRL(PLANOS.completo.preco)}/mês: + financeiro, relatórios e até 3 dentistas\n\nSem fidelidade, sem taxa de implantação e com todas as atualizações incluídas. Ao final do teste, todas as suas informações continuam guardadas.`;
       const fone=telefoneWhatsApp(q('contato').value);
       if(fone){ const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank'); if(!w) mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg); }
       else mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg);
@@ -4044,17 +4048,19 @@ function abrirItemRoadmap(id){
     <div class="row"><div><label>Categoria</label><select data-rm="categoria">${RM_CATEG.map(c=>`<option ${it.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div><label>Para quem</label><input data-rm="alvo" list="rmAlvos" value="${esc(it.alvo||'')}"><datalist id="rmAlvos">${alvos.map(a=>`<option value="${esc(a)}">`).join('')}</datalist></div>
       <div><label>Versão (quando publicado)</label><input data-rm="versao" value="${esc(it.versao||'')}" placeholder="${APP_VERSION}"></div></div>
+    <label class="chk-linha"><input type="checkbox" data-rm="publico" ${itemPublico(it)?'checked':''}> Mostrar às clínicas como melhoria prevista (na tela de boas-vindas)</label>
     <p class="erro-campo" data-rm="erro" role="alert"></p>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">${id?'<button class="btn-d" data-rm="apagar" style="margin-right:auto">Excluir</button>':''}<button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-rm="ok">Salvar</button></div>`);
   const q=k=>bg.querySelector(`[data-rm="${k}"]`);
   q('ok').addEventListener('click',()=>{
     const titulo=q('titulo').value.trim(); if(!titulo){ q('erro').textContent='Informe o título.'; return; }
-    const novo=Object.assign({},it,{titulo,descricao:q('descricao').value.trim(),status:q('status').value,prioridade:q('prioridade').value,categoria:q('categoria').value,alvo:q('alvo').value.trim(),versao:q('versao').value.trim()});
+    const novo=Object.assign({},it,{titulo,descricao:q('descricao').value.trim(),status:q('status').value,prioridade:q('prioridade').value,categoria:q('categoria').value,alvo:q('alvo').value.trim(),versao:q('versao').value.trim(),publico:q('publico').checked});
     Nuvem.salvarItemRoadmap(novo).then(()=>{ bg.remove(); render(); }).catch(e=>{ q('erro').textContent=Nuvem.mapErro(e); });
   });
   if(id) q('apagar').addEventListener('click',()=>customConfirm('Excluir esta melhoria do quadro?',()=>{ Nuvem.apagarItemRoadmap(id).then(()=>render()); bg.remove(); }));
 }
 function bindPlataforma(){
+  bindSugestoesPlat();
   document.querySelectorAll('[data-plataba]').forEach(b=>b.addEventListener('click',()=>{ platAba=b.getAttribute('data-plataba'); render(); }));
   const nova=document.querySelector('[data-platnova]'); if(nova) nova.addEventListener('click',abrirNovaClinica);
   const rec=document.querySelector('[data-platrecarregar]'); if(rec) rec.addEventListener('click',()=>{ platClinicas=null; carregarPlataforma(true); render(); });
@@ -4069,6 +4075,177 @@ function bindPlataforma(){
     const novo=Object.assign({},it,{status:RM_STATUS[i][0]}); if(novo.status==='publicado' && !novo.versao) novo.versao=APP_VERSION;
     Nuvem.salvarItemRoadmap(novo).catch(e=>avisar(Nuvem.mapErro(e)));
   }));
+}
+
+// =====================================================================
+// Boas-vindas: planos, vantagens e melhorias previstas
+// =====================================================================
+const VANTAGENS=[
+  ['30 dias grátis','Teste o sistema completo do seu plano, sem cartão.'],
+  ['Seus dados são seus','Terminou o teste? Nada é apagado: você continua vendo tudo e pode baixar o backup.'],
+  ['Sem fidelidade e sem taxa de implantação','Cancele quando quiser. Não cobramos para começar.'],
+  ['Atualizações incluídas','Toda melhoria nova chega sem custo extra no seu plano.'],
+  ['WhatsApp sem custo por mensagem','Lembretes, anamnese e termos saem do WhatsApp da própria clínica.'],
+  ['Anamnese e termo assinados no celular','O paciente preenche e assina pelo link, sem papel.'],
+  ['Plano anual com 2 meses grátis','Pagando o ano, você paga 10 meses.'],
+  ['Início de carreira','Dentistas com até 2 anos de CRO têm 30% de desconto no primeiro ano.'],
+];
+const RECURSOS_TXT={
+  base:['Agenda no computador e no celular','Cadastro de pacientes','Lembretes de consulta pelo WhatsApp','Anamnese odontológica e de harmonização'],
+  prontuario:['Odontograma, exame clínico e plano de tratamento','Orçamento e evolução','Radiografias e documentos (atestado, declaração)'],
+  formularios:['Anamnese e termo enviados pelo WhatsApp, com assinatura do paciente'],
+  financeiro:['Financeiro: parcelas, despesas e inadimplência','Relatórios e tabela de valores','Permissões por usuário'],
+};
+let vitrineCache=null, vitrineLida=false;
+function carregarVitrine(){
+  if(vitrineLida || !NUVEM) return; vitrineLida=true;
+  Nuvem.lerVitrine().then(v=>{ vitrineCache=v; const m=document.querySelector('[data-bv-previstas]'); if(m) m.innerHTML=previstasHtml(); });
+}
+function previstasHtml(){
+  const its=(vitrineCache&&vitrineCache.itens)||[];
+  if(!its.length) return '<p class="muted" style="margin:0">Em breve publicaremos aqui as próximas melhorias.</p>';
+  const et={ideia:'Em estudo',planejado:'Planejado',desenvolvimento:'Em desenvolvimento',teste:'Em testes'};
+  return `<ul class="bv-prev">${its.map(i=>`<li><span class="bv-et">${esc(et[i.status]||'Previsto')}</span><div><strong>${esc(i.titulo)}</strong>${i.descricao?`<div class="muted">${esc(i.descricao)}</div>`:''}</div></li>`).join('')}</ul>`;
+}
+function abrirBoasVindas(primeiraVez){
+  carregarVitrine();
+  const f=fichaClinica(); const s=situacaoFicha(f);
+  const planoAtual=f?f.plano:'';
+  const card=k=>{ const p=PLANOS[k]; const lista=k==='essencial'?RECURSOS_TXT.base:k==='clinico'?['Tudo do Essencial'].concat(RECURSOS_TXT.prontuario,RECURSOS_TXT.formularios):['Tudo do Clínico'].concat(RECURSOS_TXT.financeiro);
+    return `<div class="bv-plano${k===planoAtual?' atual':''}">${k===planoAtual?'<span class="bv-seu">Seu plano</span>':''}<h4>${esc(p.nome)}</h4>
+      <div class="bv-preco">${fmtBRL(p.preco)}<span>/mês</span></div>
+      <div class="muted bv-lim">${p.dentistas} dentista${p.dentistas>1?'s':''}${p.usuarios?' · até '+p.usuarios+' usuários':' · usuários sem limite'}</div>
+      <ul>${lista.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`; };
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal bv" role="dialog" aria-label="Planos e novidades" style="text-align:left">
+    <h2 style="margin:0 0 4px">${primeiraVez?'Bem-vindo ao OdontoGestão!':'Planos e novidades'}</h2>
+    <p class="muted" style="margin:0 0 14px">${f&&s.cod==='teste'?`Sua clínica está no <strong>teste grátis do plano ${esc(planoDe(f).nome)}</strong> até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}. `:''}Conheça os planos, o que você ganha e o que vem por aí.</p>
+    <div class="bv-planos">${Object.keys(PLANOS).map(card).join('')}</div>
+    <p class="muted" style="margin:8px 0 0;font-size:12.5px">Módulos avulsos para o Essencial: ${Object.keys(MODULOS).map(k=>esc(MODULOS[k].nome)+' (+'+fmtBRL(MODULOS[k].preco)+')').join(' · ')}. Dentista a mais: +${fmtBRL(PRECO_DENTISTA_EXTRA)}.</p>
+    <h3 class="bv-tit">Vantagens</h3>
+    <div class="bv-vant">${VANTAGENS.map(([t,d])=>`<div><strong>${esc(t)}</strong><span>${esc(d)}</span></div>`).join('')}</div>
+    <h3 class="bv-tit">Melhorias previstas</h3>
+    <div data-bv-previstas>${previstasHtml()}</div>
+    <p class="muted" style="font-size:12.5px;margin:12px 0 0">Tem uma ideia? Use <strong>Sugestões de melhoria</strong> no Painel: ela vai direto para a nossa equipe.</p>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <a class="btn-s" href="${msgContatoPlataforma()}" target="_blank" rel="noopener" style="text-decoration:none">Falar sobre assinatura</a>
+      <button class="btn-p" data-bv-ok>${primeiraVez?'Começar a usar':'Fechar'}</button></div></div>`;
+  document.body.appendChild(bg);
+  const fechar=()=>{ bg.remove(); if(primeiraVez && !clinicaBloqueada()){ state.meta=state.meta||{}; state.meta.boasVindasVistas=true; saveData(); } };
+  bg.querySelector('[data-bv-ok]').addEventListener('click',fechar);
+  bg.addEventListener('click',e=>{ if(e.target===bg) fechar(); });
+}
+// mostra uma vez para o Master de uma clínica cliente, depois do cadastro
+function conferirBoasVindas(){
+  const u=currentUser(), f=fichaClinica();
+  if(!f || !u || u.tipo!=='master' || (state.meta&&state.meta.boasVindasVistas) || document.querySelector('.modal-bg')) return;
+  setTimeout(()=>{ if(view==='home' && !document.querySelector('.modal-bg')) abrirBoasVindas(true); },400);
+}
+// vitrine pública: o administrador publica as melhorias marcadas para os clientes
+function itemPublico(i){ return i.publico!==undefined ? !!i.publico : (i.status!=='publicado' && i.categoria!=='Plataforma' && i.categoria!=='Legal e LGPD'); }
+let ultimaVitrine='';
+function publicarVitrine(lista){
+  if(!lista || !(NUVEM && Nuvem.souAdmin())) return;
+  const ord={teste:0,desenvolvimento:1,planejado:2,ideia:3};
+  const itens=lista.filter(i=>itemPublico(i) && i.status!=='publicado').sort((a,b)=>(ord[a.status]??9)-(ord[b.status]??9))
+    .map(i=>({titulo:i.titulo||'',descricao:i.descricao||'',status:i.status||'ideia'})).slice(0,12);
+  const s=JSON.stringify(itens); if(s===ultimaVitrine) return; ultimaVitrine=s;
+  Nuvem.salvarVitrine({itens,atualizadaEm:Date.now()}).catch(e=>console.warn('vitrine',e));
+}
+
+// =====================================================================
+// Sugestões de melhoria (cada clínica na sua base)
+// =====================================================================
+const SUG_STATUS={recebida:['Recebida','sit-agendado'],analise:['Em análise','sit-confirmado'],planejada:['Planejada','sit-chegou'],publicada:['Já disponível','sit-chegou'],recusada:['Não prevista','sit-cancelado-n']};
+const SUG_CATEG=['Agenda','Pacientes e prontuário','Financeiro','WhatsApp e comunicação','Celular','Visual','Outra'];
+function sugestoesBlocoHtml(){
+  if(!NUVEM) return '';
+  const l=(state.sugestoes||[]).slice(0,5), f=fichaClinica();
+  return `<section class="bloco"><div class="bloco-corpo"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 class="lat-tit" style="margin:0">Sugestões de melhoria</h2>
+    <button class="btn-p" data-sugnova style="margin-left:auto;padding:6px 12px;font-size:13px;white-space:nowrap">Enviar sugestão</button></div>
+    <p class="muted" style="margin:0 0 6px;font-size:12.5px">Ideias da equipe vão direto para o OdontoGestão.${f?' <button class="lnk-forte" data-bvabrir>Ver planos e melhorias previstas</button>':''}</p>
+    ${l.length?l.map(x=>{ const st=SUG_STATUS[x.status]||SUG_STATUS.recebida;
+      return `<div class="sug"><div class="sug-cab"><span class="sit ${st[1]}">${st[0]}</span><span class="muted">${esc(x.autorNome||'')} · ${new Date(x.criadoEm).toLocaleDateString('pt-BR')}</span></div>
+        <div class="sug-txt">${esc(x.texto)}</div>${x.resposta?`<div class="sug-resp"><strong>Resposta:</strong> ${esc(x.resposta)}</div>`:''}</div>`; }).join('')
+      :'<p class="muted" style="margin:6px 0 0">Nenhuma sugestão enviada ainda.</p>'}
+    ${(state.sugestoes||[]).length>5?`<p class="muted" style="margin:8px 0 0;font-size:12.5px">Mostrando as 5 mais recentes de ${(state.sugestoes||[]).length}.</p>`:''}
+  </div></section>`;
+}
+function abrirNovaSugestao(){
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Enviar sugestão de melhoria</h3><p class="muted" style="margin:0 0 6px">Conte o que facilitaria o dia a dia da clínica. Você acompanha a resposta aqui no Painel.</p>
+    <label>Assunto</label><select data-sg="cat">${SUG_CATEG.map(c=>`<option>${c}</option>`).join('')}</select>
+    <label>Sua sugestão</label><textarea class="ta" rows="5" data-sg="txt" maxlength="1900" placeholder="Ex.: poder enviar o orçamento em PDF pelo WhatsApp"></textarea>
+    <p class="erro-campo" data-sg="erro" role="alert"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-sg="ok">Enviar</button></div>`);
+  const q=k=>bg.querySelector(`[data-sg="${k}"]`);
+  q('ok').addEventListener('click',()=>{
+    const texto=q('txt').value.trim(); if(texto.length<5){ q('erro').textContent='Escreva sua sugestão.'; return; }
+    q('ok').disabled=true;
+    Nuvem.enviarSugestao({texto,categoria:q('cat').value,autorNome:nomeExibicao(currentUser()),clinicaNome:(state.clinic&&state.clinic.nome)||''})
+      .then(()=>{ bg.remove(); avisar('Sugestão enviada. Obrigado! Você acompanha a resposta no Painel.'); render(); })
+      .catch(e=>{ q('ok').disabled=false; q('erro').textContent=Nuvem.mapErro(e); });
+  });
+}
+function bindSugestoes(){
+  const n=document.querySelector('[data-sugnova]'); if(n) n.addEventListener('click',abrirNovaSugestao);
+  const b=document.querySelector('[data-bvabrir]'); if(b) b.addEventListener('click',()=>abrirBoasVindas(false));
+  document.querySelectorAll('[data-bvplanos]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirBoasVindas(false); }));
+}
+
+// ---------- administrador: sugestões de todas as clínicas ----------
+let platSugestoes=null, platSugCarregando=false, platSugFiltro='abertas';
+function carregarSugestoesPlat(forcar){
+  if(platSugCarregando || (platSugestoes && !forcar) || !platClinicas) return;
+  platSugCarregando=true;
+  Nuvem.listarSugestoes(['principal'].concat(platClinicas.map(c=>c.id))).then(l=>{ platSugestoes=l; })
+    .catch(e=>{ console.error(e); platSugestoes=[]; }).finally(()=>{ platSugCarregando=false; if(currentTab==='plataforma' && platAba==='sugestoes') render(); });
+}
+function nomeClinicaPlat(cid,x){ if(cid==='principal') return 'Sua clínica'; const c=(platClinicas||[]).find(k=>k.id===cid); return c?c.nome:(x&&x.clinicaNome)||cid; }
+function renderPlatSugestoes(){
+  if(!platClinicas) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando…</p></div></section>';
+  carregarSugestoesPlat();
+  if(!platSugestoes) return '<section class="bloco"><div class="bloco-corpo"><p class="muted">Carregando sugestões…</p></div></section>';
+  const abertas=x=>x.status==='recebida'||x.status==='analise';
+  const l=platSugestoes.filter(x=>platSugFiltro==='todas'||abertas(x));
+  const filtro=`<div class="seg" role="group" aria-label="Filtro">${[['abertas','Abertas ('+platSugestoes.filter(abertas).length+')'],['todas','Todas ('+platSugestoes.length+')']].map(([k,t])=>`<button data-sugfiltro="${k}" class="${platSugFiltro===k?'active':''}" aria-pressed="${platSugFiltro===k}">${t}</button>`).join('')}</div>`;
+  return `<section class="bloco"><div class="bloco-cab"><h2>Sugestões dos clientes</h2><div style="margin-left:auto;display:flex;gap:8px;align-items:center">${filtro}<button class="btn-s" data-sugrecarregar>Atualizar</button></div></div>
+    ${l.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Sugestão</th><th>Situação</th><th></th></tr></thead><tbody>${l.map(x=>{ const st=SUG_STATUS[x.status]||SUG_STATUS.recebida;
+      return `<tr><td><strong>${esc(nomeClinicaPlat(x.cid,x))}</strong><div class="muted" style="font-size:12px">${esc(x.autorNome||x.autorEmail||'')} · ${new Date(x.criadoEm).toLocaleDateString('pt-BR')}</div></td>
+        <td><div class="muted" style="font-size:12px">${esc(x.categoria||'')}</div>${esc(x.texto)}${x.resposta?`<div class="sug-resp"><strong>Sua resposta:</strong> ${esc(x.resposta)}</div>`:''}</td>
+        <td><span class="sit ${st[1]}">${st[0]}</span>${x.noQuadro?'<div class="muted" style="font-size:12px;margin-top:4px">No quadro</div>':''}</td>
+        <td class="actions"><button class="btn-s" data-sugresp="${esc(x.cid)}|${esc(x.id)}">Responder</button></td></tr>`; }).join('')}</tbody></table></div>`
+      :`<div class="bloco-corpo"><p class="muted" style="margin:0">${platSugFiltro==='abertas'?'Nenhuma sugestão aguardando resposta.':'Nenhuma sugestão recebida ainda.'}</p></div>`}
+    <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">Cada sugestão fica guardada na base da clínica que enviou. A resposta aparece no Painel da clínica.</p></div></section>`;
+}
+function abrirRespostaSugestao(chave){
+  const [cid,id]=chave.split('|'); const x=(platSugestoes||[]).find(k=>k.cid===cid&&k.id===id); if(!x) return;
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Responder sugestão</h3><p class="muted" style="margin:0 0 8px">${esc(nomeClinicaPlat(cid,x))} · ${esc(x.autorNome||'')} · ${esc(x.categoria||'')}</p>
+    <div class="rev-corpo" style="max-height:none">${esc(x.texto)}</div>
+    <label>Situação</label><select data-rs="st">${Object.keys(SUG_STATUS).map(k=>`<option value="${k}" ${x.status===k?'selected':''}>${SUG_STATUS[k][0]}</option>`).join('')}</select>
+    <label>Resposta para a clínica</label><textarea class="ta" rows="4" data-rs="resp" maxlength="1000">${esc(x.resposta||'')}</textarea>
+    <label class="chk-linha"><input type="checkbox" data-rs="quadro" ${x.noQuadro?'checked disabled':''}> Levar para o quadro de implementação (como Sugestão)</label>
+    <p class="erro-campo" data-rs="erro" role="alert"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn-d" data-rs="apagar" style="margin-right:auto">Excluir</button><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-rs="ok">Salvar</button></div>`);
+  const q=k=>bg.querySelector(`[data-rs="${k}"]`);
+  q('ok').addEventListener('click',async()=>{
+    const mud={status:q('st').value,resposta:q('resp').value.trim()};
+    const levar=q('quadro').checked && !x.noQuadro;
+    if(levar) mud.noQuadro=true;
+    q('ok').disabled=true;
+    try{
+      await Nuvem.responderSugestao(cid,id,mud);
+      if(levar) await Nuvem.salvarItemRoadmap({titulo:x.texto.length>90?x.texto.slice(0,88)+'…':x.texto,descricao:x.texto+'\n\nSugestão de '+(x.autorNome||'')+' — '+nomeClinicaPlat(cid,x)+'.',status:'ideia',prioridade:'media',categoria:'Outros',alvo:'Todos os planos',publico:false});
+      Object.assign(x,mud); bg.remove(); render();
+    }catch(e){ q('ok').disabled=false; q('erro').textContent=Nuvem.mapErro(e); }
+  });
+  q('apagar').addEventListener('click',()=>customConfirm('Excluir esta sugestão? Ela some também do Painel da clínica.',()=>{
+    Nuvem.apagarSugestao(id,cid).then(()=>{ platSugestoes=platSugestoes.filter(k=>!(k.cid===cid&&k.id===id)); bg.remove(); render(); }).catch(e=>avisar(Nuvem.mapErro(e)));
+  }));
+}
+function bindSugestoesPlat(){
+  document.querySelectorAll('[data-sugfiltro]').forEach(b=>b.addEventListener('click',()=>{ platSugFiltro=b.getAttribute('data-sugfiltro'); render(); }));
+  const r=document.querySelector('[data-sugrecarregar]'); if(r) r.addEventListener('click',()=>{ platSugestoes=null; carregarSugestoesPlat(true); render(); });
+  document.querySelectorAll('[data-sugresp]').forEach(b=>b.addEventListener('click',()=>abrirRespostaSugestao(b.getAttribute('data-sugresp'))));
 }
 
 function openPatientForm(p){

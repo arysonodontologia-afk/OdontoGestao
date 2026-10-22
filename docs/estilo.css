@@ -660,3 +660,29 @@ tr.u-inativo td .badge{opacity:.6}
 .rm-acoes .btn-icone:last-child{margin-left:auto}
 .rm-vazio{font-size:12.5px;text-align:center;margin:14px 0}
 .faixa-plano a.btn-p{color:var(--primary-ink);padding:8px 14px;border-radius:var(--r-sm);font-weight:600}
+
+/* ---------- boas-vindas (planos e novidades) e sugestões ---------- */
+.modal.bv{max-width:900px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:26px}
+.bv-planos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.bv-plano{position:relative;border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--surface)}
+.bv-plano.atual{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.bv-seu{position:absolute;top:-10px;right:12px;background:var(--primary);color:var(--primary-ink);font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px}
+.bv-plano h4{margin:0;font-size:15px}
+.bv-preco{font-size:22px;font-weight:600;margin:4px 0 0;font-variant-numeric:tabular-nums}
+.bv-preco span{font-size:13px;font-weight:500;color:var(--muted)}
+.bv-lim{font-size:12px;margin-bottom:6px}
+.bv-plano ul{margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.5;color:var(--text-2)}
+.bv-tit{font-size:15px;margin:18px 0 8px}
+.bv-vant{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}
+.bv-vant div{display:flex;flex-direction:column;font-size:13px;line-height:1.4}
+.bv-vant span{color:var(--muted)}
+.bv-prev{list-style:none;margin:0;padding:0}
+.bv-prev li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.bv-prev li:last-child{border-bottom:none}
+.bv-et{flex-shrink:0;font-size:11px;font-weight:600;background:var(--primary-soft);color:var(--primary-d);border-radius:6px;padding:2px 7px;margin-top:1px;min-width:92px;text-align:center}
+@media (max-width:760px){ .bv-planos,.bv-vant{grid-template-columns:1fr} .modal.bv{padding:18px} }
+.sug{padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.sug:last-child{border-bottom:none}
+.sug-cab{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.sug-txt{margin-top:5px;color:var(--text);white-space:pre-wrap}
+.sug-resp{margin-top:6px;font-size:12.5px;background:var(--surface-2);border-radius:8px;padding:6px 9px;color:var(--text-2)}
