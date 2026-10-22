@@ -190,7 +190,13 @@ async function sair(forcar){
 // ---------- clínica de cada pessoa ----------
 let ficha=null, unFicha=null;
 const fichaLimpa=x=>x?Object.assign({},x,{testeAte:ms(x.testeAte),criadaEm:ms(x.criadaEm),ativadaEm:ms(x.ativadaEm)}):null;
+const ESPELHO_KEY='odonto-espelho';
+function espelhoEscolhido(){ try{ return sessionStorage.getItem(ESPELHO_KEY)||''; }catch(e){ return ''; } }
+function entrarEspelho(cid){ try{ if(cid) sessionStorage.setItem(ESPELHO_KEY,cid); else sessionStorage.removeItem(ESPELHO_KEY); }catch(e){} location.reload(); }
+let emEspelho=false;
 async function descobrirClinica(){
+  const esp=espelhoEscolhido();
+  if(esp && ambienteTeste() && meuEmail()===ADMIN_EMAIL){ CLINICA=esp; emEspelho=true; return esp; }
   let cid='principal';
   try{
     let s; try{ s=await F.getDocFromServer(F.doc(db,'membros',meuEmail())); }catch(e){ s=await F.getDoc(F.doc(db,'membros',meuEmail())); }
@@ -242,7 +248,7 @@ function enviarSugestao(d){
   return F.setDoc(F.doc(colRef('sugestoes')),{texto:String(d.texto||'').slice(0,1990),categoria:d.categoria||'',autorNome:d.autorNome||'',autorEmail:meuEmail(),
     clinicaNome:d.clinicaNome||'',status:'recebida',resposta:'',criadoEm:F.serverTimestamp()});
 }
-function dbDe(amb){ return amb==='teste'&&T&&T.db?T.db:db; }
+function dbDe(amb){ return amb==='outro'&&T&&T.db?T.db:db; }
 function apagarSugestao(id,cid,amb){ return F.deleteDoc(F.doc(dbDe(amb),'clinicas',cid||CLINICA,'sugestoes',id)); }
 // administrador: sugestões de todas as clínicas
 async function listarSugestoes(cids,amb){
@@ -264,28 +270,31 @@ function responderSugestao(cid,id,mud,amb){
   const d=Object.assign({},mud); if('resposta' in d) d.respondidoEm=F.serverTimestamp();
   return F.updateDoc(F.doc(dbDe(amb),'clinicas',cid,'sugestoes',id),d);
 }
-// ---------- ponte para o ambiente de teste (só o administrador, só na produção) ----------
-// A produção lê as sugestões das clínicas do ambiente de teste, entrando com a mesma conta Google.
-const CFG_TESTE={apiKey:'AIzaSyB1jEndifAybW5e7XR3zSAIAIVSZRRpgHk',authDomain:'odontogestao-teste.firebaseapp.com',projectId:'odontogestao-teste',
-  storageBucket:'odontogestao-teste.firebasestorage.app',messagingSenderId:'832518528179',appId:'1:832518528179:web:730746b9467bce37e8a4c6'};
+// ---------- ponte entre os ambientes (só o administrador) ----------
+// O teste lê a produção (clientes reais: versão, personalizações e sugestões) e a produção lê o teste.
+// A configuração do outro projeto é gerada na publicação (config-outro.json).
 let T=null;
-async function ponteTeste(){
+async function ponteOutro(){
   if(T) return T;
+  let cfg=window.ODONTO_CFG_OUTRO;
+  if(!cfg){ const r=await fetch('config-outro.json',{cache:'no-store'}); if(!r.ok) throw new Error('Configuração do outro ambiente indisponível (publique de novo).'); cfg=await r.json(); }
   const mApp=await import(SDK+'firebase-app.js');
-  const app2=mApp.initializeApp(window.ODONTO_CFG_TESTE||CFG_TESTE,'ambiente-teste');
+  const app2=mApp.initializeApp(cfg,'outro-ambiente');
   const auth2=A.getAuth(app2); auth2.languageCode='pt-BR';
   let db2; try{ db2=F.initializeFirestore(app2,{localCache:F.memoryLocalCache()}); }catch(e){ db2=F.getFirestore(app2); }
   T={auth:auth2,db:db2,user:null};
-  await new Promise(r=>{ let feito=false; const un=A.onAuthStateChanged(auth2,u=>{ T.user=u; if(!feito){ feito=true; r(); } }); setTimeout(()=>{ if(!feito){ feito=true; r(); } },4000); });
+  await new Promise(r=>{ let feito=false; A.onAuthStateChanged(auth2,u=>{ T.user=u; if(!feito){ feito=true; r(); } }); setTimeout(()=>{ if(!feito){ feito=true; r(); } },4000); });
   return T;
 }
-async function testeConectado(){ if(ambienteTeste()) return false; const t=await ponteTeste(); return !!(t.user && normEmail(t.user.email)===ADMIN_EMAIL); }
-async function conectarTeste(){
-  const t=await ponteTeste(); const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account',login_hint:ADMIN_EMAIL});
+async function outroConectado(){ try{ const t=await ponteOutro(); return !!(t.user && normEmail(t.user.email)===ADMIN_EMAIL); }catch(e){ return false; } }
+async function conectarOutro(){
+  const t=await ponteOutro(); const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account',login_hint:ADMIN_EMAIL});
   const c=await A.signInWithPopup(t.auth,prov); t.user=(c&&c.user)||t.auth.currentUser;
-  if(!t.user || normEmail(t.user.email)!==ADMIN_EMAIL){ try{ await A.signOut(t.auth); }catch(_){} t.user=null; throw new Error('Entre com '+ADMIN_EMAIL+' para ler o ambiente de teste.'); }
+  if(!t.user || normEmail(t.user.email)!==ADMIN_EMAIL){ try{ await A.signOut(t.auth); }catch(_){} t.user=null; throw new Error('Entre com '+ADMIN_EMAIL+'.'); }
 }
-async function clinicasTeste(){ const t=await ponteTeste(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.map(d=>({id:d.id,nome:(d.data()||{}).nome||d.id})); }
+async function clinicasOutro(){ const t=await ponteOutro(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id})); }
+async function atualizarClinicaOutro(cid,mud){ const t=await ponteOutro(); await F.updateDoc(F.doc(t.db,'clinicas',cid),mud); }
+async function salvarVitrineOutro(v){ const t=await ponteOutro(); if(t.user) await F.setDoc(F.doc(t.db,'plataforma','vitrine'),v); }
 // vitrine (planos e melhorias previstas que as clínicas veem)
 async function lerVitrine(){ try{ const s=await F.getDoc(F.doc(db,'plataforma','vitrine')); return s.exists()?s.data():null; }catch(e){ return null; } }
 function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); }
@@ -294,6 +303,17 @@ function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); 
 async function listarClinicas(){
   const s=await F.getDocs(F.collection(db,'clinicas'));
   return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id}));
+}
+async function criarEspelho(f){
+  const cid='espelho-'+String(f.id).replace(/[^\w-]/g,'').slice(0,40);
+  await F.setDoc(F.doc(db,'clinicas',cid),{nome:'Espelho · '+(f.nome||f.id),donoEmail:ADMIN_EMAIL,espelho:true,origem:{cid:f.id,nome:f.nome||''},
+    plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],personalizacoesInfo:f.personalizacoesInfo||{},
+    personalizacoesHist:f.personalizacoesHist||[],status:'ativa',criadaEm:F.serverTimestamp(),sincronizadoEm:F.serverTimestamp()},{merge:true});
+  return cid;
+}
+async function sincronizarEspelho(cid,f){
+  await F.updateDoc(F.doc(db,'clinicas',cid),{plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],
+    personalizacoesInfo:f.personalizacoesInfo||{},personalizacoesHist:f.personalizacoesHist||[],sincronizadoEm:F.serverTimestamp()});
 }
 async function criarClinica(dados){
   const cid=(dados.slug||'clinica')+'-'+novoId().slice(-5);
@@ -637,7 +657,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, testeConectado, conectarTeste, clinicasTeste, lerVitrine, salvarVitrine,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };

@@ -710,3 +710,4 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .sug-chip.ativo{border-color:var(--primary);color:var(--primary-d);background:var(--primary-soft)}
 .sug-chip-n{font-weight:700;font-variant-numeric:tabular-nums}
 .sug-chip-novas{font-size:11px;font-weight:700;background:var(--danger-soft);color:var(--danger);border-radius:999px;padding:1px 7px}
+.faixa-plano.espelho{background:var(--info-soft);border-color:var(--info-line)}

@@ -9,10 +9,12 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
-  {v:'2.8.1', data:'2026-10-22', itens:[
-    'Sugestões numeradas (S-N) e quantidade enviada por clínica',
-    'Painel do administrador avisa as sugestões novas',
-    'Produção lê também as sugestões do ambiente de teste (marcadas "teste")',
+  {v:'2.9.0', data:'2026-10-22', itens:[
+    'Oficina no ambiente de teste: lista dos clientes reais com plano, versão e personalizações',
+    'Base espelho de cada cliente no teste, com os pacientes fictícios padrão',
+    'Personalização aplicada na base real do cliente direto pelo teste ("Aplicar na produção")',
+    'Sugestões dos clientes reais no teste, numeradas (S-N) e com a quantidade por cliente',
+    'Quadro de melhorias centralizado no teste; melhorias previstas publicadas para as clínicas',
   ]},
   {v:'2.8.0', data:'2026-10-22', itens:[
     'Número da versão e das personalizações no sistema: "Ver 2.8 (184)"',

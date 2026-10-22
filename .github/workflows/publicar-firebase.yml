@@ -35,7 +35,10 @@ jobs:
           printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/chave.json"
           set +e
-          if [ "$GITHUB_REF_NAME" = "teste" ]; then ALVO=teste; else ALVO=default; fi
+          if [ "$GITHUB_REF_NAME" = "teste" ]; then ALVO=teste; OUTRO=https://odontogestao-c8218.web.app; else ALVO=default; OUTRO=https://odontogestao-teste.web.app; fi
+          # configuração pública do outro ambiente (ponte do administrador entre teste e produção)
+          curl -fsS "$OUTRO/__/firebase/init.json" -o docs/config-outro.json || echo "::warning::Não foi possível ler a configuração de $OUTRO"
+          echo "Configuração do outro ambiente: $(python3 -c 'import json;print(json.load(open("docs/config-outro.json"))["projectId"])' 2>/dev/null)"
           echo "Publicando no projeto: $ALVO"
           npx --yes firebase-tools@13 deploy --project "$ALVO" --only hosting,firestore:rules --non-interactive 2>&1 | tee "$RUNNER_TEMP/saida.txt"
           st=${PIPESTATUS[0]}

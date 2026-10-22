@@ -27,15 +27,15 @@ if(/odontogestao-teste/.test(location.hostname)){
   document.querySelector('meta[name=theme-color]').content='#C9861A';
 }
 </script>
-<link rel="stylesheet" href="estilo.css?v=2.8.1">
+<link rel="stylesheet" href="estilo.css?v=2.9.0">
 </head>
 <body>
 <div id="app"><div class="wrap"><p class="muted" style="text-align:center;margin-top:30vh">Carregando…</p></div></div>
 <div id="printArea"></div>
-<script src="firebase-config.js?v=2.8.1"></script>
-<script src="nuvem.js?v=2.8.1"></script>
-<script src="versoes.js?v=2.8.1"></script>
-<script src="app.js?v=2.8.1"></script>
+<script src="firebase-config.js?v=2.9.0"></script>
+<script src="nuvem.js?v=2.9.0"></script>
+<script src="versoes.js?v=2.9.0"></script>
+<script src="app.js?v=2.9.0"></script>
 <script>
 if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e)));
