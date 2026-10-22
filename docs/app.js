@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.5.0';
+const APP_VERSION='2.5.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -3977,7 +3977,7 @@ function abrirGerirClinica(id){
     ${planoCamposHtml(f)}
     <label>Observações</label><input data-gc="obs" value="${esc(f.obs||'')}" maxlength="200">
     <label>Período de teste</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${[7,15,30].map(d=>`<button class="btn-s" data-gcprorrogar="${d}">+${d} dias</button>`).join('')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${[7,15,30].map(d=>`<button class="btn-s" data-gcprorrogar="${d}">+${d} dias</button>`).join('')}${f.status==='teste'&&s.cod==='teste'?'<button class="btn-s" data-gcencerrar style="margin-left:auto">Encerrar teste agora</button>':''}</div>
     <p class="erro-campo" data-gc="erro" role="alert"></p>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       ${f.status==='suspensa'?'<button class="btn-s" data-gcstatus="ativa">Reativar assinatura</button>':'<button class="btn-d" data-gcstatus="suspensa">Suspender</button>'}
@@ -3994,6 +3994,8 @@ function abrirGerirClinica(id){
     const d=+b.getAttribute('data-gcprorrogar'); const base=Math.max(Date.now(),f.testeAte||0);
     gravar({status:'teste',testeAte:base+d*86400000},`Teste prorrogado até ${new Date(base+d*86400000).toLocaleDateString('pt-BR')}.`);
   }));
+  const enc=bg.querySelector('[data-gcencerrar]');
+  if(enc) enc.addEventListener('click',()=>customConfirm(`Encerrar agora o teste de ${f.nome}? A clínica passa para o modo de consulta (vê tudo, não altera nada). Você pode prorrogar depois.`,()=>gravar({status:'teste',testeAte:Date.now()-1000},'Teste encerrado.')));
   bg.querySelectorAll('[data-gcstatus]').forEach(b=>b.addEventListener('click',()=>{
     const st=b.getAttribute('data-gcstatus');
     const txt=st==='suspensa'?`Suspender ${f.nome}? A clínica passa para o modo de consulta (vê tudo, não altera nada). Nenhum dado é apagado.`:`Ativar a assinatura de ${f.nome}? A clínica volta a usar o sistema normalmente.`;
