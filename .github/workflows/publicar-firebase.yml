@@ -41,6 +41,7 @@ jobs:
           st=${PIPESTATUS[0]}
           if [ "$st" != "0" ]; then
             grep -iE "error|erro|permission|denied|not enabled|has not been used|forbidden|403|404" "$RUNNER_TEMP/saida.txt" | tail -8 | while IFS= read -r l; do echo "::error::$l"; done
+            if [ -f firebase-debug.log ]; then grep -E "<<< \[apiv2\]\[(status|body)\]" firebase-debug.log | cut -c1-300 | tail -6 | while IFS= read -r l; do echo "::error::$l"; done; fi
           fi
           exit $st
       - name: Apagar a chave
