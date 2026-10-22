@@ -25,12 +25,12 @@ jobs:
           if grep -q "SEU-EMAIL@gmail.com" firestore.rules; then
             echo "::error::Troque o e-mail do responsável no arquivo firestore.rules"; exit 1; fi
           if [ -z "$CHAVE" ]; then
-            echo "::error::Falta o secret FIREBASE_SERVICE_ACCOUNT (veja o LEIAME)"; exit 1; fi
+            echo "::error::Falta a chave do Firebase nos secrets do GitHub (FIREBASE_SERVICE_ACCOUNT ou, no teste, FIREBASE_SERVICE_ACCOUNT_TESTE)"; exit 1; fi
         env:
-          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CHAVE: ${{ github.ref_name == 'teste' && secrets.FIREBASE_SERVICE_ACCOUNT_TESTE || secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Publicar
         env:
-          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CHAVE: ${{ github.ref_name == 'teste' && secrets.FIREBASE_SERVICE_ACCOUNT_TESTE || secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/chave.json"
