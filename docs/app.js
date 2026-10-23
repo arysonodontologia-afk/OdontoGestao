@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.10.0';
+const APP_VERSION='2.10.1';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -1070,17 +1070,59 @@ function renderAgendaCelular(){
   return `<p class="cel-saudacao">${saudacaoHora()}, ${esc(nomeCumprimento(u))}</p>${avisosHtml(u)}${faixa}${chips}<div id="agendaFormArea"></div>
   <div class="cel-lista">${itens.join('')||'<p class="muted" style="text-align:center;margin:28px 0">Nenhum atendimento neste dia.</p>'}</div>`;
 }
+// cadastro rápido de paciente direto do agendamento (dentista, recepção, Master)
+function bindNovoPacienteRapido(){
+  const btn=document.getElementById('btnAgNovoPac'), area=document.getElementById('agNovoPacArea'); if(!btn||!area) return;
+  btn.addEventListener('click',()=>{
+    if(area.innerHTML){ area.innerHTML=''; return; }
+    area.innerHTML=`<div class="ag-novo-pac"><p style="margin:0 0 8px"><strong>Cadastrar paciente</strong> <span class="muted">· o restante do cadastro pode ser completado depois, em Pacientes</span></p>
+      <div class="row"><div><label for="npNome">Nome completo *</label><input id="npNome" autocomplete="off"></div>
+      <div><label for="npTel">Telefone (WhatsApp) *</label><input id="npTel" type="tel" inputmode="tel" placeholder="(00) 00000-0000"></div></div>
+      <div class="row"><div><label for="npNasc">Data de nascimento</label><input id="npNasc" type="date"></div>
+      <div><label for="npCpf">CPF</label><input id="npCpf" inputmode="numeric" placeholder="000.000.000-00"></div></div>
+      <p class="erro-campo" id="npErro" role="alert"></p>
+      <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn-p" id="npSalvar">Cadastrar e selecionar</button><button type="button" class="btn-s" id="npCancelar">Cancelar</button></div></div>`;
+    const q=id=>document.getElementById(id);
+    q('npTel').addEventListener('input',()=>{ const v=mascaraTel(q('npTel').value); if(v!==q('npTel').value) q('npTel').value=v; });
+    q('npCpf').addEventListener('input',()=>{ const d=soDigitos(q('npCpf').value).slice(0,11); const v=d.length>9?d.slice(0,3)+'.'+d.slice(3,6)+'.'+d.slice(6,9)+'-'+d.slice(9):d.length>6?d.slice(0,3)+'.'+d.slice(3,6)+'.'+d.slice(6):d.length>3?d.slice(0,3)+'.'+d.slice(3):d; if(v!==q('npCpf').value) q('npCpf').value=v; });
+    area.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); q('npSalvar').click(); } }));
+    q('npCancelar').addEventListener('click',()=>{ area.innerHTML=''; });
+    q('npSalvar').addEventListener('click',()=>{
+      const nome=q('npNome').value.trim().replace(/\s+/g,' '), tel=q('npTel').value.trim(), cpf=q('npCpf').value.trim(), nasc=q('npNasc').value;
+      const erro=t=>{ q('npErro').textContent=t; };
+      if(nome.split(' ').length<2) return erro('Informe o nome completo do paciente.');
+      if(soDigitos(tel).length<10) return erro('Informe o telefone com DDD.');
+      if(cpf && !cpfValido(cpf)) return erro('O CPF informado não é válido.');
+      if(nasc && nasc>hojeISO()) return erro('A data de nascimento não pode ser no futuro.');
+      const dup=state.patients.find(p=>(cpf && soDigitos(p.cpf)===soDigitos(cpf)) || (normTxt(p.nome)===normTxt(nome) && (soDigitos(p.telefone)===soDigitos(tel) || (nasc && p.nascimento===nasc))));
+      let pac=dup;
+      if(!dup){
+        const u=currentUser();
+        pac={id:uid(), nome, nascimento:nasc, cpf, rg:'', sexo:'', estadoCivil:'', profissao:'', endereco:'', telefone:tel, email:'',
+          convenio:'', responsavel:'', contatoEmergencia:'', anamneses:[], ultimaConsultaConfirmada:'',
+          cadastroRapido:true, cadastradoPor:u?nomeExibicao(u):'', cadastradoEm:new Date().toISOString()};
+        state.patients.push(pac); saveData();
+      }
+      const sel=q('agPaciente');
+      if(!sel.querySelector(`option[value="${pac.id}"]`)){ const o=document.createElement('option'); o.value=pac.id; o.textContent=pac.nome; sel.appendChild(o); }
+      sel.value=pac.id; sel.dispatchEvent(new Event('change',{bubbles:true}));
+      area.innerHTML=''; avisar(dup?'Este paciente já estava cadastrado e foi selecionado.':'Paciente cadastrado e selecionado no agendamento.');
+    });
+    q('npNome').focus();
+  });
+}
 function openAgendamentoForm(a){
   const isNew=!a;
   const dentistas=state.users.filter(dentistaAtivo);
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
   <form id="fAgendamento">
-  <label>Paciente</label>
-  <select id="agPaciente" required>
+  <label for="agPaciente">Paciente</label>
+  <div class="ag-pac-linha"><select id="agPaciente" required>
     <option value="">Selecione</option>
-    ${state.patients.map(p=>`<option value="${p.id}" ${a&&a.pacienteId===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}
-  </select>
+    ${state.patients.slice().sort((x,y)=>(x.nome||'').localeCompare(y.nome||'')).map(p=>`<option value="${p.id}" ${a&&a.pacienteId===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}
+  </select>${permsDe(currentUser()).pacientes?'<button type="button" class="btn-s" id="btnAgNovoPac">+ Novo paciente</button>':''}</div>
+  <div id="agNovoPacArea"></div>
   <div class="row">
     <div><label>Data</label><input type="date" id="agDataForm" value="${a?a.data:agendaViewDate}" required></div>
     <div><label>Horário</label><input type="time" id="agHorarioForm" value="${a?a.horario:''}" required></div>
@@ -1100,6 +1142,7 @@ function openAgendamentoForm(a){
   <label>Observação</label><input id="agObs" value="${esc(a?a.observacao:'')}">
   <div style="margin-top:14px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelAg" class="btn-s">Cancelar</button></div>
   </form></div>`;
+  bindNovoPacienteRapido();
   document.getElementById('agPaciente').addEventListener('change', e=>{
     const sel=document.getElementById('agProcedimento');
     if(sel) sel.innerHTML=procedimentoChecksHtml(e.target.value,[]);
@@ -1280,9 +1323,10 @@ function renderFinanceiroPrincipal(){
 }
 let configSubTab='clinica';
 // permissões dadas ao usuário (gravadas no acesso); permsDe aplica também os limites do plano
-function permsBrutos(u){ return Object.assign(defaultPerms(u.tipo), u.permissions||{}); }
+function permsBrutos(u){ const p=Object.assign(defaultPerms(u.tipo), u.permissions||{}); if(u.tipo==='dentista') p.pacientes=true; return p; }   // dentista sempre cadastra pacientes
 function permsDe(u){
   const p=Object.assign(defaultPerms(u.tipo), u.permissions||{});
+  if(u.tipo==='dentista'||masterAtende(u)) p.pacientes=true;   // dentista sempre cadastra pacientes
   // o plano da clínica limita o que qualquer usuário pode usar
   if(!temRecurso('financeiro')) p.financeiro=false;
   if(!temRecurso('prontuario')) p.procedimentos=false;
@@ -3119,7 +3163,7 @@ function openUserForm(u){
     ${isMaster && u ? `<label>Permissões (editável pelo Master)</label>
       <div class="perm">
         <label><input type="checkbox" id="pUsuarios" ${perms.usuarios?'checked':''}> Usuários</label>
-        <label><input type="checkbox" id="pPacientes" ${perms.pacientes?'checked':''}> Pacientes</label>
+        <label${(u?u.tipo:tipo)==='dentista'?' title="Dentista sempre pode cadastrar e atender pacientes"':''}><input type="checkbox" id="pPacientes" ${perms.pacientes||(u?u.tipo:tipo)==='dentista'?'checked':''}${(u?u.tipo:tipo)==='dentista'?' disabled':''}> Pacientes</label>
         <label><input type="checkbox" id="pClinica" ${perms.clinica?'checked':''}> Editar Clínica</label>
         <label><input type="checkbox" id="pProcedimentos" ${perms.procedimentos?'checked':''}> Procedimentos</label>
         <label><input type="checkbox" id="pFinanceiro" ${perms.financeiro?'checked':''}> Financeiro</label>

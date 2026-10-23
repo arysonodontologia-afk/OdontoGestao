@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.10.1', data:'2026-10-23', itens:[
+    'Dentista pode cadastrar paciente novo, inclusive direto do agendamento (botão "+ Novo paciente"), no computador e no celular',
+  ]},
   {v:'2.10.0', data:'2026-10-23', itens:[
     'Importar de outro sistema (Configurações → Backup): pacientes, anamneses, odontograma, orçamentos, parcelas e agenda a partir do backup .zip em CSV',
     'Pacientes já cadastrados são completados, sem duplicar; importar de novo o mesmo arquivo não repete nada',

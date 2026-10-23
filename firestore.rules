@@ -33,7 +33,8 @@ service cloud.firestore {
     function acessoEm(cid) { return /databases/$(database)/documents/clinicas/$(cid)/acessos/$(meuEmail()); }
     function podeEm(cid, p) {
       return logado() && exists(acessoEm(cid)) && get(acessoEm(cid)).data.ativo == true
-        && (get(acessoEm(cid)).data.tipo == 'master' || get(acessoEm(cid)).data.perms.get(p, false) == true);
+        && (get(acessoEm(cid)).data.tipo == 'master' || get(acessoEm(cid)).data.perms.get(p, false) == true
+          || (p == 'pacientes' && get(acessoEm(cid)).data.tipo == 'dentista'));
     }
 
     // Índice e-mail -> clínica (para saber em qual clínica cada pessoa entra).
@@ -75,7 +76,7 @@ service cloud.firestore {
       function ac() { return get(caminhoAcesso()).data; }
       function membro() { return logado() && exists(caminhoAcesso()) && ac().ativo == true; }
       function master() { return membro() && ac().tipo == 'master'; }
-      function pode(p) { return membro() && (ac().tipo == 'master' || ac().perms.get(p, false) == true); }
+      function pode(p) { return membro() && (ac().tipo == 'master' || ac().perms.get(p, false) == true || (p == 'pacientes' && ac().tipo == 'dentista')); }
 
       // Quem pode entrar. Documento = e-mail. Mantido pelo próprio sistema
       // a partir do cadastro de Usuários.
