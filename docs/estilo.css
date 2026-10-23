@@ -722,3 +722,9 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .data-br-cal::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
 .data-br-cal:disabled{display:none}
 .cl-duplo .data-br-box{flex:1}
+
+/* cadastro rápido de paciente no agendamento */
+.ag-pac-linha{display:flex;gap:8px;align-items:center}
+.ag-pac-linha select{flex:1;min-width:0}
+.ag-pac-linha .btn-s{white-space:nowrap}
+.ag-novo-pac{border:1px dashed var(--border-strong);border-radius:var(--r-sm);padding:12px;margin:10px 0;background:var(--surface-2)}

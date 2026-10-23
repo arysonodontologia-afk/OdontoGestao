@@ -489,7 +489,7 @@ function aplicar(key,mudados,removidos){
 async function conectar(ac){
   acesso=ac; souMaster=ac.tipo==='master';
   await lerFicha(); ouvirFicha();
-  const pode=p=>souMaster || !!(ac.perms&&ac.perms[p]);
+  const pode=p=>souMaster || !!(ac.perms&&ac.perms[p]) || (p==='pacientes' && ac.tipo==='dentista');   // dentista sempre cadastra pacientes
   const t=[ouvirConfig(),ouvirUsuarios()];
   if(pode('usuarios')) t.push(ouvirAcessos());
   for(const key in COLS){ const c=COLS[key]; if(!c.perm || pode(c.perm)) t.push(ouvirBaldes(key)); }
