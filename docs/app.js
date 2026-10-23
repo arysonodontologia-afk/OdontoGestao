@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.9.1';
+const APP_VERSION='2.10.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -595,11 +595,11 @@ function renderOrcamento(p){
   }
   const podeFin=permsDe(currentUser()).financeiro;
   return orcs.map(o=>{
-    const aprovado=o.status==='aprovado';
+    const aprovado=o.status==='aprovado', perdido=o.status==='perdido';
     const rows=o.itens.map(it=>`<tr><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td><td>${fmtMoney(it.valor)}</td></tr>`).join('');
     return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-    <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':'b-recep'}">${aprovado?'Aprovado':'Pendente'}</span></h3>
+    <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':perdido?'b-cinza':'b-recep'}">${aprovado?'Aprovado':perdido?'Não fechado':'Pendente'}</span>${o.importado?' <span class="tag-pac">Sistema anterior</span>':''}</h3>
     <div>${podeFin?`${aprovado?'':`<button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:'<span class="muted">Aprovação pelo administrativo</span>'}</div>
     </div>
     <div class="overflow"><table><thead><tr><th>Grupo</th><th>Procedimento</th><th>Referência</th><th>Valor</th></tr></thead>
@@ -1365,7 +1365,7 @@ function repFluxoProjetado(){
 }
 function repOrcPendentes(){
   const hoje=hojeISO(); const itens=[];
-  state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado'){ const dias=diasEntre(o.data,hoje); if(dias>=repOrcDias) itens.push({p,o,dias}); } }));
+  state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && o.status!=='perdido'){ const dias=diasEntre(o.data,hoje); if(dias>=repOrcDias) itens.push({p,o,dias}); } }));
   itens.sort((a,b)=>b.dias-a.dias);
   const total=itens.reduce((sum,x)=>sum+(x.o.total||0),0);
   const rows=itens.map(({p,o,dias})=>`<tr><td>${repPacBtn(p,'orcamento')}</td><td>${esc(p.telefone||'-')}</td><td>${fmtDataBR(o.data)}</td>
@@ -1486,7 +1486,7 @@ function renderConfiguracoesPrincipal(){
   if(configSubTab==='clinica') body=renderClinica();
   else if(configSubTab==='procedimentos') body=renderProcedimentos();
   else if(configSubTab==='tipodespesas') body=renderTiposDespesa();
-  else if(configSubTab==='backup') body=renderBackup();
+  else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -1596,6 +1596,14 @@ function renderFinanceiro(p){
     return `<div class="card"><h3>Financeiro</h3><p class="muted">Nenhum orçamento aprovado ainda. Aprove um orçamento na aba Orçamento para defini-lo aqui.</p></div>`;
   }
   return aprovados.map(o=>{
+    if(o.importado){
+      const parc=(state.fluxoFinanceiro||[]).filter(e=>e.orcamentoId===o.id).sort((a,b)=>(a.vencimento||'').localeCompare(b.vencimento||''));
+      const hojeI=hojeISO();
+      return `<div class="card"><h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))} <span class="tag-pac">Sistema anterior</span></h3>
+        <p><strong>Valor total:</strong> ${fmtMoney(o.total)}${o.obs?' · <span class="muted">'+esc(o.obs)+'</span>':''}</p>
+        ${parc.length?`<div class="overflow"><table><thead><tr><th>Parcela</th><th>Valor</th><th>Vencimento</th><th>Situação</th></tr></thead><tbody>${parc.map(e=>`<tr><td>${esc(e.label)}</td><td>${fmtMoney(e.valor)}</td><td>${esc(fmtDataBR(e.vencimento))}</td><td>${e.confirmado?`<span class="sit sit-chegou">Pago em ${esc(fmtDataBR(e.dataPagamento))}${e.forma?' · '+esc(e.forma):''}</span>`:e.vencimento<hojeI?'<span class="sit sit-faltou">Vencida</span>':'<span class="sit sit-agendado">Em aberto</span>'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Sem parcelas no sistema anterior.</p>'}
+        <p class="muted" style="margin:8px 0 0;font-size:12.5px">As parcelas vieram do sistema anterior. Para dar baixa ou alterar, use o Financeiro do consultório.</p></div>`;
+    }
     const pag=o.pagamento||{};
     const comEntrada=pag.condicao==='parcelado_com';
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
@@ -2786,6 +2794,7 @@ function render(){
   if(NUVEM && currentTab==='plataforma') bindPlataforma();
   if(NUVEM) bindSugestoes();
   if(NUVEM){ bindVersoes(); bindFicticios(); bindEspelho(); }
+  bindImportador();
   hidratarImagens();
   if(document.getElementById('storageInfo')) atualizarInfoArmazenamento();
 }
@@ -2985,7 +2994,7 @@ function renderDashboard(){
   if(perms.pacientes && temRecurso('prontuario')){
     state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
     if(u.tipo==='dentista') evs=evs.filter(e=>semTitulo(e.dentistaNome)===semTitulo(u.nomeCompleto));
-    state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
+    state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && o.status!=='perdido' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
   }
   if(perms.financeiro){
     ensureFluxoTipos();
@@ -3336,6 +3345,8 @@ function renderDadosPessoais(p){
     ${infoBox('Contato de emergência', p.contatoEmergencia)}
     ${infoBox('Última consulta confirmada', fmtDataBR(ultimaConsultaConfirmada(p)))}
   </div>
+  ${(p.historicoAnterior||[]).length?`<div class="section-title">Histórico do sistema anterior</div><ul class="hist-ant">${p.historicoAnterior.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}
+  ${p.idAntigo?`<p class="muted" style="font-size:12px;margin:8px 0 0">Importado do sistema anterior (código ${esc(p.idAntigo)}).</p>`:''}
   <div style="margin-top:18px"><button id="btnEditPatientData" class="btn-p">Editar dados cadastrais</button></div>
   </div><div id="patientFormArea"></div>`;
 }
@@ -4740,6 +4751,288 @@ function prepararEspelho(ac){
 function bindEspelho(){
   const b=document.querySelector('[data-espsair]'); if(b) b.addEventListener('click',()=>Nuvem.entrarEspelho(''));
   const o=document.querySelector('[data-irbases]'); if(o) o.addEventListener('click',()=>{ currentTab='plataforma'; platAba='clientes'; render(); });
+}
+
+// =====================================================================
+// Importar de outro sistema (backup .zip com arquivos CSV)
+// Formato: patients, anamneses, answered_anamnesis_*, procedures, procedure_types,
+// budgets, budgeted_procedures, financial_registries, financial_operations,
+// time_slots, time_slot_observations, users, prescriptions, sick_notes, annotations.
+// O arquivo é lido NO NAVEGADOR e gravado direto na base da clínica.
+// Importar de novo o mesmo backup não duplica (cada registro guarda o id antigo).
+// =====================================================================
+const JSZIP_URL='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+function carregarScript(src){
+  return new Promise((res,rej)=>{ if(window.JSZip) return res(); const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('Não foi possível carregar o leitor de arquivos .zip. Verifique a internet.')); document.head.appendChild(s); });
+}
+function lerCSV(txt){
+  txt=String(txt||'').replace(/^﻿/,'');
+  const linhas=[]; let campo='', linha=[], aspas=false;
+  for(let i=0;i<txt.length;i++){
+    const c=txt[i];
+    if(aspas){ if(c==='"'){ if(txt[i+1]==='"'){ campo+='"'; i++; } else aspas=false; } else campo+=c; }
+    else if(c==='"') aspas=true;
+    else if(c===','){ linha.push(campo); campo=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&txt[i+1]==='\n') i++; linha.push(campo); campo=''; if(linha.length>1||linha[0]!=='') linhas.push(linha); linha=[]; }
+    else campo+=c;
+  }
+  if(campo!==''||linha.length){ linha.push(campo); linhas.push(linha); }
+  if(!linhas.length) return [];
+  const cab=linhas[0].map(x=>x.trim());
+  return linhas.slice(1).map(l=>{ const o={}; cab.forEach((k,j)=>{ o[k]=(l[j]===undefined?'':l[j]); }); return o; });
+}
+async function lerZipImportacao(file){
+  await carregarScript(JSZIP_URL);
+  const z=await window.JSZip.loadAsync(file);
+  const T={};
+  for(const nome of Object.keys(z.files)){
+    const f=z.files[nome]; if(f.dir || !/\.csv$/i.test(nome)) continue;
+    T[nome.split('/').pop().replace(/\.csv$/i,'')]=lerCSV(await f.async('string'));
+  }
+  if(!T.patients) throw new Error('Não encontrei o arquivo patients.csv dentro do .zip. Confira se é o backup completo do sistema anterior.');
+  return T;
+}
+// ---- conversões ----
+const impCent=v=>Math.round(parseFloat(v)||0)/100;
+const impAtivo=x=>!String(x.discarded_at||'').trim();
+function impDataHora(s){
+  s=String(s||'').trim(); if(!s) return {data:'',hora:''};
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return {data:s,hora:''};
+  const d=new Date(s.replace(' ','T').replace(/(\.\d+)?$/,'')+'Z');   // o sistema anterior grava em UTC
+  if(isNaN(d)) return {data:s.slice(0,10),hora:s.slice(11,16)};
+  return {data:isoLocal(d),hora:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+}
+const impData=s=>impDataHora(s).data;
+function impTel(t){ let d=String(t||'').replace(/\D/g,''); if(d.length>11 && d.startsWith('55')) d=d.slice(2); return d?mascaraTel(d):''; }
+const IMP_SEXO={female:'Feminino',male:'Masculino',other:'Outro'};
+const IMP_CIVIL={single:'Solteiro(a)',married:'Casado(a)',divorced:'Divorciado(a)',widowed:'Viúvo(a)',stable_union:'União estável',separated:'Separado(a)'};
+const IMP_FORMA={pix:'Pix',cash:'Dinheiro',credit_card:'Cartão de Crédito',debit_card:'Cartão de Débito',bank_slip:'Boleto',wire_transfer:'Transferência',point_of_sale:'Maquininha',others:'Outros'};
+function impRefDente(t){ t=String(t||'').trim(); if(!t) return {tipo:'geral',ref:'Geral',arco:''};
+  if(/^\d{2}$/.test(t)) return {tipo:'dente',n:t,ref:'Dente '+t};
+  const m={entire_arch:['ambos','Ambas as arcadas'],upper_arch:['superior','Arcada superior'],lower_arch:['inferior','Arcada inferior']}[t];
+  return m?{tipo:'geral',arco:m[0],ref:m[1]}:{tipo:'geral',arco:'',ref:t}; }
+function impFaces(f){ f=String(f||'').replace(/[{}"]/g,'').trim(); if(!f) return ''; const n={occlusal:'oclusal',incisal:'incisal',vestibular:'vestibular',palatal:'palatina',lingual:'lingual',mesial:'mesial',distal:'distal',cervical:'cervical'}; return f.split(',').map(x=>n[x.trim()]||x.trim()).filter(Boolean).join(', '); }
+const impNeg=a=>/^\s*(n[aã]o|nada|nenhum[a]?|n|-|nao possui|não possui|nega)\b/i.test(a||'') || !String(a||'').trim();
+const impSim=a=>/^\s*s(im)?\b/i.test(a||'');
+const impTxt=a=>String(a||'').trim();
+
+function planejarImportacao(T,opc){
+  const R={novos:0,mesclados:0,anamneses:0,procedimentos:0,orcamentos:0,parcelas:0,agendamentos:0,evolucoes:0,dentistasNovos:[],dentistasLigados:[],ignorados:0,avisos:[]};
+  const pacAntigos=(T.patients||[]).filter(impAtivo);
+  R.ignorados=(T.patients||[]).length-pacAntigos.length;
+  // dentistas
+  const mapaUser={}, usersNovos=[];
+  (T.users||[]).forEach(u=>{
+    // mesmo primeiro nome e pelo menos mais um nome em comum (ex.: "Doralucia Leal Batista" = "Dra. Doralucia Leal")
+    const toks=normTxt(semTitulo(u.name)).split(/\s+/).filter(t=>t.length>2);
+    const cand=state.users.map(x=>{ const t2=normTxt(semTitulo(x.nomeCompleto)).split(/\s+/).filter(t=>t.length>2); return {x,prim:toks[0]&&t2[0]===toks[0],com:toks.filter(t=>t2.includes(t)).length}; })
+      .filter(c=>c.prim && (c.com>=2 || toks.length===1)).sort((a,b)=>b.com-a.com);
+    const achado=(u.email&&state.users.find(x=>normEmail(x.email)===normEmail(u.email))) || (cand[0]&&cand[0].x);
+    if(achado){ mapaUser[u.id]=achado; R.dentistasLigados.push(u.name+' → '+nomeExibicao(achado)); return; }
+    if(u.role==='dentist'){
+      const nu={id:'imp-u'+u.id,tipo:'dentista',nomeCompleto:semTitulo(u.name),cro:u.professional_registry?(u.professional_registry+'-'+(u.professional_registry_state||'AM')).toUpperCase():'',sexo:'',email:'',telefone:impTel(u.phone),
+        username:'imp'+u.id,inativo:true,importado:true,permissions:defaultPerms('dentista')};
+      mapaUser[u.id]=nu; usersNovos.push(nu); R.dentistasNovos.push(u.name+(nu.cro?' (CRO '+nu.cro+')':'')+' — desativado');
+    }
+  });
+  const nomeU=id=>mapaUser[id]?nomeExibicao(mapaUser[id]):'';
+  // pacientes (sem duplicar: CPF, ou nome + nascimento, ou nome igual sem nascimento de um dos lados)
+  const porCpf=new Map(), porNome=new Map();
+  state.patients.forEach(p=>{ const c=String(p.cpf||'').replace(/\D/g,''); if(c.length===11) porCpf.set(c,p); const k=normTxt(p.nome).replace(/\s+/g,' ').trim(); if(!porNome.has(k)) porNome.set(k,[]); porNome.get(k).push(p); });
+  const mapaPac={}, pacs=[];
+  pacAntigos.forEach(o=>{
+    const cpf=String(o.cpf||'').replace(/\D/g,''), nome=impTxt(o.name).replace(/\s+/g,' '), k=normTxt(nome), nasc=o.birthdate&&/^\d{4}-\d{2}-\d{2}/.test(o.birthdate)?o.birthdate.slice(0,10):'';
+    let ex=state.patients.find(p=>p.idAntigo===o.id) || (cpf.length===11 && porCpf.get(cpf));
+    if(!ex){ const l=porNome.get(k)||[]; ex=l.find(p=>(p.nascimento||'')===nasc) || l.find(p=>!p.nascimento||!nasc); }
+    const end=[impTxt(o.address1),o.address_number?'nº '+impTxt(o.address_number):'',impTxt(o.address2),impTxt(o.district),[impTxt(o.city),impTxt(o.state).replace(/^amazonas$/i,'AM')].filter(Boolean).join('/'),o.zipcode?'CEP '+impTxt(o.zipcode):''].filter(Boolean).join(', ');
+    const rel=impTxt(o.contact_relationship), contato=[impTxt(o.contact_name),rel?'('+rel+')':'',impTel(o.contact_phone)].filter(Boolean).join(' ');
+    const dados={nome,nascimento:nasc,cpf:cpf.length===11?mascaraDoc(cpf):impTxt(o.cpf),rg:[impTxt(o.identity_document),impTxt(o.identity_document_emissor)].filter(Boolean).join(' '),
+      sexo:IMP_SEXO[o.gender]||'',estadoCivil:IMP_CIVIL[o.marital_status]||'',profissao:impTxt(o.occupation),endereco:end,
+      telefone:impTel(o.phone)||impTel(o.notifications_phone)||impTel(o.local_phone),email:impTxt(o.email),convenio:impTxt(o.health_plan)+(o.health_plan_number?' nº '+impTxt(o.health_plan_number):''),
+      responsavel:/m[ãa]e|pai|respons|av[óo]|tutor/i.test(rel)?contato:'',contatoEmergencia:contato};
+    let ent;
+    if(ex){ const mud={}; Object.keys(dados).forEach(c=>{ if(!String(ex[c]||'').trim() && dados[c]) mud[c]=dados[c]; }); ent={p:ex,novo:false,mud,idAntigo:o.id}; R.mesclados++; }
+    else { ent={p:Object.assign({id:'imp-p'+o.id,anamneses:[],evolucao:[],orcamentos:[],documentos:[],examesClinicos:[],exames:{panoramicas:[],periapicais:[]},odonto:{dentes:{},gerais:[]},ultimaConsultaConfirmada:''},dados),novo:true,mud:{},idAntigo:o.id}; R.novos++; }
+    mapaPac[o.id]=ent.p; pacs.push(ent);
+  });
+  const add={anamneses:[],dentes:[],gerais:[],orcamentos:[],fluxo:[],agenda:[],evolucao:[],historico:{}};
+  const hist=(p,t)=>{ (add.historico[p.id]=add.historico[p.id]||[]).push(t); };
+  // anamneses
+  if(opc.anamneses){
+    const secs=new Map(); (T.answered_anamnesis_sections||[]).filter(impAtivo).forEach(s=>secs.set(s.id,s));
+    const porAn={}; (T.answered_anamnesis_questions||[]).filter(impAtivo).forEach(q=>{ const s=secs.get(q.answered_anamnesis_section_id); if(!s) return; (porAn[s.anamnesis_id]=porAn[s.anamnesis_id]||[]).push(Object.assign({sec:s.name,ord:+s.order*100+(+q.order||0)},q)); });
+    (T.anamneses||[]).filter(impAtivo).forEach(an=>{
+      const p=mapaPac[an.patient_id], qs=(porAn[an.id]||[]).sort((a,b)=>a.ord-b.ord); if(!p || !qs.some(q=>impTxt(q.answer)||impTxt(q.auxiliary_answer))) return;
+      const d=defaultAnamnese(), r=t=>{ const q=qs.find(x=>normTxt(x.question).includes(normTxt(t))); return q?[impTxt(q.answer),impTxt(q.auxiliary_answer)].filter(Boolean).join(' — '):''; };
+      const v=r('alergia a algum medicamento'); if(!impNeg(v)) d.alergiaMedicamentos=impSim(v)?(v.replace(/^\s*sim[\s,.:-]*/i,'')||'Sim'):v;
+      const an2=r('reação a anestesia'); if(!impNeg(an2)){ d.alergiaAnestesico='Sim'; d.alergiaAnestesicoDetalhe=an2.replace(/^\s*sim[\s,.:-]*/i,''); }
+      const tm=r('tratamento médico'); if(!impNeg(tm)){ d.tratamentoMedico='Sim'; d.tratamentoQual=tm.replace(/^\s*sim[\s,.:-]*/i,''); }
+      const md=r('uso de algum medicamento'); if(!impNeg(md)) d.medicamentosContinuos=md.replace(/^\s*sim[\s,.:-]*/i,'')||'Sim';
+      const gr=r('grávida'); if(impSim(gr)){ d.gestante='Sim'; const m=gr.match(/\d+/); if(m) d.gestanteMeses=m[0]; }
+      if(!impNeg(r('fuma'))) d.fumante='Sim';
+      if(!impNeg(r('bebe'))) d.etilista='Sim';
+      if(impSim(r('diabético'))) d.docDiabetes=true;
+      if(impSim(r('problema cardíaco'))) d.docCardiopatia=true;
+      if(impSim(r('desmaio'))) d.docEpilepsia=/epileps|convuls/i.test(r('desmaio'));
+      const od=r('doença não citada'); if(!impNeg(od)) d.docOutras=od.replace(/^\s*sim[\s,.:-]*/i,'');
+      if(impSim(r('gengiva sangra'))) d.sangramentoGengival='Sim';
+      if(impSim(r('range os dentes'))) d.bruxismo='Sim';
+      const integra=qs.filter(q=>impTxt(q.answer)||impTxt(q.auxiliary_answer)).map(q=>`${q.question.trim()}: ${[impTxt(q.answer),impTxt(q.auxiliary_answer)].filter(Boolean).join(' — ')}`).join(' | ');
+      d.observacoes=('Importada do sistema anterior. '+integra).slice(0,4000);
+      add.anamneses.push({p,rec:{id:'imp-an'+an.id,tipo:'odontologica',dataPreenchimento:impData(an.created_at),dados:d,finalizado:true,origem:an.filled_by_patient==='t'?'paciente':'importado',importado:true}});
+    });
+    R.anamneses=add.anamneses.length;
+  }
+  // procedimentos → odontograma (e evolução dos realizados)
+  const tipos=new Map((T.procedure_types||[]).map(t=>[t.id,t]));
+  const procPorSlot={};
+  if(opc.prontuario){
+    (T.procedures||[]).filter(impAtivo).forEach(pr=>{
+      const p=mapaPac[pr.patient_id]; if(!p) return;
+      const tp=tipos.get(pr.procedure_type_id)||{}, nome=impTxt(tp.name)||'Procedimento importado', valor=impCent(pr.amount)||impCent(tp.base_value);
+      const ref=impRefDente(pr.tooth), faces=impFaces(pr.tooth_surfaces);
+      const st=pr.status==='done'?'Concluído':pr.status==='existed'?'Realizado anteriormente':'Planejado';
+      const it={id:'imp-pp'+pr.id,procId:null,nome,especialidade:'Importado',valor,tempoMin:30,status:st,obs:[faces?'Faces: '+faces:'',impTxt(pr.observations)].filter(Boolean).join(' · '),importado:true};
+      if(ref.tipo==='dente') add.dentes.push({p,n:ref.n,it}); else add.gerais.push({p,it:Object.assign(it,{arco:ref.arco})});
+      if(pr.status==='done'){
+        if(pr.time_slot_id){ (procPorSlot[pr.time_slot_id]=procPorSlot[pr.time_slot_id]||[]).push(nome+(ref.tipo==='dente'?' ('+ref.n+')':'')); }
+        else { const dh=impDataHora(pr.done_at||pr.updated_at); add.evolucao.push({p,ev:{id:'imp-evp'+pr.id,agendamentoId:null,data:dh.data,hora:dh.hora,procedimentoNome:nome+(ref.tipo==='dente'?' — dente '+ref.n:''),dentistaNome:nomeU(pr.user_id),
+          observacao:it.obs||'Procedimento realizado (importado do sistema anterior).',confirmado:true,confirmadoEm:dh.data,confirmadoPorNome:nomeU(pr.user_id),procedimentoRefs:[it.id],importado:true}}); }
+      }
+    });
+    R.procedimentos=add.dentes.length+add.gerais.length;
+    // orçamentos
+    const itensOrc={}; (T.budgeted_procedures||[]).filter(impAtivo).forEach(bp=>{ const r=impRefDente(bp.tooth), fc=impFaces(bp.tooth_surfaces); (itensOrc[bp.budget_id]=itensOrc[bp.budget_id]||[]).push({nome:impTxt(bp.name)||'Procedimento',especialidade:'Importado',ref:r.ref+(fc?' ('+fc+')':''),valor:impCent(bp.amount)}); });
+    (T.budgets||[]).filter(impAtivo).forEach(b=>{
+      const p=mapaPac[b.patient_id]; if(!p) return;
+      const itens=itensOrc[b.id]||[], data=impData(b.created_at), desc=impCent(b.discount_amount);
+      const total=impCent(b.total_amount)||itens.reduce((s,i)=>s+i.valor,0);
+      const o={id:'imp-or'+b.id,data,status:b.status==='finished'?'aprovado':b.status==='lost'?'perdido':'pendente',itens,total,importado:true,fluxoGerado:true,fluxoGeradoEm:data,
+        obs:[impTxt(b.title),impTxt(b.observations),desc?'Desconto de '+fmtMoney(desc):''].filter(Boolean).join(' · ')};
+      if(o.status==='aprovado'){ o.dataAprovacao=data; o.aprovadoPorNome=nomeU(b.approved_by_user_id)||'Sistema anterior'; o.pagamento={condicao:'importado',obs:'Parcelas importadas do sistema anterior'}; }
+      add.orcamentos.push({p,o});
+    });
+    R.orcamentos=add.orcamentos.length;
+  }
+  // parcelas dos pacientes (receitas; despesas e comissões ficam de fora)
+  if(opc.parcelas){
+    const regs=new Map((T.financial_registries||[]).map(r=>[r.id,r]));
+    (T.financial_operations||[]).filter(impAtivo).forEach(op=>{
+      const r=regs.get(op.financial_registry_id); if(!r || r.kind!=='revenue' || r.registry_type==='commission' || !impAtivo(r)) return;
+      if(op.status!=='finished' && op.status!=='pending') return;
+      const p=mapaPac[op.patient_id]; if(!p) return;
+      const n=+r.installments_number||1;
+      add.fluxo.push({id:'imp-fo'+op.id,pacienteId:null,_p:p,orcamentoId:r.budget_id?'imp-or'+r.budget_id:null,label:(n>1?'Parcela '+(op.number||'?')+'/'+n:'Pagamento')+(impTxt(r.description)?' — '+impTxt(r.description):''),
+        valor:impCent(op.amount),vencimento:impData(op.due_date),tipo:'receita',confirmado:op.status==='finished',dataPagamento:op.status==='finished'?impData(op.finished_at||op.due_date):'',
+        forma:IMP_FORMA[op.payment_method]||'',importado:true});
+    });
+    R.parcelas=add.fluxo.length;
+  }
+  // agenda
+  if(opc.agenda){
+    const obs={}; (T.time_slot_observations||[]).forEach(o=>{ obs[o.time_slot_id]=[obs[o.time_slot_id],impTxt(o.observation)].filter(Boolean).join(' · '); });
+    (T.time_slots||[]).filter(x=>impAtivo(x) && x.event_kind!=='birthday' && x.all_day!=='t').forEach(t=>{
+      const p=mapaPac[t.patient_id]; if(!p) return;
+      const ini=impDataHora(t.start_date), fimD=new Date(String(t.end_date).replace(' ','T')+'Z'), iniD=new Date(String(t.start_date).replace(' ','T')+'Z');
+      const dur=Math.max(15,Math.min(480,Math.round((fimD-iniD)/60000)||30));
+      const u=mapaUser[t.user_id], feitos=procPorSlot[t.id]||[];
+      const a={id:'imp-ag'+t.id,pacienteId:p.id,pacienteNome:p.nome,dentistaId:u?u.id:'',dentistaNome:u?nomeExibicao(u):'',data:ini.data,horario:ini.hora,duracaoMin:dur,
+        tipo:'avaliacao',procedimentoNome:feitos.length?feitos.join(' + '):'Consulta',procedimentoRefs:[],procedimentoRef:null,observacao:obs[t.id]||'',cadeira:1,importado:true,
+        status:t.status==='canceled'?'cancelado':t.attended==='f'?'faltou':t.status==='confirmed'?'confirmado':'agendado'};
+      add.agenda.push(a);
+      if(t.attended==='t' && t.status!=='canceled') add.evolucao.push({p,ev:{id:'imp-ev'+t.id,agendamentoId:a.id,data:a.data,hora:a.horario,procedimentoNome:a.procedimentoNome,dentistaNome:a.dentistaNome,
+        observacao:a.observacao||'Atendimento realizado (importado do sistema anterior).',confirmado:true,confirmadoEm:a.data,confirmadoPorNome:a.dentistaNome,procedimentoRefs:[],importado:true}});
+    });
+    R.agendamentos=add.agenda.length;
+  }
+  R.evolucoes=add.evolucao.length;
+  // receitas, atestados e anotações → histórico no prontuário
+  const meds={}; (T.prescription_medicines||[]).forEach(m=>{ (meds[m.prescription_id]=meds[m.prescription_id]||[]).push(impTxt(m.medicine_name)+(m.posology?' — '+impTxt(m.posology):'')); });
+  (T.prescriptions||[]).filter(impAtivo).forEach(rx=>{ const p=mapaPac[rx.patient_id]; if(p) hist(p,'Receita de '+fmtDataBR(impData(rx.prescription_date||rx.created_at))+(nomeU(rx.user_id)?' ('+nomeU(rx.user_id)+')':'')+': '+((meds[rx.id]||[]).join('; ')||'sem itens')); });
+  (T.sick_notes||[]).filter(impAtivo).forEach(sn=>{ const p=mapaPac[sn.patient_id]; if(p) hist(p,'Atestado de '+fmtDataBR(impData(sn.start_date))+' a '+fmtDataBR(impData(sn.end_date))+(nomeU(sn.user_id)?' ('+nomeU(sn.user_id)+')':'')); });
+  (T.annotations||[]).filter(impAtivo).forEach(an=>{ const p=mapaPac[an.patient_id]; if(p) hist(p,'Anotação'+(an.tooth?' (dente '+an.tooth+')':'')+' em '+fmtDataBR(impData(an.created_at))+': '+impTxt(an.comments)); });
+  const arquivos=(T.documents||[]).filter(d=>impAtivo(d) && d.documentable_type==='UploadFile').length;
+  if(arquivos) R.avisos.push(arquivos+' arquivo(s) anexado(s) no sistema anterior (fotos, PDFs) não vêm no backup e precisam ser baixados de lá, se ainda precisar deles.');
+  return {R,pacs,usersNovos,add};
+}
+function aplicarImportacao(plano){
+  const {pacs,usersNovos,add}=plano, quando=new Date().toISOString();
+  usersNovos.forEach(u=>{ if(!state.users.find(x=>x.id===u.id)) state.users.push(u); });
+  pacs.forEach(ent=>{
+    const p=ent.p;
+    if(ent.novo){ if(state.patients.some(x=>x.id===p.id)) return; p.idAntigo=ent.idAntigo; p.importadoEm=quando; state.patients.push(p); }
+    else { Object.assign(p,ent.mud); p.idAntigo=p.idAntigo||ent.idAntigo; ['anamneses','evolucao','orcamentos','documentos'].forEach(k=>{ p[k]=p[k]||[]; }); p.odonto=p.odonto||{dentes:{},gerais:[]}; }
+  });
+  const listaP=pacs.map(e=>e.p);
+  const tem=(arr,id)=>(arr||[]).some(x=>x&&x.id===id);
+  add.anamneses.forEach(({p,rec})=>{ ensureAnamneses(p); if(!tem(p.anamneses,rec.id)) p.anamneses.push(rec); });
+  add.dentes.forEach(({p,n,it})=>{ p.odonto=p.odonto||{dentes:{},gerais:[]}; const d=p.odonto.dentes[n]=p.odonto.dentes[n]||{procedimentos:[]}; d.procedimentos=d.procedimentos||[]; if(!tem(d.procedimentos,it.id)) d.procedimentos.push(it); });
+  add.gerais.forEach(({p,it})=>{ p.odonto=p.odonto||{dentes:{},gerais:[]}; p.odonto.gerais=p.odonto.gerais||[]; if(!tem(p.odonto.gerais,it.id)) p.odonto.gerais.push(it); });
+  add.orcamentos.forEach(({p,o})=>{ if(!tem(p.orcamentos,o.id)) p.orcamentos.push(o); });
+  state.fluxoFinanceiro=state.fluxoFinanceiro||[];
+  add.fluxo.forEach(e=>{ if(tem(state.fluxoFinanceiro,e.id)) return; const p=e._p; delete e._p; e.pacienteId=p.id; e.pacienteNome=p.nome; state.fluxoFinanceiro.push(e); });
+  state.agendamentos=state.agendamentos||[];
+  add.agenda.forEach(a=>{ if(!tem(state.agendamentos,a.id)) state.agendamentos.push(a); });
+  add.evolucao.forEach(({p,ev})=>{ p.evolucao=p.evolucao||[]; if(!tem(p.evolucao,ev.id)) p.evolucao.push(ev); });
+  listaP.forEach(p=>{ const conf=(p.evolucao||[]).filter(e=>e.confirmado&&!e.falta&&e.data).map(e=>e.data).sort(); if(conf.length && (!p.ultimaConsultaConfirmada || conf[conf.length-1]>p.ultimaConsultaConfirmada)) p.ultimaConsultaConfirmada=conf[conf.length-1]; });
+  Object.keys(add.historico).forEach(pid=>{ const p=listaP.find(x=>x.id===pid)||state.patients.find(x=>x.id===pid); if(!p) return; p.historicoAnterior=p.historicoAnterior||[]; add.historico[pid].forEach(t=>{ if(!p.historicoAnterior.includes(t)) p.historicoAnterior.push(t); }); });
+  state.meta=state.meta||{}; state.meta.importacoes=(state.meta.importacoes||[]).concat([{em:quando,por:Nuvem&&Nuvem.meuEmail?Nuvem.meuEmail():'',pacientes:pacs.length}]).slice(-20);
+  saveData();
+}
+let impPlano=null, impArquivo=null, impOpc=null;
+function importadorCardHtml(){
+  const u=currentUser(); if(!u || u.tipo!=='master') return '';
+  return `<div class="card" id="cardImportador"><h3>Importar de outro sistema</h3>
+    <p class="muted">Traz pacientes, anamneses, odontograma, orçamentos, parcelas e agenda do backup em <strong>.zip</strong> (arquivos CSV) do sistema anterior. O arquivo é lido aqui no seu navegador e vai direto para a base da clínica. Pacientes que já existem (mesmo CPF, ou mesmo nome e nascimento) são completados, não duplicados. Pode importar de novo o mesmo arquivo sem duplicar.</p>
+    <div class="row" style="align-items:flex-end"><div><label>Arquivo do backup (.zip)</label><input type="file" id="impArquivo" accept=".zip,application/zip"></div></div>
+    <label>O que importar</label>
+    <div class="perm">
+      <label><input type="checkbox" checked disabled> Cadastro dos pacientes</label>
+      <label><input type="checkbox" id="impAnam" checked> Anamneses</label>
+      <label><input type="checkbox" id="impPront" checked> Odontograma e orçamentos</label>
+      <label><input type="checkbox" id="impParc" checked> Parcelas dos pacientes</label>
+      <label><input type="checkbox" id="impAgenda" checked> Agenda e atendimentos</label>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:6px 0 0">Despesas da clínica e comissões do sistema anterior não são importadas.</p>
+    ${impArquivo?`<p class="muted" style="margin:6px 0 0;font-size:12.5px">Arquivo escolhido: <strong>${esc(impArquivo.name)}</strong></p>`:''}
+    <div id="impResumo">${impPlano?resumoImportacaoHtml(impPlano.R):''}</div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-s" id="btnImpAnalisar">Analisar arquivo</button><button class="btn-p" id="btnImpGravar"${impPlano?'':' style="display:none"'}>Importar agora</button></div>
+  </div>`;
+}
+function resumoImportacaoHtml(R){
+  const l=(t,v)=>`<tr><td>${t}</td><td style="text-align:right"><strong>${v}</strong></td></tr>`;
+  return `<div class="imp-resumo"><h4 style="margin:14px 0 6px">O que será importado</h4><table><tbody>
+    ${l('Pacientes novos',R.novos)}${l('Pacientes que já existiam (serão completados)',R.mesclados)}
+    ${l('Anamneses',R.anamneses)}${l('Procedimentos no odontograma',R.procedimentos)}${l('Orçamentos',R.orcamentos)}
+    ${l('Parcelas',R.parcelas)}${l('Agendamentos',R.agendamentos)}${l('Evoluções (atendimentos realizados)',R.evolucoes)}
+    ${R.ignorados?l('Pacientes excluídos no sistema anterior (ignorados)',R.ignorados):''}</tbody></table>
+    ${R.dentistasLigados.length?`<p class="muted" style="margin:8px 0 0;font-size:12.5px"><strong>Profissionais ligados:</strong> ${esc(R.dentistasLigados.join(' · '))}</p>`:''}
+    ${R.dentistasNovos.length?`<p class="muted" style="margin:4px 0 0;font-size:12.5px"><strong>Profissionais novos (desativados, só para o histórico):</strong> ${esc(R.dentistasNovos.join(' · '))}</p>`:''}
+    ${R.avisos.map(a=>`<p class="muted" style="margin:4px 0 0;font-size:12.5px">⚠️ ${esc(a)}</p>`).join('')}
+    <p class="muted" style="margin:8px 0 0;font-size:12.5px">Faça um backup antes, se quiser poder voltar atrás (Configurações → Backup).</p></div>`;
+}
+function bindImportador(){
+  const bA=document.getElementById('btnImpAnalisar'); if(!bA) return;
+  const bG=document.getElementById('btnImpGravar'), out=document.getElementById('impResumo'), inp=document.getElementById('impArquivo');
+  const opc=()=>({anamneses:document.getElementById('impAnam').checked,prontuario:document.getElementById('impPront').checked,parcelas:document.getElementById('impParc').checked,agenda:document.getElementById('impAgenda').checked});
+  if(impOpc) Object.keys(impOpc).forEach(k=>{ const el=document.getElementById({anamneses:'impAnam',prontuario:'impPront',parcelas:'impParc',agenda:'impAgenda'}[k]); if(el) el.checked=impOpc[k]; });
+  ['impAnam','impPront','impParc','impAgenda'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{ impPlano=null; impOpc=opc(); bG.style.display='none'; out.innerHTML=''; }));
+  inp.addEventListener('change',()=>{ impArquivo=inp.files[0]||null; impPlano=null; bG.style.display='none'; out.innerHTML=''; });
+  bA.addEventListener('click',async()=>{
+    if(!impArquivo){ avisar('Escolha o arquivo .zip do backup.'); return; }
+    bA.disabled=true; out.innerHTML='<p class="muted">Lendo o arquivo…</p>';
+    try{ const T=await lerZipImportacao(impArquivo); impOpc=opc(); impPlano=planejarImportacao(T,impOpc); render(); }
+    catch(e){ console.error(e); const o2=document.getElementById('impResumo'); if(o2) o2.innerHTML=`<p class="erro-campo">${esc((e&&e.message)||String(e))}</p>`; }
+    finally{ const b2=document.getElementById('btnImpAnalisar'); if(b2) b2.disabled=false; }
+  });
+  bG.addEventListener('click',()=>{
+    if(!impPlano) return; if(clinicaBloqueada()){ avisarBloqueio(); return; }
+    const R=impPlano.R;
+    customConfirm(`Importar ${R.novos} paciente(s) novo(s) e completar ${R.mesclados}, com ${R.agendamentos} agendamento(s) e ${R.parcelas} parcela(s)?`,()=>{
+      try{ aplicarImportacao(impPlano); impPlano=null; avisar('Importação concluída. Os dados já estão na base da clínica.'); render(); }
+      catch(e){ console.error(e); avisar('A importação falhou: '+((e&&e.message)||e)); }
+    });
+  });
 }
 
 function openPatientForm(p){
