@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.10.0';
+const APP_VERSION='2.11.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -719,13 +719,23 @@ function bellHtml(u){
 function abrirWhatsApp(pc,msg,aoAbrir){
   const fone=telefoneWhatsApp(pc&&pc.telefone);
   if(!fone){ avisar('Este paciente não tem telefone cadastrado.'); return; }
+  const zc=(state.clinic||{}).whatsapp||'';
+  if(soDigitos(zc).length<10){ avisar('Cadastre o WhatsApp comercial da clínica em Configurações → Clínica. É por ele que saem os agendamentos, lembretes e confirmações.'); return; }
+  let conferido=false; try{ conferido=sessionStorage.getItem('odonto-zap-ok')===zc; }catch(e){}
+  if(!conferido){
+    customConfirm(`Os envios aos pacientes saem pelo WhatsApp comercial da clínica, ${zc}. Confira se é esse o WhatsApp aberto neste aparelho (no computador, o WhatsApp Web conectado a esse número).`,()=>{
+      try{ sessionStorage.setItem('odonto-zap-ok',zc); }catch(e){}
+      abrirWhatsApp(pc,msg,aoAbrir);
+    },'Continuar');
+    return;
+  }
   const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank');
   if(w){ try{ w.opener=null; }catch(e){} if(aoAbrir) aoAbrir(); }
   else mostrarMensagem('O navegador bloqueou a abertura do WhatsApp. Copie a mensagem e envie para '+(pc.telefone||fone)+':',msg,aoAbrir);
 }
 function mensagemContatoNao(a,pc){
   const c=state.clinic||{}, dt=new Date(a.data+'T00:00:00');
-  const dm=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  const dm=fmtDataBR(a.data), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
   return `Olá, ${(pc.nome||'').split(' ')[0]}! Aqui é da ${c.nome||'clínica'}. Vimos que você não poderá comparecer ao seu atendimento do dia ${dm} (${sem}), às ${a.horario}. Podemos remarcar? Me diga quais dias e horários ficam melhores para você.`;
 }
 function avisosHtml(u,semCaixa){
@@ -770,7 +780,7 @@ function telefoneWhatsApp(tel){ let d=(tel||'').replace(/\D/g,''); if(!d) return
 function mensagemLembrete(a,pc){
   const c=state.clinic||{};
   const dt=new Date(a.data+'T00:00:00');
-  const dm=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  const dm=fmtDataBR(a.data), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
   const oque=a.tipo==='avaliacao'?'da sua avaliação':'do seu atendimento';
   return `Olá, ${(pc.nome||'').split(' ')[0]}! Aqui é da ${c.nome||'clínica'}. Lembramos ${oque} com ${a.dentistaNome} no dia ${dm} (${sem}), às ${a.horario}. Podemos confirmar sua presença? Responda SIM para confirmar ou nos avise se precisar remarcar.`;
 }
@@ -882,7 +892,7 @@ function rotuloPeriodoAgenda(){
   if(agendaViewMode==='mes'){ const t=new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
   return fmtDiaSemana(agendaViewDate)+', '+fmtDataLonga(agendaViewDate);
 }
-function fmtDataLonga(iso){ return new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); }
+function fmtDataLonga(iso){ return fmtDataBR(iso); }
 function fmtIntervalo(a,b){
   const da=new Date(a+'T00:00:00'), db=new Date(b+'T00:00:00');
   const mes=d=>d.toLocaleDateString('pt-BR',{month:'long'});
@@ -1551,9 +1561,9 @@ function renderFluxoFinanceiro(){
     const situacao=e.confirmado?'Realizado':(despesa?'Pendente':'Entrada Prevista');
     const situacaoClass=e.confirmado?'b-dent':(despesa?'b-harm':'b-recep');
     const pagCell=e.confirmado
-      ? `${esc(e.dataPagamento)} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
+      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
       : `<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
-    return `<tr><td>${esc(e.vencimento)}</td>
+    return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
     <td>${esc(despesa?(e.fornecedor||'-'):e.pacienteNome)}</td>
     <td>${esc(e.label)}</td><td>${fmtMoney(e.valor)}</td>
@@ -1608,10 +1618,10 @@ function renderFinanceiro(p){
     const comEntrada=pag.condicao==='parcelado_com';
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
     const parcelas=calcParcelas(o);
-    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${fmtMoney(pc.valor)}</td><td>${pc.vencimento}</td></tr>`).join('');
+    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
     return `<div class="card">
-    <h3>Orçamento aprovado — ${esc(o.data)}</h3>
-    <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(o.dataAprovacao||o.data)}</p>
+    <h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))}</h3>
+    <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(fmtDataBR(o.dataAprovacao||o.data))}</p>
     <div class="row">
       <div><label>Condição de pagamento</label>
         <select data-finfield="condicao" data-orcid="${o.id}">
@@ -1652,14 +1662,14 @@ function renderEvolucao(p){
   const items=list.map(e=>{
     if(e.confirmado){
       return `<div class="card">
-      <p style="margin:0"><strong>${esc(e.data)} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-dent">Confirmado</span></p>
+      <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-dent">Confirmado</span></p>
       <p class="muted" style="margin:4px 0">Dentista: ${esc(e.dentistaNome)}</p>
       ${e.observacao?`<p style="margin:6px 0">${esc(e.observacao)}</p>`:''}
       <p class="muted" style="font-size:12px;margin:4px 0 0">Confirmado em ${esc(fmtDataBR(e.confirmadoEm))}${e.confirmadoPorNome?' por '+esc(e.confirmadoPorNome)+(e.confirmadoPorCro?' — CRO '+esc(e.confirmadoPorCro):''):''}</p>
       </div>`;
     }
     return `<div class="card">
-    <p style="margin:0"><strong>${esc(e.data)} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
+    <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
     <p class="muted" style="margin:4px 0 10px">Dentista: ${esc(e.dentistaNome)}</p>
     <label>Observação do dentista</label>
     <textarea data-evolobs="${e.id}" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit">${esc(e.observacao)}</textarea>
@@ -1714,7 +1724,7 @@ function renderExameClinico(p){
     exameOpenId=null;
   }
   const list=p.examesClinicos.slice().sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
-  const rows=list.map(e=>`<tr><td>${esc(e.data)} ${esc(e.hora)}</td>
+  const rows=list.map(e=>`<tr><td>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</td>
     <td>${e.dentistaNome?esc(e.dentistaNome)+' — CRO '+esc(e.dentistaCro):'-'}</td>
     <td><span class="badge ${e.finalizado?'b-dent':'b-recep'}">${e.finalizado?'Finalizado':'Rascunho'}</span></td>
     <td class="actions"><button class="btn-s" data-viewexame="${e.id}">${e.finalizado?'Visualizar':'Continuar preenchimento'}</button>
@@ -1752,7 +1762,7 @@ function renderExameClinicoView(ex){
     return `<div class="section-title">${g.titulo}</div><div class="info-grid">${boxes}</div>`;
   }).join('');
   return `<div class="card"><h3 style="margin-top:0">Exame Clínico</h3>
-  <p class="muted">${esc(ex.data)} às ${esc(ex.hora)} · Dentista: <strong>${esc(ex.dentistaNome)}</strong> — CRO ${esc(ex.dentistaCro)} · Documento finalizado (somente leitura)</p>
+  <p class="muted">${esc(fmtDataBR(ex.data))} às ${esc(ex.hora)} · Dentista: <strong>${esc(ex.dentistaNome)}</strong> — CRO ${esc(ex.dentistaCro)} · Documento finalizado (somente leitura)</p>
   ${grupos}
   <div style="margin-top:16px"><button class="btn-s" id="btnBackExame">Voltar</button></div></div>`;
 }
@@ -1780,7 +1790,10 @@ function renderDocumentacao(p){
 }
 function fmtDataBR(iso){
   if(!iso) return '';
-  const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`;
+  if(typeof iso==='number'||iso instanceof Date){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso)); if(!m) return String(iso);
+  if(String(iso).length>10){ const d=new Date(iso); if(!isNaN(d)) return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 function dentistaOptionsHtml(selectedId, comCro){
   if(comCro===undefined) comCro=true;
@@ -2002,11 +2015,11 @@ function avisar(message){
   document.body.appendChild(bg);
   document.getElementById('avOk').addEventListener('click',()=>{ document.body.removeChild(bg); });
 }
-function customConfirm(message, onYes){
+function customConfirm(message, onYes, rotulo){
   const bg=document.createElement('div'); bg.className='modal-bg';
   bg.innerHTML=`<div class="modal"><p>${esc(message)}</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
-      <button id="ccYes" class="btn-d">Excluir</button>
+      <button id="ccYes" class="${rotulo?'btn-p':'btn-d'}">${esc(rotulo||'Excluir')}</button>
       <button id="ccNo" class="btn-s">Cancelar</button>
     </div></div>`;
   document.body.appendChild(bg);
@@ -2617,7 +2630,7 @@ function cabecalhoDocHtml(c,classeNome,classeSub){
 function camposFaltandoClinica(c){
   const f=[]; c=c||{};
   if(!c.documento) f.push('CNPJ ou CPF'); if(!c.rtNome||!c.rtCro) f.push('responsável técnico');
-  if(!(c.end&&c.end.cidade)) f.push('endereço'); if(!c.whatsapp) f.push('WhatsApp');
+  if(!(c.end&&c.end.cidade)) f.push('endereço'); if(!c.whatsapp) f.push('WhatsApp comercial');
   return f;
 }
 function alvaraAviso(c){
@@ -2658,10 +2671,10 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     </div>
   </section>
   <section class="cl-secao">
-    <div class="cl-secao-cab"><h3>Contato</h3><p>O WhatsApp é o número que os pacientes reconhecem nas mensagens de lembrete.</p></div>
+    <div class="cl-secao-cab"><h3>Contato</h3><p>O WhatsApp comercial é o número oficial da clínica: é por ele que saem os agendamentos, os lembretes e as confirmações dos pacientes, e os próximos serviços de envio.</p></div>
     <div class="cl-grade">
       ${inp('clTel','Telefone *',d.telefone,' type="tel" inputmode="tel" data-mask="tel" required')}
-      ${inp('clZap','WhatsApp',d.whatsapp,' type="tel" inputmode="tel" data-mask="tel"')}
+      ${inp('clZap','WhatsApp comercial *',d.whatsapp,' type="tel" inputmode="tel" data-mask="tel" required placeholder="(00) 00000-0000"','Número da clínica que faz os envios aos pacientes.')}
       ${inp('clEmail','E-mail *',d.email,' type="email" required autocomplete="email"')}
       ${inp('clSite','Site',d.site,' placeholder="www.suaclinica.com.br"')}
       ${inp('clInsta','Instagram',d.instagram,' placeholder="@suaclinica"')}
@@ -2746,6 +2759,7 @@ function bindClinicaForm(formId,aoSalvar){
     const erros=[];
     if(!c.nome) erros.push('o nome da clínica');
     if(!c.telefone) erros.push('o telefone');
+    if(!c.whatsapp) erros.push('o WhatsApp comercial'); else if(soDigitos(c.whatsapp).length<10) erros.push('o WhatsApp comercial completo, com DDD');
     if(!emailValido(normEmail(c.email))) erros.push('um e-mail válido');
     if(!c.end.cidade||!c.end.uf) erros.push('a cidade e a UF');
     if(erros.length){ avisar('Para salvar, informe '+erros.join(', ')+'.'); return; }
@@ -2929,7 +2943,7 @@ function renderApp(){
   if(cel){
     const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"${currentTab===i.id?' aria-current="page"':''}><span class="cel-ico">${ICONES[i.id]||''}</span>${esc(i.label)}</button>`).join('');
     const titulo=(items.find(i=>i.id===currentTab)||{}).label||'';
-    const sub=currentTab==='agenda'?fmtDiaSemana(agendaViewDate)+', '+new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long'}):esc(state.clinic.nome);
+    const sub=currentTab==='agenda'?fmtDiaSemana(agendaViewDate)+', '+fmtDataBR(agendaViewDate):esc(state.clinic.nome);
     return `<div class="cel-layout">${demo}
       <header class="topbar cel-top">
         <span class="sb-logo">${ICONES.dente}</span>
@@ -2983,7 +2997,7 @@ function renderDashboard(){
   const agHoje=(state.agendamentos||[]).filter(a=>a.data===hoje && statusAg(a)!=='cancelado').sort((x,y)=>x.horario.localeCompare(y.horario));
   const prox=agHoje.find(a=>hhmmParaMin(a.horario)+duracaoDe(a)>agoraM && ['agendado','confirmado','chegou'].includes(statusAgExib(a)));
   const saud=saudacaoHora();
-  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
+  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1)+', '+fmtDataBR(hojeISO());
   const n=agHoje.length;
   const kpi=(rot,num,sub,go,cor,extra)=>`<button class="kpi" data-dashgo="${go}"><div class="kpi-rot">${rot}</div><div class="kpi-num"${cor?` style="color:${cor}"`:''}>${num}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}${extra||''}</button>`;
   const ks=[];
@@ -3485,7 +3499,7 @@ function anamneseOdontoLinhas(dados){
   ${fieldRow('Sangramento gengival espontâneo', a.sangramentoGengival)}
   ${fieldRow('Range ou aperta os dentes (bruxismo)', a.bruxismo)}
   ${fieldRow('Usa fio dental', a.fioDental)}
-  ${fieldRow('Última visita ao dentista', a.ultimaVisita)}
+  ${fieldRow('Última visita ao dentista', fmtDataBR(a.ultimaVisita))}
   ${fieldRow('Frequência de escovação diária', a.escovacaoDiaria)}
   ${fieldRow('Observações gerais', a.observacoes)}
 `;
@@ -3543,7 +3557,7 @@ function formsDoPaciente(pid){ return (state.formularios||[]).filter(f=>f.pacien
 function formSituacao(f){ if(f.status==='respondido') return 'respondido'; return f.expiraEm && f.expiraEm<Date.now()?'vencido':'pendente'; }
 function linkFormulario(token){ const c=Nuvem.clinicaId(); return location.origin+location.pathname+'?'+(c&&c!=='principal'?'c='+encodeURIComponent(c)+'&':'')+'f='+encodeURIComponent(token); }
 function fmtDH(v){ if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}); }
-function fmtDM(ms){ return new Date(ms).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
+function fmtDM(ms){ return fmtDataBR(ms); }
 function assinaturasDoPaciente(p){
   return [...(p.anamneses||[]),...(p.documentos||[])].map(x=>x.assinaturaId).filter(Boolean);
 }

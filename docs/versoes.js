@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.11.0', data:'2026-10-23', itens:[
+    'Todas as datas no padrão dd/mm/aaaa, inclusive nos campos de data (digitando ou pelo calendário)',
+    'WhatsApp comercial da clínica obrigatório no cadastro: é por ele que saem agendamentos, lembretes e confirmações',
+    'Antes do primeiro envio, o sistema lembra de conferir se o WhatsApp aberto é o comercial da clínica',
+  ]},
   {v:'2.10.0', data:'2026-10-23', itens:[
     'Importar de outro sistema (Configurações → Backup): pacientes, anamneses, odontograma, orçamentos, parcelas e agenda a partir do backup .zip em CSV',
     'Pacientes já cadastrados são completados, sem duplicar; importar de novo o mesmo arquivo não repete nada',
