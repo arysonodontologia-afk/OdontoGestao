@@ -746,3 +746,12 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .orc-resumo .orc-acr{color:var(--warn)}
 .orc-resumo .orc-total{font-weight:700;font-size:15px;border-top:1px dashed var(--border);margin-top:4px;padding-top:6px}
 .orc-aj-tab td,.orc-aj-tab th{vertical-align:middle}
+
+/* envio de versão para os clientes */
+.env-versao{padding:12px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface-2);display:flex;flex-direction:column;gap:8px}
+.env-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.env-linha select{width:auto;min-width:150px}
+th.env-sel,td.env-sel{width:34px;text-align:center}
+.env-sel input{width:auto}
+.login-versao{text-align:center;color:var(--muted);font-size:12px;margin:12px 0 0}
+.pub-versao{margin-top:6px;font-size:11.5px;opacity:.75}
