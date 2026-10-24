@@ -738,3 +738,11 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .ag-trat-item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:8px;background:var(--surface-2)}
 .ag-trat-nome{flex:1 1 200px;min-width:0}
 .ag-trat-item input,.ag-trat-item select{width:auto;flex:0 1 200px;min-width:120px}
+
+/* desconto e acréscimo no orçamento */
+.orc-resumo{margin-top:12px;border-top:1px solid var(--border);padding-top:8px;max-width:460px}
+.orc-resumo>div{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px}
+.orc-resumo .orc-desc{color:var(--ok, #1a7f5a)}
+.orc-resumo .orc-acr{color:var(--warn)}
+.orc-resumo .orc-total{font-weight:700;font-size:15px;border-top:1px dashed var(--border);margin-top:4px;padding-top:6px}
+.orc-aj-tab td,.orc-aj-tab th{vertical-align:middle}

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.11.0';
+const APP_VERSION='2.12.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -588,6 +588,74 @@ function renderPlanoTratamento(p){
   <div style="margin-top:10px"><button id="btnConfirmPlano" class="btn-p">Confirmar Plano de Tratamento</button></div>
   </div>`;
 }
+// ---- desconto e acréscimo no orçamento (antes de aprovar) ----
+const r2=v=>Math.round((+v||0)*100)/100;
+function fmtPct(v){ return (Math.round((+v||0)*100)/100).toLocaleString('pt-BR',{maximumFractionDigits:2}); }
+function orcSubtotal(o){ return r2((o.itens||[]).reduce((s,it)=>s+(+it.valor||0),0)); }
+function orcTabela(o){ return r2((o.itens||[]).reduce((s,it)=>s+(+(it.valorTabela!=null?it.valorTabela:it.valor)||0),0)); }
+function orcAjusteValor(o,sub){
+  const a=o.ajuste; if(!a || !a.tipo || !(+a.valor>0)) return 0;
+  const v=a.modo==='pct'?r2(sub*(+a.valor)/100):r2(+a.valor);
+  return a.tipo==='desconto'?-Math.min(v,sub):v;
+}
+function descontoMaxPct(){ const v=state.clinic&&state.clinic.descontoMaxPct; return v===undefined||v===null||v===''?10:+v; }
+function lerValor(v){ v=String(v==null?'':v).trim(); if(!v) return NaN; v=v.replace(/[R$\s]/g,''); if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); return +v; }
+function abrirAjusteOrcamento(p,o){
+  const u=currentUser(), master=u&&u.tipo==='master', lim=descontoMaxPct();
+  const a=Object.assign({tipo:'',modo:'pct',valor:'',motivo:''},o.ajuste||{});
+  const fmtIn=v=>(+v||0).toFixed(2).replace('.',',');
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Desconto ou acréscimo</h3>
+    <p class="muted" style="margin:0 0 10px">Ajuste os valores antes de aprovar. ${master?'Como Master, você não tem limite de desconto.':`Seu limite de desconto é de <strong>${fmtPct(lim)}%</strong> sobre a tabela; acima disso, só o Master.`}</p>
+    <div class="overflow"><table class="orc-aj-tab"><thead><tr><th>Procedimento</th><th>Tabela</th><th>Valor no orçamento</th></tr></thead><tbody>
+    ${(o.itens||[]).map((it,i)=>`<tr><td>${esc(it.nome)}<div class="muted" style="font-size:12px">${esc(it.ref||'')}</div></td><td style="white-space:nowrap">${fmtMoney(it.valorTabela!=null?it.valorTabela:it.valor)}</td><td><input data-ajit="${i}" inputmode="decimal" value="${fmtIn(it.valor)}" aria-label="Valor de ${esc(it.nome)}" style="max-width:130px"></td></tr>`).join('')}
+    </tbody></table></div>
+    <h4 style="margin:14px 0 6px">No total do orçamento</h4>
+    <div class="row">
+      <div><label for="ajTipo">Ajuste</label><select id="ajTipo"><option value="">Nenhum</option><option value="desconto" ${a.tipo==='desconto'?'selected':''}>Desconto</option><option value="acrescimo" ${a.tipo==='acrescimo'?'selected':''}>Acréscimo</option></select></div>
+      <div><label for="ajModo">Em</label><select id="ajModo"><option value="pct" ${a.modo!=='valor'?'selected':''}>Porcentagem (%)</option><option value="valor" ${a.modo==='valor'?'selected':''}>Valor (R$)</option></select></div>
+      <div><label for="ajValor">Quanto</label><input id="ajValor" inputmode="decimal" value="${a.valor!==''&&a.valor!=null?String(a.valor).replace('.',','):''}" placeholder="Ex.: 10"></div>
+    </div>
+    <label for="ajMotivo">Motivo (opcional)</label><input id="ajMotivo" value="${esc(a.motivo||'')}" placeholder="Ex.: pagamento à vista, cortesia, material especial">
+    <div class="orc-resumo" data-aj="resumo"></div>
+    <p class="erro-campo" data-aj="erro" role="alert"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn-s" data-aj="limpar">Voltar aos valores da tabela</button><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-aj="ok">Salvar valores</button></div>`);
+  const q=k=>bg.querySelector(`[data-aj="${k}"]`), g=id=>bg.querySelector('#'+id);
+  const ler=()=>{
+    const itens=(o.itens||[]).map((it,i)=>{ const v=lerValor(bg.querySelector(`[data-ajit="${i}"]`).value); return {it,v}; });
+    const ruim=itens.find(x=>isNaN(x.v)||x.v<0);
+    const sub=r2(itens.reduce((s,x)=>s+(isNaN(x.v)?0:x.v),0));
+    const aj={tipo:g('ajTipo').value,modo:g('ajModo').value,valor:lerValor(g('ajValor').value),motivo:g('ajMotivo').value.trim()};
+    const tmp={ajuste:aj.tipo&&aj.valor>0?aj:null};
+    const ajv=orcAjusteValor(tmp,sub), total=r2(Math.max(0,sub+ajv));
+    const tab=orcTabela(o), descPct=tab>0?r2((1-total/tab)*100):0;
+    let erro='';
+    if(ruim) erro='Confira o valor de "'+ruim.it.nome+'".';
+    else if(aj.tipo && !(aj.valor>0)) erro='Informe quanto de '+(aj.tipo==='desconto'?'desconto':'acréscimo')+'.';
+    else if(aj.tipo==='desconto' && aj.modo==='pct' && aj.valor>100) erro='O desconto não pode passar de 100%.';
+    else if(!master && descPct>lim+0.001) erro=`Desconto de ${fmtPct(descPct)}% sobre a tabela passa do seu limite (${fmtPct(lim)}%). Peça ao Master.`;
+    return {itens,sub,aj,ajv,total,tab,descPct,erro};
+  };
+  const desenhar=()=>{ const r=ler();
+    q('resumo').innerHTML=`<div><span>Valor de tabela</span><span>${fmtMoney(r.tab)}</span></div>
+      ${r.sub!==r.tab?`<div><span>Subtotal com os valores ajustados</span><span>${fmtMoney(r.sub)}</span></div>`:''}
+      ${r.ajv?`<div class="${r.ajv<0?'orc-desc':'orc-acr'}"><span>${r.ajv<0?'Desconto':'Acréscimo'}</span><span>${r.ajv<0?'− ':'+ '}${fmtMoney(Math.abs(r.ajv))}</span></div>`:''}
+      <div class="orc-total"><span>Total final</span><span>${fmtMoney(r.total)}</span></div>
+      ${r.descPct>0?`<div class="muted"><span>Desconto total sobre a tabela</span><span>${fmtPct(r.descPct)}%</span></div>`:r.descPct<0?`<div class="muted"><span>Acréscimo total sobre a tabela</span><span>${fmtPct(-r.descPct)}%</span></div>`:''}`;
+    q('erro').textContent=r.erro; q('ok').disabled=!!r.erro; };
+  bg.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',desenhar));
+  bg.querySelectorAll('select').forEach(el=>el.addEventListener('change',desenhar));
+  q('limpar').addEventListener('click',()=>{ (o.itens||[]).forEach((it,i)=>{ bg.querySelector(`[data-ajit="${i}"]`).value=fmtIn(it.valorTabela!=null?it.valorTabela:it.valor); }); g('ajTipo').value=''; g('ajValor').value=''; g('ajMotivo').value=''; desenhar(); });
+  q('ok').addEventListener('click',()=>{
+    const r=ler(); if(r.erro){ desenhar(); return; }
+    r.itens.forEach(({it,v})=>{ const tab=it.valorTabela!=null?+it.valorTabela:+it.valor; if(r2(v)!==r2(tab)) it.valorTabela=tab; else delete it.valorTabela; it.valor=r2(v); });
+    if(r.aj.tipo && r.aj.valor>0) o.ajuste={tipo:r.aj.tipo,modo:r.aj.modo,valor:r.aj.valor,motivo:r.aj.motivo}; else delete o.ajuste;
+    o.subtotal=r.sub; o.total=r.total;
+    const mexeu=o.ajuste || (o.itens||[]).some(it=>it.valorTabela!=null);
+    if(mexeu){ o.ajustadoPorNome=nomeExibicao(u); o.ajustadoPorId=u.id; o.ajustadoEm=hojeISO(); } else { delete o.ajustadoPorNome; delete o.ajustadoPorId; delete o.ajustadoEm; delete o.subtotal; }
+    saveData(); bg.remove(); render();
+  });
+  desenhar();
+}
 function renderOrcamento(p){
   const orcs=(p.orcamentos||[]).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   if(!orcs.length){
@@ -596,15 +664,18 @@ function renderOrcamento(p){
   const podeFin=permsDe(currentUser()).financeiro;
   return orcs.map(o=>{
     const aprovado=o.status==='aprovado', perdido=o.status==='perdido';
-    const rows=o.itens.map(it=>`<tr><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td><td>${fmtMoney(it.valor)}</td></tr>`).join('');
+    const rows=o.itens.map(it=>`<tr><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td><td>${it.valorTabela!=null&&+it.valorTabela!==+it.valor?`<s class="muted">${fmtMoney(it.valorTabela)}</s> `:''}${fmtMoney(it.valor)}</td></tr>`).join('');
+    const sub=orcSubtotal(o), aj=orcAjusteValor(o,sub);
     return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':perdido?'b-cinza':'b-recep'}">${aprovado?'Aprovado':perdido?'Não fechado':'Pendente'}</span>${o.importado?' <span class="tag-pac">Sistema anterior</span>':''}</h3>
-    <div>${podeFin?`${aprovado?'':`<button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:'<span class="muted">Aprovação pelo administrativo</span>'}</div>
+    <div>${podeFin?`${aprovado||perdido?'':`<button class="btn-s" data-ajorc="${o.id}">Desconto / acréscimo</button> <button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:'<span class="muted">Aprovação pelo administrativo</span>'}</div>
     </div>
     <div class="overflow"><table><thead><tr><th>Grupo</th><th>Procedimento</th><th>Referência</th><th>Valor</th></tr></thead>
     <tbody>${rows||'<tr><td colspan="4" class="muted">Nenhum item</td></tr>'}</tbody></table></div>
-    <p style="margin-top:12px"><strong>Total do Orçamento:</strong> ${fmtMoney(o.total)}</p>
+    ${aj?`<div class="orc-resumo"><div><span>Subtotal</span><span>${fmtMoney(sub)}</span></div><div class="${aj<0?'orc-desc':'orc-acr'}"><span>${aj<0?'Desconto':'Acréscimo'}${o.ajuste&&o.ajuste.modo==='pct'?' ('+fmtPct(o.ajuste.valor)+'%)':''}${o.ajuste&&o.ajuste.motivo?' · '+esc(o.ajuste.motivo):''}</span><span>${aj<0?'− ':'+ '}${fmtMoney(Math.abs(aj))}</span></div></div>`:''}
+    <p style="margin-top:12px"><strong>Total do Orçamento:</strong> ${fmtMoney(o.total)}${orcTabela(o)>o.total+0.004?` <span class="muted">(${fmtPct((1-o.total/orcTabela(o))*100)}% abaixo da tabela)</span>`:''}</p>
+    ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}.</p>`:''}
     ${aprovado?'<p class="muted">Este orçamento já está disponível na aba Financeiro.</p>':''}
     </div>`;
   }).join('');
@@ -2871,6 +2942,7 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     <div class="cl-hor">${linhasHor}</div>
     <div class="cl-grade" style="margin-top:14px">
       <div class="cl-campo"><label for="clIntIni">Intervalo (almoço)</label><div class="cl-duplo"><input type="time" id="clIntIni" value="${esc((d.intervalo&&d.intervalo.ini)||'')}" aria-label="Início do intervalo"${dis}><input type="time" id="clIntFim" value="${esc((d.intervalo&&d.intervalo.fim)||'')}" aria-label="Fim do intervalo"${dis}></div><div class="cl-dica">Deixe vazio se não houver.</div></div>
+      <div class="cl-campo"><label for="clDescMax">Desconto máximo sem o Master (%)</label><input id="clDescMax" inputmode="decimal" value="${esc(d.descontoMaxPct===undefined||d.descontoMaxPct===null?'10':String(d.descontoMaxPct).replace('.',','))}"${dis}${currentUser()&&currentUser().tipo!=='master'?' readonly title="Somente o Master altera"':''}><div class="cl-dica">Limite de desconto nos orçamentos para quem tem acesso ao Financeiro.</div></div>
       <div class="cl-campo"><label for="clDur">Duração padrão da consulta</label><select id="clDur"${dis}>${[15,20,30,40,45,60].map(m=>`<option value="${m}" ${+d.duracaoPadrao===m?'selected':''}>${m} minutos</option>`).join('')}</select></div>
       ${temRecurso('cadeiras')?`<div class="cl-campo"><label for="clCad">Cadeiras de atendimento</label><select id="clCad"${dis}>${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}" ${(parseInt(d.cadeiras,10)||1)===n?'selected':''}>${n} cadeira${n>1?'s':''}</option>`).join('')}</select><div class="cl-dica">Com mais de uma, dentistas diferentes podem atender no mesmo horário.</div></div>
       <div class="cl-campo"><label for="clCadNomes">Nomes das cadeiras (opcional)</label><input id="clCadNomes" value="${esc(((d.cadeirasNomes)||[]).join(', '))}" placeholder="Ex.: Sala 1, Sala 2"${dis}><div class="cl-dica">Separe por vírgula, na ordem.</div></div>`
@@ -2927,6 +2999,7 @@ function bindClinicaForm(formId,aoSalvar){
     c.end={cep:val('clCep'),logradouro:val('clLogr'),numero:val('clNum'),complemento:val('clCompl'),bairro:val('clBairro'),cidade:val('clCidade'),uf:val('clUf')};
     c.horarios={}; DIAS_CLINICA.forEach(([k])=>{ c.horarios[k]={aberto:q('hAb_'+k).checked,ini:q('hIni_'+k).value||'08:00',fim:q('hFim_'+k).value||'18:00'}; });
     c.intervalo={ini:val('clIntIni'),fim:val('clIntFim')}; c.duracaoPadrao=parseInt(val('clDur'),10)||30;
+    if(q('clDescMax')){ const dm=lerValor(val('clDescMax')); if(!isNaN(dm)&&dm>=0&&dm<=100) c.descontoMaxPct=dm; else { avisar('Informe o desconto máximo entre 0 e 100%.'); return; } }
     if(q('clCad')){ c.cadeiras=parseInt(val('clCad'),10)||1; c.cadeirasNomes=String(val('clCadNomes')||'').split(',').map(x=>x.trim()).slice(0,c.cadeiras); }
     if(logoPendente!==undefined){ if(logoPendente) c.logo=logoPendente; else delete c.logo; }
     const erros=[];
@@ -5858,6 +5931,11 @@ function bindEvents(){
       p.orcamentos=p.orcamentos.filter(x=>x.id!==o.id);
       saveData(); render();
     });
+  }));
+  document.querySelectorAll('[data-ajorc]').forEach(b=>b.addEventListener('click',()=>{
+    const p=state.patients.find(x=>x.id===patientDetailId);
+    if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para alterar valores de orçamento.'); return; }
+    const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-ajorc')); if(o && o.status!=='aprovado') abrirAjusteOrcamento(p,o);
   }));
   document.querySelectorAll('[data-approveorc]').forEach(b=>b.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId);
