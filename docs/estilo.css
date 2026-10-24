@@ -733,3 +733,8 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .ag-pac-busca{position:relative;flex:1;min-width:0}
 .ag-pac-busca .busca-res{top:calc(100% + 4px)}
 .ag-pac-novo{color:var(--primary);font-weight:600;border-top:1px solid var(--border);border-radius:0 0 8px 8px;margin-top:4px}
+
+/* tratamento direto no agendamento */
+.ag-trat-item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:8px;background:var(--surface-2)}
+.ag-trat-nome{flex:1 1 200px;min-width:0}
+.ag-trat-item input,.ag-trat-item select{width:auto;flex:0 1 200px;min-width:120px}

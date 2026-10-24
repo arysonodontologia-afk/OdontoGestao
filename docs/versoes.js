@@ -14,6 +14,7 @@ window.NOTAS_VERSAO = [
     'WhatsApp comercial da clínica obrigatório no cadastro: é por ele que saem agendamentos, lembretes e confirmações',
     'Antes do primeiro envio, o sistema lembra de conferir se o WhatsApp aberto é o comercial da clínica',
     'Agendamento: paciente pesquisado digitando o nome, CPF ou telefone; se não existir, oferece cadastrar na hora',
+    'Agendamento: tratamento direto da tabela de procedimentos (paciente sem plano), que entra sozinho no plano de tratamento e na evolução',
   ]},
   {v:'2.10.2', data:'2026-10-24', itens:[
     'Cadastro do dentista com WhatsApp (obrigatório) e opção de receber a agenda do dia às 07:30',
