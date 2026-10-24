@@ -755,3 +755,12 @@ th.env-sel,td.env-sel{width:34px;text-align:center}
 .env-sel input{width:auto}
 .login-versao{text-align:center;color:var(--muted);font-size:12px;margin:12px 0 0}
 .pub-versao{margin-top:6px;font-size:11.5px;opacity:.75}
+
+/* tratamentos em várias sessões */
+.evol-sess{display:flex;flex-direction:column;gap:8px;margin:6px 0 10px}
+.evol-sess-item{border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;background:var(--surface-2)}
+.evol-sess-op{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:14px}
+.evol-sess-op label{display:flex;gap:6px;align-items:center;color:var(--text)}
+.evol-sess-op input{width:auto}
+.evol-sess-feitas{margin:6px 0;padding-left:18px;font-size:14px}
+.aviso-sess{color:var(--warn);font-size:12.5px;font-weight:600;margin-top:3px}

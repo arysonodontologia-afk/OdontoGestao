@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.13.0';
+const APP_VERSION='2.14.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -429,6 +429,7 @@ let odontoSetupMode=null, odontoSetupMap={}, odontoToothOpenNum=null;
 function procEhRealizado(pp){ return pp.status==='Concluído' || pp.status==='Realizado anteriormente'; }
 function statusProcBadge(status){
   if(status==='Concluído') return '<span class="badge b-adm">Concluído</span>';
+  if(status==='Em andamento') return '<span class="badge b-recep">Em andamento</span>';
   if(status==='Realizado anteriormente') return '<span class="badge b-adm">Realizado anteriormente</span>';
   return '<span class="badge b-red">A executar</span>';
 }
@@ -560,6 +561,22 @@ function getPlanoOrder(p, items){
   p.planoTratamento=order;
   return order;
 }
+// ---- tratamentos em várias sessões (ex.: canal) ----
+// Ortodontia não entra: cada manutenção é um procedimento com valor próprio.
+const SESSOES_AVISO=3;
+function procMultiSessao(rec){
+  const pr=rec&&rec.procId?(state.procedimentos||[]).find(x=>x.id===rec.procId):null;
+  if(pr && pr.multiSessao!==undefined) return !!pr.multiSessao;
+  return multiSessaoPadrao((pr&&pr.especialidade)||(rec&&rec.especialidade)||'');
+}
+function multiSessaoPadrao(esp){ const e=normTxt(esp); return !/ortodon/.test(e) && /endodon|protes|implant|periodon/.test(e); }
+function sessoesDe(rec){ return (rec&&rec.sessoes)||[]; }
+function rotuloSessao(n,fim){ return fim?(n===1?'Realizado em sessão única':'Finalização (sessão '+n+')'):(n===1?'Início do tratamento (sessão 1)':'Retorno (sessão '+n+')'); }
+function resumoSessoes(rec){
+  const ss=sessoesDe(rec); if(!ss.length) return '';
+  if(rec.status==='Concluído') return ss.length>1?`Concluído em ${ss.length} sessões (${fmtDataBR(ss[0].data)} a ${fmtDataBR(rec.concluidoEm||ss[ss.length-1].data)})`:'';
+  return `${ss.length} ${ss.length>1?'sessões':'sessão'} · desde ${fmtDataBR(ss[0].data)}`;
+}
 function renderPlanoTratamento(p){
   const items=collectPlanoItems(p);
   if(!items.length){
@@ -573,7 +590,10 @@ function renderPlanoTratamento(p){
     return `<tr>
       <td><input type="checkbox" data-planochk="${id}" ${it.incluido?'checked':''} title="Incluir no Orçamento"></td>
       <td>${i+1}</td><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td>
-      <td>${statusProcBadge(it.status)}</td>
+      <td>${statusProcBadge(it.status)}${(()=>{ const rec=findProcedimentoRecordById(p,id); const r=resumoSessoes(rec); const dent=ehDentista(currentUser());
+        return (r?`<div class="muted" style="font-size:12px;margin-top:3px">${esc(r)}</div>`:'')+(sessoesDe(rec).length>SESSOES_AVISO&&it.status==='Em andamento'?`<div class="aviso-sess">Já são ${sessoesDe(rec).length} sessões</div>`:'')
+          +(dent&&it.status==='Em andamento'?`<button class="lnk-forte" data-tratfim="${id}" style="font-size:12.5px;display:block;margin-top:3px">Finalizar tratamento</button>`:'')
+          +(dent&&it.status==='Concluído'&&rec&&sessoesDe(rec).length?`<button class="lnk-forte" data-tratreabrir="${id}" style="font-size:12.5px;display:block;margin-top:3px">Reabrir</button>`:''); })()}</td>
       <td><input type="text" data-planobs="${id}" value="${esc(it.obs)}" placeholder="Ex: face Ocluso-Distal (OD)" style="min-width:220px"></td>
       <td class="actions">
         <button class="btn-s" data-planoup="${id}" ${i===0?'disabled':''}>↑</button>
@@ -581,7 +601,7 @@ function renderPlanoTratamento(p){
       </td></tr>`;
   }).join('');
   return `<div class="card"><h3>Plano de Tratamento</h3>
-  <p class="muted">Ordem sugerida por especialidade: <strong>Periodontia → Cirurgia → Endodontia → Dentística → Prótese</strong> → demais especialidades ao final. Use as setas para reordenar conforme a conduta do profissional. Use a Observação para detalhar o procedimento, ex: "Restauração no dente 34 — Ocluso-Distal (OD)" ou "Restauração no dente 21 — incisal". O status "Concluído" é marcado automaticamente quando a evolução do atendimento é confirmada.</p>
+  <p class="muted">Ordem sugerida por especialidade: <strong>Periodontia → Cirurgia → Endodontia → Dentística → Prótese</strong> → demais especialidades ao final. Use as setas para reordenar conforme a conduta do profissional. Use a Observação para detalhar o procedimento, ex: "Restauração no dente 34 — Ocluso-Distal (OD)" ou "Restauração no dente 21 — incisal". Ao confirmar a evolução, o dentista indica se o procedimento foi finalizado ou se continua em outra sessão ("Em andamento", com retornos sem custo adicional).</p>
   <div class="overflow"><table><thead><tr><th>Incluir no Orçamento</th><th>#</th><th>Grupo</th><th>Procedimento</th><th>Referência</th><th>Status</th><th>Observação</th><th></th></tr></thead>
   <tbody>${rows}</tbody></table></div>
   <p class="muted" style="margin-top:10px">Marque quais procedimentos devem entrar no Orçamento. Ao confirmar, é gerado um documento do plano e um Orçamento automático com os itens marcados.</p>
@@ -710,7 +730,8 @@ function procedimentoChecksHtml(pacienteId, selectedIds){
   if(!p) return '<p class="muted" style="margin:4px 0">Selecione o paciente primeiro</p>';
   const items=collectPlanoItems(p).filter(it=>it.status!=='Concluído'||selectedIds.includes(it.id));
   if(!items.length) return '<p class="muted" style="margin:4px 0">Nenhum procedimento pendente no plano de tratamento deste paciente</p>';
-  return items.map(it=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;color:var(--text);font-size:14px"><input type="checkbox" data-agproc="${it.id}" data-aglabel="${esc(it.nome+' ('+it.ref+')')}" ${selectedIds.includes(it.id)?'checked':''} style="width:auto;margin-top:3px"><span>${esc(it.especialidade)} — ${esc(it.nome)} (${esc(it.ref)})</span></label>`).join('');
+  return items.map(it=>{ const n=sessoesDe(findProcedimentoRecordById(p,it.id)).length, ret=it.status==='Em andamento'&&n?' · retorno, sessão '+(n+1):'';
+    return `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;color:var(--text);font-size:14px"><input type="checkbox" data-agproc="${it.id}" data-aglabel="${esc(it.nome+' ('+it.ref+')'+(ret?' · Retorno sessão '+(n+1):''))}" ${selectedIds.includes(it.id)?'checked':''} style="width:auto;margin-top:3px"><span>${esc(it.especialidade)} — ${esc(it.nome)} (${esc(it.ref)})${ret?`<span class="muted">${esc(ret)} · sem custo adicional</span>`:''}</span></label>`; }).join('');
 }
 const AG_PALETTE=[1,2,3,4,5,6].map(n=>[`var(--dc${n}-bg)`,`var(--dc${n}-fg)`]);
 function dentistColor(id){
@@ -1896,6 +1917,24 @@ function renderFinanceiro(p){
     </div>`;
   }).join('');
 }
+function refsDaEvol(e){ return e.procedimentoRefs||(e.procedimentoRef?[e.procedimentoRef]:[]); }
+function evolSessoesHtml(p,e,podeConfirmar){
+  if(e.falta) return '';
+  const recs=refsDaEvol(e).map(id=>({id,rec:findProcedimentoRecordById(p,id)})).filter(x=>x.rec && x.rec.status!=='Realizado anteriormente');
+  if(!recs.length) return '';
+  return `<div class="evol-sess">${recs.map(({id,rec})=>{
+    const n=sessoesDe(rec).filter(x=>x.evolId!==e.id).length+1, cont=rec.status==='Concluído'?false:procMultiSessao(rec);
+    const nome=esc(rec.nome)+(rec.arco!==undefined&&rec.arco!==null?'':'');
+    return `<div class="evol-sess-item"><div><strong>${nome}</strong> <span class="muted">· ${n===1?'sessão 1':'retorno, sessão '+n}${n>1?' · sem custo adicional':''}</span>${n>SESSOES_AVISO?`<div class="aviso-sess">Este tratamento já está na sessão ${n}.</div>`:''}</div>
+      ${podeConfirmar?`<div class="evol-sess-op" role="radiogroup" aria-label="Situação de ${nome}">
+        <label><input type="radio" name="sess-${e.id}-${id}" value="fim" ${cont?'':'checked'}> Finalizado nesta sessão</label>
+        <label><input type="radio" name="sess-${e.id}-${id}" value="continua" ${cont?'checked':''}> Continua, precisa de retorno</label></div>`:''}</div>`; }).join('')}</div>`;
+}
+function evolSessoesFeitasHtml(p,e){
+  const info=e.sessoesInfo||{}; const ids=Object.keys(info); if(!ids.length) return '';
+  return `<ul class="evol-sess-feitas">${ids.map(id=>{ const x=info[id]; const rec=findProcedimentoRecordById(p,id);
+    return `<li><strong>${esc((rec&&rec.nome)||x.nome||'Procedimento')}</strong> · ${esc(rotuloSessao(x.n,x.fim))}${x.n>1?' · <span class="muted">sem custo adicional (incluído no orçamento)</span>':''}</li>`; }).join('')}</ul>`;
+}
 function renderEvolucao(p){
   p.evolucao=p.evolucao||[];
   if(!p.evolucao.length){
@@ -1908,6 +1947,7 @@ function renderEvolucao(p){
       return `<div class="card">
       <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-dent">Confirmado</span></p>
       <p class="muted" style="margin:4px 0">Dentista: ${esc(e.dentistaNome)}</p>
+      ${evolSessoesFeitasHtml(p,e)}
       ${e.observacao?`<p style="margin:6px 0">${esc(e.observacao)}</p>`:''}
       <p class="muted" style="font-size:12px;margin:4px 0 0">Confirmado em ${esc(fmtDataBR(e.confirmadoEm))}${e.confirmadoPorNome?' por '+esc(e.confirmadoPorNome)+(e.confirmadoPorCro?' — CRO '+esc(e.confirmadoPorCro):''):''}</p>
       </div>`;
@@ -1915,6 +1955,7 @@ function renderEvolucao(p){
     return `<div class="card">
     <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
     <p class="muted" style="margin:4px 0 10px">Dentista: ${esc(e.dentistaNome)}</p>
+    ${evolSessoesHtml(p,e,podeConfirmar)}
     <label>Observação do dentista</label>
     <textarea data-evolobs="${e.id}" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit">${esc(e.observacao)}</textarea>
     <div style="margin-top:10px">${podeConfirmar?`<button class="btn-p" data-confevol="${e.id}">Confirmar Evolução</button>`:'<span class="muted">Somente um dentista pode confirmar a evolução.</span>'}</div>
@@ -2696,6 +2737,7 @@ async function conferirVersaoBase(){
   if(!alvo || alvo===APP_VERSION){ try{ sessionStorage.removeItem('odonto-redir'); }catch(e){} return false; }
   const url=await urlDaVersao(alvo);
   if(!url){ console.warn('Versão '+alvo+' não está publicada; seguindo na '+APP_VERSION); return false; }
+  const aqui=location.pathname.replace(/index\.html$/,''); if(url===aqui) return false;   // já está no endereço dessa versão
   let n=0; try{ n=+sessionStorage.getItem('odonto-redir')||0; if(n>=3) return false; sessionStorage.setItem('odonto-redir',String(n+1)); }catch(e){}
   nuvemMsg='Abrindo a versão da sua clínica…'; render();
   location.replace(url+location.search+location.hash);
@@ -5521,6 +5563,7 @@ function openProcForm(pr){
       <option value="arcada" ${pr&&pr.escopo==='arcada'?'selected':''}>Por arcada</option>
       <option value="geral" ${pr&&pr.escopo==='geral'?'selected':''}>Geral (sem dente nem arcada)</option></select></div>
   </div>
+  <label class="chk-linha" style="margin-top:10px"><input type="checkbox" id="prMulti" ${(pr&&pr.multiSessao!==undefined?pr.multiSessao:multiSessaoPadrao(sel))?'checked':''}> Pode ter várias sessões (ex.: canal). Os retornos não geram custo: o dentista indica na evolução quando o tratamento terminou.</label>
   <div style="margin-top:16px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelProc" class="btn-s">Cancelar</button></div>
   </form></div>`;
   mostrarFormProc();
@@ -5533,7 +5576,8 @@ function openProcForm(pr){
       nome: prNome.value.trim(),
       valor: parseFloat(prValor.value)||0,
       tempoMin: parseInt(prTempo.value)||0,
-      escopo: prEscopo.value
+      escopo: prEscopo.value,
+      multiSessao: !!document.getElementById('prMulti').checked
     };
     if(isNew) state.procedimentos.push(data); else Object.assign(pr,data);
     saveData(); document.getElementById('procFormArea').innerHTML=''; render();
@@ -5924,6 +5968,24 @@ function bindEvents(){
     const e=p.evolucao.find(x=>x.id===ta.getAttribute('data-evolobs'));
     if(e){ e.observacao=ta.value; saveData(); }
   }));
+  document.querySelectorAll('[data-tratfim]').forEach(b=>b.addEventListener('click',()=>{
+    const p=state.patients.find(x=>x.id===patientDetailId), eu=currentUser();
+    if(!ehDentista(eu)){ avisar('Somente o dentista pode finalizar o tratamento.'); return; }
+    const rec=findProcedimentoRecordById(p,b.getAttribute('data-tratfim')); if(!rec) return;
+    confirmarAcao(`Finalizar "${rec.nome}"? Ele fica como concluído em ${sessoesDe(rec).length} sessão(ões), sem custo adicional.`,'Finalizar',()=>{
+      rec.status='Concluído'; rec.concluidoEm=hojeISO(); rec.finalizadoPorNome=nomeExibicao(eu);
+      const ult=sessoesDe(rec)[sessoesDe(rec).length-1]; if(ult) ult.fim=true;
+      saveData(); render(); });
+  }));
+  document.querySelectorAll('[data-tratreabrir]').forEach(b=>b.addEventListener('click',()=>{
+    const p=state.patients.find(x=>x.id===patientDetailId), eu=currentUser();
+    if(!ehDentista(eu)){ avisar('Somente o dentista pode reabrir o tratamento.'); return; }
+    const rec=findProcedimentoRecordById(p,b.getAttribute('data-tratreabrir')); if(!rec) return;
+    confirmarAcao(`Reabrir "${rec.nome}"? Ele volta para "Em andamento" e você poderá agendar novos retornos, sem custo adicional.`,'Reabrir',()=>{
+      rec.status='Em andamento'; delete rec.concluidoEm; rec.reaberto=(rec.reaberto||[]).concat([{em:new Date().toISOString(),por:nomeExibicao(eu)}]);
+      const ult=sessoesDe(rec)[sessoesDe(rec).length-1]; if(ult) ult.fim=false;
+      saveData(); render(); });
+  }));
   document.querySelectorAll('[data-confevol]').forEach(b=>b.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId);
     const e=p.evolucao.find(x=>x.id===b.getAttribute('data-confevol'));
@@ -5934,10 +5996,18 @@ function bindEvents(){
       e.confirmado=true; e.confirmadoEm=hojeISO(); e.confirmadoEmHora=new Date().toISOString();
       e.confirmadoPorId=eu.id; e.confirmadoPorNome=eu.nomeCompleto; e.confirmadoPorCro=eu.cro||'';
       const refs=e.falta?[]:(e.procedimentoRefs||(e.procedimentoRef?[e.procedimentoRef]:[]));
+      e.sessoesInfo={};
       refs.forEach(id=>{
         const rec=findProcedimentoRecordById(p, id);
-        if(rec) rec.status='Concluído';
+        if(!rec) return;
+        const op=document.querySelector(`input[name="sess-${e.id}-${id}"]:checked`);
+        const fim=op?op.value==='fim':!(rec.status!=='Concluído' && procMultiSessao(rec));
+        rec.sessoes=sessoesDe(rec).filter(x=>x.evolId!==e.id).concat([{evolId:e.id,data:e.data,dentistaNome:nomeExibicao(eu),fim}]);
+        const n=rec.sessoes.length;
+        if(fim){ rec.status='Concluído'; rec.concluidoEm=e.data; } else { rec.status='Em andamento'; delete rec.concluidoEm; }
+        e.sessoesInfo[id]={n,fim,nome:rec.nome};
       });
+      if(!Object.keys(e.sessoesInfo).length) delete e.sessoesInfo;
       saveData(); render();
     }
   }));
