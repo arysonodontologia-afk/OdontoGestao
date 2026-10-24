@@ -37,6 +37,13 @@ if branch == 'main':
                 m.name = m.name[len('docs/'):]
                 try: t.extract(m, dest, filter='data')
                 except TypeError: t.extract(m, dest)
+        # versão anterior: a cada novo acesso volta ao endereço principal, que decide a versão da clínica
+        idx = os.path.join(dest, 'index.html')
+        h = open(idx, encoding='utf-8').read()
+        volta = '<script>(function(){try{var m=/[?&]og_ok=(\\d+)/.exec(location.search);if(m&&Date.now()-(+m[1])<6*3600000)return;}catch(e){}location.replace("/"+location.hash);})();</script>'
+        if 'og_ok' not in h:
+            h = h.replace('<head>', '<head>' + volta, 1)
+            open(idx, 'w', encoding='utf-8').write(h)
         if os.path.exists('docs/config-outro.json'):
             shutil.copy('docs/config-outro.json', os.path.join(dest, 'config-outro.json'))
         lista.append({'v': v, 'commit': sha[:10]})

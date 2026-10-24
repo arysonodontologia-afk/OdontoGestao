@@ -2740,7 +2740,8 @@ async function conferirVersaoBase(){
   const aqui=location.pathname.replace(/index\.html$/,''); if(url===aqui) return false;   // já está no endereço dessa versão
   let n=0; try{ n=+sessionStorage.getItem('odonto-redir')||0; if(n>=3) return false; sessionStorage.setItem('odonto-redir',String(n+1)); }catch(e){}
   nuvemMsg='Abrindo a versão da sua clínica…'; render();
-  location.replace(url+location.search+location.hash);
+  // versões anteriores voltam para o endereço principal a cada novo acesso (og_ok vale por algumas horas)
+  location.replace(url==='/'?('/'+location.hash):(url+'?og_ok='+Date.now()+location.hash));
   return true;
 }
 // ao voltar para o app (ou de tempos em tempos), confere se o administrador liberou outra versão
@@ -5051,7 +5052,7 @@ function carregarVersoesProducao(forcar){
   if(forcar){ prodVersoesLidas=false; prodPlatLida=false; }
   if(!prodVersoesLidas){ prodVersoesLidas=true;
     fetch(PROD_URL+'/versoes.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)
-      .then(async j=>{ if(!j){ const v=await fetch(PROD_URL+'/versao.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null); j=v?{atual:v.versao,versoes:[{v:v.versao}]}:{atual:null,versoes:[]}; }
+      .then(async j=>{ if(!j){ const v=await fetch(PROD_URL+'/versao.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null); j=v?{atual:v.versao,versoes:[{v:v.versao}],semLista:true}:{atual:null,versoes:[],semLista:true}; }
         prodVersoes=j; garantirPadrao(); if(currentTab==='plataforma' && platAba==='clientes' && podeAtualizarSozinho()) render(); }); }
   if(!prodPlatLida && outroLigado){ prodPlatLida=true;
     Nuvem.lerPlataformaOutro('versoes').then(v=>{ prodPlat=v||{}; garantirPadrao(); if(currentTab==='plataforma' && platAba==='clientes' && podeAtualizarSozinho()) render(); })
@@ -5059,7 +5060,7 @@ function carregarVersoesProducao(forcar){
 }
 // na primeira vez, todos os clientes ficam presos na versão que já usam: só muda quem você escolher
 function garantirPadrao(){
-  if(!prodPlat || prodPlat.padrao || !prodVersoes || !prodVersoes.atual || garantirPadrao._ok) return;
+  if(!prodPlat || prodPlat.padrao || !prodVersoes || !prodVersoes.atual || prodVersoes.semLista || garantirPadrao._ok) return;   // só depois que a produção tem a lista de versões
   garantirPadrao._ok=true;
   const v=Object.assign({},prodPlat,{padrao:prodVersoes.atual,clinicas:prodPlat.clinicas||{},hist:(prodPlat.hist||[]).concat([{acao:'padrao',versao:prodVersoes.atual,em:Date.now()}]).slice(-60)});
   Nuvem.salvarPlataformaOutro('versoes',v).then(()=>{ prodPlat=v; render(); }).catch(e=>{ garantirPadrao._ok=false; console.warn(e); });
