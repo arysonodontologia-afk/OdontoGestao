@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.13.0', data:'2026-10-24', itens:[
+    'Atualização por cliente: no ambiente de teste, você escolhe os clientes e envia a versão com um botão',
+    'Cada clínica abre a versão liberada para ela; quem não foi escolhido continua na versão padrão',
+    'Versão do sistema na tela de login e no formulário enviado ao paciente',
+  ]},
   {v:'2.12.0', data:'2026-10-24', itens:[
     'Orçamento: desconto ou acréscimo antes de aprovar, no total (% ou R$) e no valor de cada procedimento',
     'Limite de desconto para a equipe definido pelo Master (Configurações → Clínica); acima dele, só o Master',

@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -39,6 +41,7 @@ jobs:
           # configuração pública do outro ambiente (ponte do administrador entre teste e produção)
           curl -fsS "$OUTRO/__/firebase/init.json" -o docs/config-outro.json || echo "::warning::Não foi possível ler a configuração de $OUTRO"
           echo "Configuração do outro ambiente: $(python3 -c 'import json;print(json.load(open("docs/config-outro.json"))["projectId"])' 2>/dev/null)"
+          python3 .github/montar_site.py || exit 1
           echo "Publicando no projeto: $ALVO"
           npx --yes firebase-tools@13 deploy --project "$ALVO" --only hosting,firestore:rules --non-interactive 2>&1 | tee "$RUNNER_TEMP/saida.txt"
           st=${PIPESTATUS[0]}

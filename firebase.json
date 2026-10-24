@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "docs",
+    "public": "publico",
     "cleanUrls": false,
     "headers": [
       {
@@ -36,6 +36,28 @@
             "key": "Access-Control-Allow-Origin",
             "value": "*"
           },
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/versoes.json",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/v/**/versao.json",
+        "headers": [
           {
             "key": "Cache-Control",
             "value": "no-store"

@@ -295,6 +295,10 @@ async function conectarOutro(){
 async function clinicasOutro(){ const t=await ponteOutro(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id})); }
 async function atualizarClinicaOutro(cid,mud){ const t=await ponteOutro(); await F.updateDoc(F.doc(t.db,'clinicas',cid),mud); }
 async function salvarVitrineOutro(v){ const t=await ponteOutro(); if(t.user) await F.setDoc(F.doc(t.db,'plataforma','vitrine'),v); }
+// versões por cliente (plataforma/versoes = {padrao, clinicas:{cid:versão}, hist:[...]})
+async function lerPlataforma(id){ try{ const s=await F.getDoc(F.doc(db,'plataforma',id)); return s.exists()?s.data():null; }catch(e){ return null; } }
+async function lerPlataformaOutro(id){ const t=await ponteOutro(); const s=await F.getDoc(F.doc(t.db,'plataforma',id)); return s.exists()?s.data():null; }
+async function salvarPlataformaOutro(id,v){ const t=await ponteOutro(); await F.setDoc(F.doc(t.db,'plataforma',id),v); }
 // vitrine (planos e melhorias previstas que as clínicas veem)
 async function lerVitrine(){ try{ const s=await F.getDoc(F.doc(db,'plataforma','vitrine')); return s.exists()?s.data():null; }catch(e){ return null; } }
 function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); }
@@ -657,7 +661,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine, lerPlataforma, lerPlataformaOutro, salvarPlataformaOutro,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };
