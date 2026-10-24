@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.10.2', data:'2026-10-24', itens:[
+    'Cadastro do dentista com WhatsApp (obrigatório) e opção de receber a agenda do dia às 07:30',
+    'Usuários: aviso nos dentistas que ainda não têm WhatsApp cadastrado',
+  ]},
   {v:'2.10.1', data:'2026-10-23', itens:[
     'Dentista pode cadastrar paciente novo, inclusive direto do agendamento (botão "+ Novo paciente"), no computador e no celular',
   ]},

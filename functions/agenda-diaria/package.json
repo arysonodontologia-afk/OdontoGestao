@@ -1,0 +1,11 @@
+{
+  "name": "odontogestao-agenda-diaria",
+  "description": "OdontoGestão — agenda do dia para os dentistas às 07:30 (INSTALAÇÃO FUTURA: ver LEIAME.md)",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}
