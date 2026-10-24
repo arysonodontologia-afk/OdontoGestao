@@ -2580,7 +2580,7 @@ function telaNuvem(conteudo){
       <svg class="login-arte" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.2 3.5c-2.4 0-4 1.9-4 4.6 0 2.2.8 3.6 1.5 5.4.7 1.9.9 3.6 1.3 5.3.3 1.3.9 2.2 1.8 2.2 1.2 0 1.5-1.3 1.8-2.9.3-1.6.7-3.4 2.4-3.4s2.1 1.8 2.4 3.4c.3 1.6.6 2.9 1.8 2.9.9 0 1.5-.9 1.8-2.2.4-1.7.6-3.4 1.3-5.3.7-1.8 1.5-3.2 1.5-5.4 0-2.7-1.6-4.6-4-4.6-1.9 0-2.9 1-4.8 1s-2.9-1-4.8-1z"/><path d="M8 5.2c-1.6 0-2.7 1.3-2.7 3.1 0 1.5.5 2.5 1 3.7"/></svg>
       <div style="position:relative;z-index:1"><p class="login-frase">Prontuário, agenda e financeiro da clínica, juntos.</p>
       <p class="login-frase-sub">O que a recepção marca aparece no consultório e no celular do dentista na mesma hora.</p></div>
-      <p class="login-lado-rodape">Dados protegidos e guardados no Brasil (São Paulo).</p>
+      <div class="login-lado-rodape"><p style="margin:0">Dados protegidos e guardados no Brasil (São Paulo).</p><p class="login-lado-versao">${esc(rotuloLogin())}</p></div>
     </aside>
     <main class="login-principal"><div class="login-tema">${btnTemaHtml()}</div><div class="login-card">
       <div class="login-marca"><span class="login-logo">${ICONES.dente}</span><div><div class="login-nome">OdontoGestão</div><div class="muted">Sistema da clínica</div></div></div>
