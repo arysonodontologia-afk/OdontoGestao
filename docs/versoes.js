@@ -9,6 +9,12 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.14.0', data:'2026-10-24', itens:[
+    'Tratamentos em várias sessões (ex.: canal): na evolução o dentista indica "Finalizado nesta sessão" ou "Continua, precisa de retorno"',
+    'Retornos sem custo adicional, com a sessão indicada na agenda e na evolução (início, retornos e finalização)',
+    'Plano de tratamento com "Em andamento", número de sessões, aviso acima de 3 sessões e botões Finalizar/Reabrir (só dentista)',
+    'Tabela de procedimentos: opção "Pode ter várias sessões" (ortodontia fica de fora: cada manutenção tem valor)',
+  ]},
   {v:'2.13.0', data:'2026-10-24', itens:[
     'Atualização por cliente: no ambiente de teste, você escolhe os clientes e envia a versão com um botão',
     'Cada clínica abre a versão liberada para ela; quem não foi escolhido continua na versão padrão',
