@@ -9,6 +9,13 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.11.0', data:'2026-10-23', itens:[
+    'Todas as datas no padrão dd/mm/aaaa, inclusive nos campos de data (digitando ou pelo calendário)',
+    'WhatsApp comercial da clínica obrigatório no cadastro: é por ele que saem agendamentos, lembretes e confirmações',
+    'Antes do primeiro envio, o sistema lembra de conferir se o WhatsApp aberto é o comercial da clínica',
+    'Agendamento: paciente pesquisado digitando o nome, CPF ou telefone; se não existir, oferece cadastrar na hora',
+    'Agendamento: tratamento direto da tabela de procedimentos (paciente sem plano), que entra sozinho no plano de tratamento e na evolução',
+  ]},
   {v:'2.10.2', data:'2026-10-24', itens:[
     'Cadastro do dentista com WhatsApp (obrigatório) e opção de receber a agenda do dia às 07:30',
     'Usuários: aviso nos dentistas que ainda não têm WhatsApp cadastrado',

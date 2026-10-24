@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.10.2';
+const APP_VERSION='2.11.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -719,13 +719,23 @@ function bellHtml(u){
 function abrirWhatsApp(pc,msg,aoAbrir){
   const fone=telefoneWhatsApp(pc&&pc.telefone);
   if(!fone){ avisar('Este paciente não tem telefone cadastrado.'); return; }
+  const zc=(state.clinic||{}).whatsapp||'';
+  if(soDigitos(zc).length<10){ avisar('Cadastre o WhatsApp comercial da clínica em Configurações → Clínica. É por ele que saem os agendamentos, lembretes e confirmações.'); return; }
+  let conferido=false; try{ conferido=sessionStorage.getItem('odonto-zap-ok')===zc; }catch(e){}
+  if(!conferido){
+    customConfirm(`Os envios aos pacientes saem pelo WhatsApp comercial da clínica, ${zc}. Confira se é esse o WhatsApp aberto neste aparelho (no computador, o WhatsApp Web conectado a esse número).`,()=>{
+      try{ sessionStorage.setItem('odonto-zap-ok',zc); }catch(e){}
+      abrirWhatsApp(pc,msg,aoAbrir);
+    },'Continuar');
+    return;
+  }
   const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank');
   if(w){ try{ w.opener=null; }catch(e){} if(aoAbrir) aoAbrir(); }
   else mostrarMensagem('O navegador bloqueou a abertura do WhatsApp. Copie a mensagem e envie para '+(pc.telefone||fone)+':',msg,aoAbrir);
 }
 function mensagemContatoNao(a,pc){
   const c=state.clinic||{}, dt=new Date(a.data+'T00:00:00');
-  const dm=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  const dm=fmtDataBR(a.data), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
   return `Olá, ${(pc.nome||'').split(' ')[0]}! Aqui é da ${c.nome||'clínica'}. Vimos que você não poderá comparecer ao seu atendimento do dia ${dm} (${sem}), às ${a.horario}. Podemos remarcar? Me diga quais dias e horários ficam melhores para você.`;
 }
 function avisosHtml(u,semCaixa){
@@ -770,7 +780,7 @@ function telefoneWhatsApp(tel){ let d=(tel||'').replace(/\D/g,''); if(!d) return
 function mensagemLembrete(a,pc){
   const c=state.clinic||{};
   const dt=new Date(a.data+'T00:00:00');
-  const dm=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
+  const dm=fmtDataBR(a.data), sem=dt.toLocaleDateString('pt-BR',{weekday:'long'});
   const oque=a.tipo==='avaliacao'?'da sua avaliação':'do seu atendimento';
   return `Olá, ${(pc.nome||'').split(' ')[0]}! Aqui é da ${c.nome||'clínica'}. Lembramos ${oque} com ${a.dentistaNome} no dia ${dm} (${sem}), às ${a.horario}. Podemos confirmar sua presença? Responda SIM para confirmar ou nos avise se precisar remarcar.`;
 }
@@ -882,7 +892,7 @@ function rotuloPeriodoAgenda(){
   if(agendaViewMode==='mes'){ const t=new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
   return fmtDiaSemana(agendaViewDate)+', '+fmtDataLonga(agendaViewDate);
 }
-function fmtDataLonga(iso){ return new Date(iso+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); }
+function fmtDataLonga(iso){ return fmtDataBR(iso); }
 function fmtIntervalo(a,b){
   const da=new Date(a+'T00:00:00'), db=new Date(b+'T00:00:00');
   const mes=d=>d.toLocaleDateString('pt-BR',{month:'long'});
@@ -1071,10 +1081,67 @@ function renderAgendaCelular(){
   <div class="cel-lista">${itens.join('')||'<p class="muted" style="text-align:center;margin:28px 0">Nenhum atendimento neste dia.</p>'}</div>`;
 }
 // cadastro rápido de paciente direto do agendamento (dentista, recepção, Master)
+// tratamento direto no agendamento (paciente de porta, sem plano): escolhe da tabela de procedimentos
+const DENTES_VALIDOS=new Set([...PERM_UPPER,...PERM_LOWER,...DECID_UPPER,...DECID_LOWER].map(d=>String(d.n)));
+function bindTratamentoDireto(){
+  const inp=document.getElementById('agTratBusca'), res=document.getElementById('agTratRes'), box=document.getElementById('agTratSel');
+  const sel=[];
+  const api={montar(){
+    if(!sel.length) return {erro:'Escolha ao menos um tratamento: digite o nome e toque nele na lista.'};
+    const itens=[]; let tempo=0;
+    for(const x of sel){
+      const pr=state.procedimentos.find(p=>p.id===x.procId); if(!pr) continue;
+      const base=()=>({id:uid(),procId:pr.id,nome:pr.nome,especialidade:pr.especialidade,valor:pr.valor,tempoMin:pr.tempoMin,status:'Planejado',origem:'agendamento'});
+      if((pr.escopo||'dente')==='dente'){
+        const ns=String(x.dentes||'').split(/[^0-9]+/).filter(Boolean);
+        if(!ns.length) return {erro:'Informe o dente de "'+pr.nome+'" (numeração 11 a 48; decíduos 51 a 85).'};
+        const inval=ns.filter(n=>!DENTES_VALIDOS.has(n)); if(inval.length) return {erro:'Dente inválido em "'+pr.nome+'": '+inval.join(', ')+'. Use a numeração 11 a 48 (decíduos 51 a 85).'};
+        [...new Set(ns)].forEach(n=>{ itens.push({n,rec:base()}); tempo+=(+pr.tempoMin||0); });
+      } else { const r=base(); r.arco=pr.escopo==='geral'?'':(x.arco||'ambos'); itens.push({n:null,rec:r}); tempo+=(+pr.tempoMin||0); }
+    }
+    return {itens,tempo};
+  }};
+  if(!inp||!res||!box) return api;
+  const desenharSel=()=>{
+    box.innerHTML=sel.map((x,i)=>{ const pr=state.procedimentos.find(p=>p.id===x.procId)||{}; const esc_=pr.escopo||'dente';
+      return `<div class="ag-trat-item"><div class="ag-trat-nome"><strong>${esc(pr.nome||'')}</strong><span class="muted"> · ${esc(pr.especialidade||'')}${pr.valor?' · '+fmtMoney(pr.valor):''}</span></div>
+        ${esc_==='dente'?`<input data-tdente="${i}" inputmode="numeric" placeholder="Dente(s): ex. 16 ou 16, 17" value="${esc(x.dentes||'')}" aria-label="Dente">`:esc_==='arcada'?`<select data-tarco="${i}" aria-label="Arcada"><option value="ambos" ${x.arco==='ambos'?'selected':''}>Ambas as arcadas</option><option value="superior" ${x.arco==='superior'?'selected':''}>Superior</option><option value="inferior" ${x.arco==='inferior'?'selected':''}>Inferior</option></select>`:'<span class="muted" style="font-size:12.5px">Geral</span>'}
+        <button type="button" class="btn-s" data-trm="${i}" aria-label="Remover">Remover</button></div>`; }).join('');
+    box.querySelectorAll('[data-tdente]').forEach(e=>e.addEventListener('input',()=>{ sel[+e.getAttribute('data-tdente')].dentes=e.value; }));
+    box.querySelectorAll('[data-tarco]').forEach(e=>e.addEventListener('change',()=>{ sel[+e.getAttribute('data-tarco')].arco=e.value; }));
+    box.querySelectorAll('[data-trm]').forEach(b=>b.addEventListener('click',()=>{ sel.splice(+b.getAttribute('data-trm'),1); desenharSel(); }));
+  };
+  let itens=[], ativo=-1;
+  const fechar=()=>{ res.hidden=true; ativo=-1; };
+  const escolher=pr=>{ sel.push({procId:pr.id,dentes:'',arco:'ambos'}); inp.value=''; fechar(); desenharSel(); const ult=box.querySelector(`[data-tdente="${sel.length-1}"]`); if(ult) ult.focus(); };
+  const marcar=()=>res.querySelectorAll('.busca-item').forEach((b,i)=>b.classList.toggle('sel',i===ativo));
+  const desenhar=()=>{
+    ensureProcedimentos();
+    const q=normTxt(inp.value.trim()); if(!q){ fechar(); return; }
+    const pal=q.split(/\s+/).filter(Boolean);
+    itens=state.procedimentos.filter(p=>{ const t=normTxt(p.nome+' '+(p.especialidade||'')); return pal.every(w=>t.includes(w)); })
+      .sort((x,y)=>(normTxt(x.nome).startsWith(q)?0:1)-(normTxt(y.nome).startsWith(q)?0:1) || x.nome.localeCompare(y.nome)).slice(0,10);
+    res.innerHTML=itens.map((p,i)=>`<button type="button" class="busca-item" data-i="${i}"><span><span class="busca-item-nome">${esc(p.nome)}</span><span class="busca-item-sub" style="display:block">${esc(p.especialidade||'')} · ${escopoLabel(p.escopo||'dente')}${p.valor?' · '+fmtMoney(p.valor):''}${p.tempoMin?' · '+p.tempoMin+' min':''}</span></span></button>`).join('')
+      ||`<div class="busca-vazio">Nenhum tratamento encontrado para “${esc(inp.value.trim())}”. Cadastre em Configurações → Procedimentos.</div>`;
+    res.hidden=false; ativo=itens.length?0:-1; marcar();
+    res.querySelectorAll('[data-i]').forEach(b=>b.addEventListener('mousedown',ev=>{ ev.preventDefault(); escolher(itens[+b.getAttribute('data-i')]); }));
+  };
+  inp.addEventListener('input',desenhar);
+  inp.addEventListener('blur',()=>setTimeout(fechar,150));
+  inp.addEventListener('keydown',ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); if(!res.hidden && ativo>=0 && itens[ativo]) escolher(itens[ativo]); return; }
+    if(res.hidden) return;
+    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(itens.length){ ativo=(ativo+1)%itens.length; marcar(); } }
+    else if(ev.key==='ArrowUp'){ ev.preventDefault(); if(itens.length){ ativo=(ativo-1+itens.length)%itens.length; marcar(); } }
+    else if(ev.key==='Escape') fechar();
+  });
+  box.addEventListener('keydown',ev=>{ if(ev.key==='Enter' && ev.target.matches('input')) ev.preventDefault(); });
+  return api;
+}
 function bindNovoPacienteRapido(){
   const btn=document.getElementById('btnAgNovoPac'), area=document.getElementById('agNovoPacArea'); if(!btn||!area) return;
-  btn.addEventListener('click',()=>{
-    if(area.innerHTML){ area.innerHTML=''; return; }
+  const abrir=(nomeIni,alternar)=>{
+    if(area.innerHTML && alternar){ area.innerHTML=''; return; }
     area.innerHTML=`<div class="ag-novo-pac"><p style="margin:0 0 8px"><strong>Cadastrar paciente</strong> <span class="muted">· o restante do cadastro pode ser completado depois, em Pacientes</span></p>
       <div class="row"><div><label for="npNome">Nome completo *</label><input id="npNome" autocomplete="off"></div>
       <div><label for="npTel">Telefone (WhatsApp) *</label><input id="npTel" type="tel" inputmode="tel" placeholder="(00) 00000-0000"></div></div>
@@ -1106,9 +1173,51 @@ function bindNovoPacienteRapido(){
       const sel=q('agPaciente');
       if(!sel.querySelector(`option[value="${pac.id}"]`)){ const o=document.createElement('option'); o.value=pac.id; o.textContent=pac.nome; sel.appendChild(o); }
       sel.value=pac.id; sel.dispatchEvent(new Event('change',{bubbles:true}));
+      const bi=q('agPacBusca'); if(bi) bi.value=pac.nome;
       area.innerHTML=''; avisar(dup?'Este paciente já estava cadastrado e foi selecionado.':'Paciente cadastrado e selecionado no agendamento.');
     });
-    q('npNome').focus();
+    if(nomeIni){ const d=soDigitos(nomeIni); if(d.length>=10 && d.length===nomeIni.replace(/[\s().-]/g,'').length) q('npTel').value=mascaraTel(d); else q('npNome').value=nomeIni; }
+    q(q('npNome').value?'npTel':'npNome').focus();
+  };
+  btn.addEventListener('click',()=>abrir('',true));
+  novoPacienteRapido=abrir;
+}
+let novoPacienteRapido=null;
+// busca de paciente no agendamento: digita e vai filtrando
+function bindBuscaPacienteAg(){
+  const inp=document.getElementById('agPacBusca'), res=document.getElementById('agPacRes'), sel=document.getElementById('agPaciente');
+  if(!inp||!res||!sel) return;
+  let itens=[], ativo=-1;
+  const fechar=()=>{ res.hidden=true; inp.setAttribute('aria-expanded','false'); ativo=-1; };
+  const escolher=p=>{
+    if(!sel.querySelector(`option[value="${p.id}"]`)){ const o=document.createElement('option'); o.value=p.id; o.textContent=p.nome; sel.appendChild(o); }
+    sel.value=p.id; inp.value=p.nome; fechar(); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+  const marcar=()=>res.querySelectorAll('.busca-item').forEach((b,i)=>{ b.classList.toggle('sel',i===ativo); b.setAttribute('aria-selected',i===ativo?'true':'false'); if(i===ativo) b.scrollIntoView({block:'nearest'}); });
+  const desenhar=()=>{
+    const t=inp.value.trim(), q=normTxt(t), qd=soDigitos(t);
+    if(!q){ fechar(); return; }
+    const pal=q.split(/\s+/).filter(Boolean);
+    itens=state.patients.filter(p=>{ const n=normTxt(p.nome); return pal.every(w=>n.includes(w)) || (qd.length>=3 && (soDigitos(p.cpf).includes(qd)||soDigitos(p.telefone).includes(qd))); })
+      .sort((x,y)=>{ const a=normTxt(x.nome).startsWith(q)?0:1, b=normTxt(y.nome).startsWith(q)?0:1; return a-b || (x.nome||'').localeCompare(y.nome||''); }).slice(0,8);
+    const podeNovo=!!document.getElementById('btnAgNovoPac');
+    res.innerHTML=itens.map((p,i)=>{ const idade=calcAge(p.nascimento); const sub=[idade!==null?idade+' anos':'',p.telefone||'',p.cpf?'CPF '+p.cpf:''].filter(Boolean).join(' · ');
+      return `<button type="button" class="busca-item" role="option" data-i="${i}"><span class="avatar">${esc(iniciais(p.nome))}</span><span><span class="busca-item-nome">${esc(p.nome)}</span>${sub?`<span class="busca-item-sub" style="display:block">${esc(sub)}</span>`:''}</span></button>`; }).join('')
+      +(itens.length?'':`<div class="busca-vazio">Nenhum paciente encontrado para “${esc(t)}”.${podeNovo?' Deseja cadastrar um novo paciente?':''}</div>`)
+      +(podeNovo?`<button type="button" class="busca-item ag-pac-novo" data-novo>${itens.length?'+ Não está na lista? Cadastrar novo paciente':'+ Cadastrar “'+esc(t)+'” como novo paciente'}</button>`:'');
+    res.hidden=false; inp.setAttribute('aria-expanded','true'); ativo=itens.length?0:-1; marcar();
+    res.querySelectorAll('[data-i]').forEach(b=>b.addEventListener('mousedown',ev=>{ ev.preventDefault(); escolher(itens[+b.getAttribute('data-i')]); }));
+    const nv=res.querySelector('[data-novo]'); if(nv) nv.addEventListener('mousedown',ev=>{ ev.preventDefault(); fechar(); if(novoPacienteRapido) novoPacienteRapido(itens.length?'':t); });
+  };
+  inp.addEventListener('input',()=>{ if(sel.value){ const p=pacPorId(sel.value); if(!p||p.nome!==inp.value){ sel.value=''; sel.dispatchEvent(new Event('change',{bubbles:true})); } } desenhar(); });
+  inp.addEventListener('focus',()=>{ if(inp.value.trim() && !sel.value) desenhar(); });
+  inp.addEventListener('blur',()=>setTimeout(fechar,150));
+  inp.addEventListener('keydown',ev=>{
+    if(res.hidden){ if(ev.key==='Enter') ev.preventDefault(); return; }
+    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(itens.length){ ativo=(ativo+1)%itens.length; marcar(); } }
+    else if(ev.key==='ArrowUp'){ ev.preventDefault(); if(itens.length){ ativo=(ativo-1+itens.length)%itens.length; marcar(); } }
+    else if(ev.key==='Enter'){ ev.preventDefault(); if(ativo>=0 && itens[ativo]) escolher(itens[ativo]); else if(!itens.length && novoPacienteRapido && document.getElementById('btnAgNovoPac')){ const t=inp.value.trim(); fechar(); novoPacienteRapido(t); } }
+    else if(ev.key==='Escape'){ fechar(); }
   });
 }
 function openAgendamentoForm(a){
@@ -1117,8 +1226,9 @@ function openAgendamentoForm(a){
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
   <form id="fAgendamento">
-  <label for="agPaciente">Paciente</label>
-  <div class="ag-pac-linha"><select id="agPaciente" required>
+  <label for="agPacBusca">Paciente</label>
+  <div class="ag-pac-linha"><div class="ag-pac-busca"><input id="agPacBusca" type="search" autocomplete="off" placeholder="Digite o nome, CPF ou telefone do paciente" role="combobox" aria-expanded="false" aria-controls="agPacRes" aria-autocomplete="list" value="${esc(a&&a.pacienteId?((pacPorId(a.pacienteId)||{}).nome||a.pacienteNome||''):'')}"><div class="busca-res" id="agPacRes" role="listbox" hidden></div></div>
+  <select id="agPaciente" hidden aria-hidden="true" tabindex="-1">
     <option value="">Selecione</option>
     ${state.patients.slice().sort((x,y)=>(x.nome||'').localeCompare(y.nome||'')).map(p=>`<option value="${p.id}" ${a&&a.pacienteId===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}
   </select>${permsDe(currentUser()).pacientes?'<button type="button" class="btn-s" id="btnAgNovoPac">+ Novo paciente</button>':''}</div>
@@ -1134,7 +1244,14 @@ function openAgendamentoForm(a){
   <select id="agTipo">
     <option value="avaliacao" ${(!a||a.tipo==='avaliacao')?'selected':''}>Avaliação</option>
     <option value="procedimento" ${a&&a.tipo==='procedimento'?'selected':''}>Procedimento do Plano de Tratamento</option>
+    ${isNew?'<option value="tratamento">Tratamento direto (paciente sem plano), da tabela de procedimentos</option>':''}
   </select>
+  <div id="agTratWrap" style="display:none">
+    <label for="agTratBusca">Tratamentos a realizar</label>
+    <div class="ag-pac-busca"><input id="agTratBusca" type="search" autocomplete="off" placeholder="Digite o nome do tratamento (ex.: restauração, limpeza, extração)"><div class="busca-res" id="agTratRes" hidden></div></div>
+    <div id="agTratSel"></div>
+    <p class="muted" style="margin:6px 0 0;font-size:12.5px">Ao salvar, os tratamentos entram automaticamente no plano de tratamento (odontograma) e na evolução do paciente.</p>
+  </div>
   <div id="agProcWrap" style="display:${a&&a.tipo==='procedimento'?'block':'none'}">
     <label>Procedimentos do plano (marque um ou mais)</label>
     <div id="agProcedimento">${a&&a.pacienteId?procedimentoChecksHtml(a.pacienteId,a.procedimentoRefs||(a.procedimentoRef?[a.procedimentoRef]:[])):'<p class="muted" style="margin:4px 0">Selecione o paciente primeiro</p>'}</div>
@@ -1143,12 +1260,16 @@ function openAgendamentoForm(a){
   <div style="margin-top:14px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelAg" class="btn-s">Cancelar</button></div>
   </form></div>`;
   bindNovoPacienteRapido();
+  bindBuscaPacienteAg();
+  const trat=bindTratamentoDireto();
   document.getElementById('agPaciente').addEventListener('change', e=>{
     const sel=document.getElementById('agProcedimento');
     if(sel) sel.innerHTML=procedimentoChecksHtml(e.target.value,[]);
   });
   document.getElementById('agTipo').addEventListener('change', e=>{
     document.getElementById('agProcWrap').style.display=e.target.value==='procedimento'?'block':'none';
+    document.getElementById('agTratWrap').style.display=e.target.value==='tratamento'?'block':'none';
+    if(e.target.value==='tratamento') setTimeout(()=>{ const t=document.getElementById('agTratBusca'); if(t) t.focus(); },0);
     if(e.target.value==='procedimento'){
       const pid=document.getElementById('agPaciente').value;
       document.getElementById('agProcedimento').innerHTML=procedimentoChecksHtml(pid,[]);
@@ -1159,6 +1280,7 @@ function openAgendamentoForm(a){
     ev.preventDefault();
     const pacienteId=document.getElementById('agPaciente').value;
     const paciente=state.patients.find(x=>x.id===pacienteId);
+    if(!paciente){ avisar('Escolha o paciente: digite o nome e toque nele na lista (ou cadastre um novo).'); const bi=document.getElementById('agPacBusca'); if(bi) bi.focus(); return; }
     const dentistaId=document.getElementById('agDentista').value;
     const dentista=state.users.find(x=>x.id===dentistaId);
     const tipo=document.getElementById('agTipo').value;
@@ -1169,16 +1291,24 @@ function openAgendamentoForm(a){
       procedimentoRefs=checks.map(c=>c.getAttribute('data-agproc'));
       procedimentoNome=checks.map(c=>c.getAttribute('data-aglabel')).join(' + ');
     }
+    let tratNovos=null, tratTempo=0;
+    if(tipo==='tratamento'){
+      const r=trat.montar(); if(r.erro){ avisar(r.erro); return; }
+      tratNovos=r.itens; tratTempo=r.tempo;
+      procedimentoRefs=r.itens.map(x=>x.rec.id);
+      procedimentoNome=r.itens.map(x=>x.rec.nome+' ('+(x.n?'Dente '+x.n:x.rec.arco?'Arcada '+arcoLabel(x.rec.arco):'Geral')+')').join(' + ');
+    }
     const data={
       id: isNew?uid():a.id,
       pacienteId, pacienteNome: paciente?paciente.nome:'',
       dentistaId, dentistaNome: dentista?nomeExibicao(dentista):'',
       data: document.getElementById('agDataForm').value,
       horario: document.getElementById('agHorarioForm').value,
-      tipo, procedimentoNome, procedimentoRefs, procedimentoRef:procedimentoRefs[0]||null,
+      tipo:tipo==='tratamento'?'procedimento':tipo, procedimentoNome, procedimentoRefs, procedimentoRef:procedimentoRefs[0]||null,
       observacao: document.getElementById('agObs').value
     };
-    data.duracaoMin=duracaoAgendamento(data,paciente);
+    if(tratNovos) data.tratamentoDireto=true;
+    data.duracaoMin=tratNovos?(tratTempo||(state.clinic&&+state.clinic.duracaoPadrao)||30):duracaoAgendamento(data,paciente);
     const selCad=document.getElementById('agCadeira');
     if(nCadeiras()>1){ data.cadeira=selCad&&selCad.value?parseInt(selCad.value,10):(cadeiraLivre(data)||1); } else data.cadeira=1;
     const conflitos=conflitosAgenda(data);
@@ -1187,6 +1317,15 @@ function openAgendamentoForm(a){
       if(!isNew && (a.data!==data.data || a.horario!==data.horario)){
         data.remarcacoes=[...(a.remarcacoes||[]),{deData:a.data,deHorario:a.horario,paraData:data.data,paraHorario:data.horario,em:new Date().toISOString()}];
         data.status='agendado'; data.lembreteEnviadoEm=''; data.motivoCancelamento=''; resolverAvisos(data.id);
+      }
+      if(tratNovos && paciente){
+        // tratamento escolhido direto: entra no plano (odontograma) do paciente
+        paciente.odonto=paciente.odonto||{dentes:{},gerais:[]}; paciente.odonto.dentes=paciente.odonto.dentes||{}; paciente.odonto.gerais=paciente.odonto.gerais||[];
+        tratNovos.forEach(x=>{ x.rec.agendamentoId=data.id;
+          if(x.n){ const d=paciente.odonto.dentes[x.n]=paciente.odonto.dentes[x.n]||{procedimentos:[]}; d.procedimentos=d.procedimentos||[]; d.procedimentos.push(x.rec); }
+          else paciente.odonto.gerais.push(x.rec); });
+        paciente.planoTratamento=(paciente.planoTratamento||[]).concat(tratNovos.map(x=>x.rec.id).filter(id=>!(paciente.planoTratamento||[]).includes(id)));
+        tratNovos=null;
       }
       if(isNew) state.agendamentos.push(data); else Object.assign(a,data);
       if(paciente && (isNew || statusAg(a)!=='cancelado' || data.remarcacoes)){
@@ -1595,9 +1734,9 @@ function renderFluxoFinanceiro(){
     const situacao=e.confirmado?'Realizado':(despesa?'Pendente':'Entrada Prevista');
     const situacaoClass=e.confirmado?'b-dent':(despesa?'b-harm':'b-recep');
     const pagCell=e.confirmado
-      ? `${esc(e.dataPagamento)} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
+      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
       : `<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
-    return `<tr><td>${esc(e.vencimento)}</td>
+    return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
     <td>${esc(despesa?(e.fornecedor||'-'):e.pacienteNome)}</td>
     <td>${esc(e.label)}</td><td>${fmtMoney(e.valor)}</td>
@@ -1652,10 +1791,10 @@ function renderFinanceiro(p){
     const comEntrada=pag.condicao==='parcelado_com';
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
     const parcelas=calcParcelas(o);
-    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${fmtMoney(pc.valor)}</td><td>${pc.vencimento}</td></tr>`).join('');
+    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
     return `<div class="card">
-    <h3>Orçamento aprovado — ${esc(o.data)}</h3>
-    <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(o.dataAprovacao||o.data)}</p>
+    <h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))}</h3>
+    <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(fmtDataBR(o.dataAprovacao||o.data))}</p>
     <div class="row">
       <div><label>Condição de pagamento</label>
         <select data-finfield="condicao" data-orcid="${o.id}">
@@ -1696,14 +1835,14 @@ function renderEvolucao(p){
   const items=list.map(e=>{
     if(e.confirmado){
       return `<div class="card">
-      <p style="margin:0"><strong>${esc(e.data)} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-dent">Confirmado</span></p>
+      <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-dent">Confirmado</span></p>
       <p class="muted" style="margin:4px 0">Dentista: ${esc(e.dentistaNome)}</p>
       ${e.observacao?`<p style="margin:6px 0">${esc(e.observacao)}</p>`:''}
       <p class="muted" style="font-size:12px;margin:4px 0 0">Confirmado em ${esc(fmtDataBR(e.confirmadoEm))}${e.confirmadoPorNome?' por '+esc(e.confirmadoPorNome)+(e.confirmadoPorCro?' — CRO '+esc(e.confirmadoPorCro):''):''}</p>
       </div>`;
     }
     return `<div class="card">
-    <p style="margin:0"><strong>${esc(e.data)} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
+    <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
     <p class="muted" style="margin:4px 0 10px">Dentista: ${esc(e.dentistaNome)}</p>
     <label>Observação do dentista</label>
     <textarea data-evolobs="${e.id}" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit">${esc(e.observacao)}</textarea>
@@ -1758,7 +1897,7 @@ function renderExameClinico(p){
     exameOpenId=null;
   }
   const list=p.examesClinicos.slice().sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
-  const rows=list.map(e=>`<tr><td>${esc(e.data)} ${esc(e.hora)}</td>
+  const rows=list.map(e=>`<tr><td>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</td>
     <td>${e.dentistaNome?esc(e.dentistaNome)+' — CRO '+esc(e.dentistaCro):'-'}</td>
     <td><span class="badge ${e.finalizado?'b-dent':'b-recep'}">${e.finalizado?'Finalizado':'Rascunho'}</span></td>
     <td class="actions"><button class="btn-s" data-viewexame="${e.id}">${e.finalizado?'Visualizar':'Continuar preenchimento'}</button>
@@ -1796,7 +1935,7 @@ function renderExameClinicoView(ex){
     return `<div class="section-title">${g.titulo}</div><div class="info-grid">${boxes}</div>`;
   }).join('');
   return `<div class="card"><h3 style="margin-top:0">Exame Clínico</h3>
-  <p class="muted">${esc(ex.data)} às ${esc(ex.hora)} · Dentista: <strong>${esc(ex.dentistaNome)}</strong> — CRO ${esc(ex.dentistaCro)} · Documento finalizado (somente leitura)</p>
+  <p class="muted">${esc(fmtDataBR(ex.data))} às ${esc(ex.hora)} · Dentista: <strong>${esc(ex.dentistaNome)}</strong> — CRO ${esc(ex.dentistaCro)} · Documento finalizado (somente leitura)</p>
   ${grupos}
   <div style="margin-top:16px"><button class="btn-s" id="btnBackExame">Voltar</button></div></div>`;
 }
@@ -1824,7 +1963,10 @@ function renderDocumentacao(p){
 }
 function fmtDataBR(iso){
   if(!iso) return '';
-  const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`;
+  if(typeof iso==='number'||iso instanceof Date){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso)); if(!m) return String(iso);
+  if(String(iso).length>10){ const d=new Date(iso); if(!isNaN(d)) return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 function dentistaOptionsHtml(selectedId, comCro){
   if(comCro===undefined) comCro=true;
@@ -2046,11 +2188,11 @@ function avisar(message){
   document.body.appendChild(bg);
   document.getElementById('avOk').addEventListener('click',()=>{ document.body.removeChild(bg); });
 }
-function customConfirm(message, onYes){
+function customConfirm(message, onYes, rotulo){
   const bg=document.createElement('div'); bg.className='modal-bg';
   bg.innerHTML=`<div class="modal"><p>${esc(message)}</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
-      <button id="ccYes" class="btn-d">Excluir</button>
+      <button id="ccYes" class="${rotulo?'btn-p':'btn-d'}">${esc(rotulo||'Excluir')}</button>
       <button id="ccNo" class="btn-s">Cancelar</button>
     </div></div>`;
   document.body.appendChild(bg);
@@ -2661,7 +2803,7 @@ function cabecalhoDocHtml(c,classeNome,classeSub){
 function camposFaltandoClinica(c){
   const f=[]; c=c||{};
   if(!c.documento) f.push('CNPJ ou CPF'); if(!c.rtNome||!c.rtCro) f.push('responsável técnico');
-  if(!(c.end&&c.end.cidade)) f.push('endereço'); if(!c.whatsapp) f.push('WhatsApp');
+  if(!(c.end&&c.end.cidade)) f.push('endereço'); if(!c.whatsapp) f.push('WhatsApp comercial');
   return f;
 }
 function alvaraAviso(c){
@@ -2702,10 +2844,10 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     </div>
   </section>
   <section class="cl-secao">
-    <div class="cl-secao-cab"><h3>Contato</h3><p>O WhatsApp é o número que os pacientes reconhecem nas mensagens de lembrete.</p></div>
+    <div class="cl-secao-cab"><h3>Contato</h3><p>O WhatsApp comercial é o número oficial da clínica: é por ele que saem os agendamentos, os lembretes e as confirmações dos pacientes, e os próximos serviços de envio.</p></div>
     <div class="cl-grade">
       ${inp('clTel','Telefone *',d.telefone,' type="tel" inputmode="tel" data-mask="tel" required')}
-      ${inp('clZap','WhatsApp',d.whatsapp,' type="tel" inputmode="tel" data-mask="tel"')}
+      ${inp('clZap','WhatsApp comercial *',d.whatsapp,' type="tel" inputmode="tel" data-mask="tel" required placeholder="(00) 00000-0000"','Número da clínica que faz os envios aos pacientes.')}
       ${inp('clEmail','E-mail *',d.email,' type="email" required autocomplete="email"')}
       ${inp('clSite','Site',d.site,' placeholder="www.suaclinica.com.br"')}
       ${inp('clInsta','Instagram',d.instagram,' placeholder="@suaclinica"')}
@@ -2790,6 +2932,7 @@ function bindClinicaForm(formId,aoSalvar){
     const erros=[];
     if(!c.nome) erros.push('o nome da clínica');
     if(!c.telefone) erros.push('o telefone');
+    if(!c.whatsapp) erros.push('o WhatsApp comercial'); else if(soDigitos(c.whatsapp).length<10) erros.push('o WhatsApp comercial completo, com DDD');
     if(!emailValido(normEmail(c.email))) erros.push('um e-mail válido');
     if(!c.end.cidade||!c.end.uf) erros.push('a cidade e a UF');
     if(erros.length){ avisar('Para salvar, informe '+erros.join(', ')+'.'); return; }
@@ -2973,7 +3116,7 @@ function renderApp(){
   if(cel){
     const nav=items.map(i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''}"${currentTab===i.id?' aria-current="page"':''}><span class="cel-ico">${ICONES[i.id]||''}</span>${esc(i.label)}</button>`).join('');
     const titulo=(items.find(i=>i.id===currentTab)||{}).label||'';
-    const sub=currentTab==='agenda'?fmtDiaSemana(agendaViewDate)+', '+new Date(agendaViewDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long'}):esc(state.clinic.nome);
+    const sub=currentTab==='agenda'?fmtDiaSemana(agendaViewDate)+', '+fmtDataBR(agendaViewDate):esc(state.clinic.nome);
     return `<div class="cel-layout">${demo}
       <header class="topbar cel-top">
         <span class="sb-logo">${ICONES.dente}</span>
@@ -3027,7 +3170,7 @@ function renderDashboard(){
   const agHoje=(state.agendamentos||[]).filter(a=>a.data===hoje && statusAg(a)!=='cancelado').sort((x,y)=>x.horario.localeCompare(y.horario));
   const prox=agHoje.find(a=>hhmmParaMin(a.horario)+duracaoDe(a)>agoraM && ['agendado','confirmado','chegou'].includes(statusAgExib(a)));
   const saud=saudacaoHora();
-  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1);
+  let dataFmt=new Date().toLocaleDateString('pt-BR',{weekday:'long'}); dataFmt=dataFmt.charAt(0).toUpperCase()+dataFmt.slice(1)+', '+fmtDataBR(hojeISO());
   const n=agHoje.length;
   const kpi=(rot,num,sub,go,cor,extra)=>`<button class="kpi" data-dashgo="${go}"><div class="kpi-rot">${rot}</div><div class="kpi-num"${cor?` style="color:${cor}"`:''}>${num}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}${extra||''}</button>`;
   const ks=[];
@@ -3541,7 +3684,7 @@ function anamneseOdontoLinhas(dados){
   ${fieldRow('Sangramento gengival espontâneo', a.sangramentoGengival)}
   ${fieldRow('Range ou aperta os dentes (bruxismo)', a.bruxismo)}
   ${fieldRow('Usa fio dental', a.fioDental)}
-  ${fieldRow('Última visita ao dentista', a.ultimaVisita)}
+  ${fieldRow('Última visita ao dentista', fmtDataBR(a.ultimaVisita))}
   ${fieldRow('Frequência de escovação diária', a.escovacaoDiaria)}
   ${fieldRow('Observações gerais', a.observacoes)}
 `;
@@ -3599,7 +3742,7 @@ function formsDoPaciente(pid){ return (state.formularios||[]).filter(f=>f.pacien
 function formSituacao(f){ if(f.status==='respondido') return 'respondido'; return f.expiraEm && f.expiraEm<Date.now()?'vencido':'pendente'; }
 function linkFormulario(token){ const c=Nuvem.clinicaId(); return location.origin+location.pathname+'?'+(c&&c!=='principal'?'c='+encodeURIComponent(c)+'&':'')+'f='+encodeURIComponent(token); }
 function fmtDH(v){ if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}); }
-function fmtDM(ms){ return new Date(ms).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); }
+function fmtDM(ms){ return fmtDataBR(ms); }
 function assinaturasDoPaciente(p){
   return [...(p.anamneses||[]),...(p.documentos||[])].map(x=>x.assinaturaId).filter(Boolean);
 }

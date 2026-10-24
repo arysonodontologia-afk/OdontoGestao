@@ -714,9 +714,27 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .hist-ant{margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--text-2)}
 .imp-resumo table{width:auto;min-width:320px}
 .imp-resumo td{padding:4px 10px 4px 0;border-bottom:1px solid var(--line-soft);font-size:13.5px}
+/* datas dd/mm/aaaa */
+.data-br-box{position:relative;display:block;min-width:0}
+.data-br-box>input.data-br{width:100%;padding-right:40px}
+.data-br-ico{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;display:flex}
+.data-br-cal{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px !important;height:34px;padding:0 !important;margin:0;border:0 !important;opacity:0;cursor:pointer;background:transparent !important;box-shadow:none !important}
+.data-br-cal::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.data-br-cal:disabled{display:none}
+.cl-duplo .data-br-box{flex:1}
 
 /* cadastro rápido de paciente no agendamento */
 .ag-pac-linha{display:flex;gap:8px;align-items:center}
 .ag-pac-linha select{flex:1;min-width:0}
 .ag-pac-linha .btn-s{white-space:nowrap}
 .ag-novo-pac{border:1px dashed var(--border-strong);border-radius:var(--r-sm);padding:12px;margin:10px 0;background:var(--surface-2)}
+
+/* busca de paciente no agendamento */
+.ag-pac-busca{position:relative;flex:1;min-width:0}
+.ag-pac-busca .busca-res{top:calc(100% + 4px)}
+.ag-pac-novo{color:var(--primary);font-weight:600;border-top:1px solid var(--border);border-radius:0 0 8px 8px;margin-top:4px}
+
+/* tratamento direto no agendamento */
+.ag-trat-item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:8px;background:var(--surface-2)}
+.ag-trat-nome{flex:1 1 200px;min-width:0}
+.ag-trat-item input,.ag-trat-item select{width:auto;flex:0 1 200px;min-width:120px}
