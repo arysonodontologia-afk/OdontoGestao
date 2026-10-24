@@ -775,5 +775,5 @@ th.env-sel,td.env-sel{width:34px;text-align:center}
 .chip-op input{width:auto;margin:0}
 .chip-op:has(input:checked){border-color:var(--primary);background:var(--surface-2);font-weight:600}
 .btn-musica{white-space:nowrap}
-.cl-mus-pl summary{cursor:pointer;font-weight:600;font-size:14px;margin-top:8px}
 .toast-musica{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:999;box-shadow:var(--shadow-pop)}
+.faixa-musica{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:998;background:var(--primary);color:#fff;border:0;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:600;box-shadow:var(--shadow-pop);cursor:pointer;max-width:calc(100vw - 32px)}

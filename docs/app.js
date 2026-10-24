@@ -931,8 +931,7 @@ function musicaDe(p){ const m=(p&&p.musica)||{}; return {generos:m.generos||[],a
 function musicaTemPreferencia(p){ const m=musicaDe(p); return m.silencio || m.generos.length || m.artistas.length; }
 function musicaTexto(p){ const m=musicaDe(p); if(m.silencio) return 'Prefere silêncio'; return m.generos.concat(m.artistas).join(', '); }
 function musicaLink(op){
-  const c=state.clinic||{}, app=c.musicaApp||'spotify', pl=(c.musicaPlaylists||{})[op.v];
-  if(op.tipo==='genero' && pl) return pl;
+  const c=state.clinic||{}, app=c.musicaApp||'spotify';
   const q=op.tipo==='artista'?(app==='spotify'?'This Is '+op.v:op.v+' mix'):op.v+(app==='spotify'||app==='deezer'?'':' playlist');
   const e=encodeURIComponent(q);
   if(app==='ytmusic') return 'https://music.youtube.com/search?q='+e;
@@ -948,6 +947,24 @@ function tocarMusicaPaciente(p){
   const w=window.open(musicaLink(op),'_blank');
   if(w){ try{ w.opener=null; }catch(e){} avisarRapido('🎵 Abrindo '+(MUSICA_APPS[(state.clinic||{}).musicaApp||'spotify'])+': '+op.v); }
   else avisar('O navegador bloqueou a abertura. Permita janelas para este site e tente de novo.');
+}
+function musicaAutoNoAparelho(v){
+  try{ if(v===undefined) return localStorage.getItem('odonto-musica-auto')==='1'; if(v) localStorage.setItem('odonto-musica-auto','1'); else localStorage.removeItem('odonto-musica-auto'); }catch(e){ return false; }
+}
+function abrirPlaylistClinica(){
+  const u=(state.clinic||{}).musicaPlaylist; if(!u) return false;
+  const w=window.open(u,'odonto-musica'); if(w){ try{ w.opener=null; }catch(e){} return true; } return false;
+}
+// ao abrir o sistema: tenta abrir a playlist; se o navegador bloquear, abre no primeiro toque na tela
+function iniciarPlaylistAuto(){
+  if(!musicaAutoNoAparelho() || !(state.clinic||{}).musicaPlaylist) return;
+  try{ if(sessionStorage.getItem('odonto-musica-tocada')) return; sessionStorage.setItem('odonto-musica-tocada','1'); }catch(e){}
+  if(abrirPlaylistClinica()){ avisarRapido('🎵 Playlist da clínica aberta'); return; }
+  const fx=document.createElement('button'); fx.className='faixa-musica'; fx.type='button';
+  fx.textContent='🎵 Toque aqui (ou em qualquer lugar) para iniciar a playlist da clínica';
+  document.body.appendChild(fx);
+  const iniciar=()=>{ document.removeEventListener('pointerdown',iniciar,true); document.removeEventListener('keydown',iniciar,true); fx.remove(); if(abrirPlaylistClinica()) avisarRapido('🎵 Playlist da clínica aberta'); };
+  document.addEventListener('pointerdown',iniciar,true); document.addEventListener('keydown',iniciar,true);
 }
 function avisarRapido(t){ const d=document.createElement('div'); d.className='toast-musica'; d.setAttribute('role','status'); d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2600); }
 function botaoMusicaHtml(a){
@@ -2833,6 +2850,7 @@ async function aoMudarLogin(u){
       } else {
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
+        setTimeout(()=>{ try{ iniciarPlaylistAuto(); }catch(e){ console.warn(e); } },800);
       }
     }
     render();
@@ -3044,10 +3062,11 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     <div class="cl-grade">
       <div class="cl-campo"><label for="clMusApp">App de música da clínica</label><select id="clMusApp"${dis}>${Object.entries(MUSICA_APPS).map(([k,t])=>`<option value="${k}" ${(d.musicaApp||'spotify')===k?'selected':''}>${t}</option>`).join('')}</select></div>
     </div>
-    <details class="cl-mus-pl"><summary>Playlists da clínica por estilo (opcional)</summary>
-      <p class="cl-dica" style="margin:6px 0 8px">Cole o link de uma playlist do app para tocar exatamente ela. Sem link, o sistema abre a busca do estilo.</p>
-      <div class="cl-grade">${MUSICA_GENEROS.map((g,i)=>`<div class="cl-campo"><label for="clMusPl${i}">${esc(g)}</label><input id="clMusPl${i}" data-mpl="${esc(g)}" value="${esc(((d.musicaPlaylists||{})[g])||'')}" placeholder="https://…"${dis}></div>`).join('')}</div>
-    </details>
+    <div class="cl-grade">
+      <div class="cl-campo c2"><label for="clMusPl">Playlist da clínica (link)</label><input id="clMusPl" type="url" value="${esc(d.musicaPlaylist||'')}" placeholder="https://open.spotify.com/playlist/… ou link do YouTube, Deezer…"${dis}><div class="cl-dica">Cole o link da playlist em qualquer plataforma. Ela abre sozinha ao entrar no sistema nos aparelhos marcados abaixo.</div></div>
+    </div>
+    <label class="chk-linha" style="margin-top:8px"><input type="checkbox" id="clMusAuto" ${musicaAutoNoAparelho()?'checked':''}> Iniciar a playlist automaticamente ao abrir o sistema <strong>neste aparelho</strong></label>
+    <p class="cl-dica" style="margin:4px 0 0">Marque só no computador ou tablet da sala (cada aparelho tem a sua opção). ${d.musicaPlaylist?`<button type="button" class="lnk-forte" data-mustestar>Testar a playlist</button>`:''}</p>
   </section>
   <section class="cl-secao">
     <div class="cl-secao-cab"><h3>Endereço</h3><p>Digite o CEP para preencher o restante.</p></div>
@@ -3121,7 +3140,10 @@ function bindClinicaForm(formId,aoSalvar){
     c.alvaraNumero=val('clAlvara'); c.alvaraValidade=val('clAlvaraVal');
     c.rtNome=val('clRtNome'); c.rtCro=val('clRtCro').toUpperCase();
     c.telefone=val('clTel'); c.whatsapp=val('clZap'); c.email=val('clEmail'); c.site=val('clSite'); c.instagram=val('clInsta');
-    if(q('clMusApp')){ c.musicaApp=val('clMusApp')||'spotify'; const pl={}; f.querySelectorAll('[data-mpl]').forEach(i=>{ const v=i.value.trim(); if(/^https?:\/\//i.test(v)) pl[i.getAttribute('data-mpl')]=v; }); c.musicaPlaylists=pl; }
+    if(q('clMusApp')){ c.musicaApp=val('clMusApp')||'spotify'; const pl=val('clMusPl');
+      if(pl && !/^https?:\/\/\S+$/i.test(pl)){ avisar('O link da playlist precisa começar com https://'); return; }
+      c.musicaPlaylist=pl; delete c.musicaPlaylists;
+      if(q('clMusAuto')) musicaAutoNoAparelho(q('clMusAuto').checked); }
     c.end={cep:val('clCep'),logradouro:val('clLogr'),numero:val('clNum'),complemento:val('clCompl'),bairro:val('clBairro'),cidade:val('clCidade'),uf:val('clUf')};
     c.horarios={}; DIAS_CLINICA.forEach(([k])=>{ c.horarios[k]={aberto:q('hAb_'+k).checked,ini:q('hIni_'+k).value||'08:00',fim:q('hFim_'+k).value||'18:00'}; });
     c.intervalo={ini:val('clIntIni'),fim:val('clIntFim')}; c.duracaoPadrao=parseInt(val('clDur'),10)||30;
@@ -5932,6 +5954,7 @@ function bindEvents(){
   document.querySelectorAll('[data-agdent]').forEach(b=>b.addEventListener('click',()=>{ agDentFiltro=b.getAttribute('data-agdent'); render(); }));
   document.querySelectorAll('[data-agchegou]').forEach(b=>b.addEventListener('click',()=>mudarStatusAg(b.getAttribute('data-agchegou'),'chegou')));
   document.querySelectorAll('[data-agmusica]').forEach(b=>b.addEventListener('click',ev=>{ ev.stopPropagation(); const a=(state.agendamentos||[]).find(x=>x.id===b.getAttribute('data-agmusica')); if(a) tocarMusicaPaciente(pacPorId(a.pacienteId)); }));
+  document.querySelectorAll('[data-mustestar]').forEach(b=>b.addEventListener('click',()=>{ if(!abrirPlaylistClinica()) avisar('O navegador bloqueou a abertura. Permita janelas para este site.'); }));
   document.querySelectorAll('[data-pacmusica]').forEach(b=>b.addEventListener('click',()=>tocarMusicaPaciente(pacPorId(b.getAttribute('data-pacmusica')))));
   document.querySelectorAll('[data-lote]').forEach(b=>b.addEventListener('click',()=>abrirLoteLembretes(b.getAttribute('data-lote'))));
   document.querySelectorAll('[data-agcol]').forEach(col=>col.addEventListener('click',e=>{
