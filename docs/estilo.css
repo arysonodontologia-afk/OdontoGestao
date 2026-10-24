@@ -728,3 +728,8 @@ button.sb-versao:hover{color:var(--text);text-decoration:underline}
 .ag-pac-linha select{flex:1;min-width:0}
 .ag-pac-linha .btn-s{white-space:nowrap}
 .ag-novo-pac{border:1px dashed var(--border-strong);border-radius:var(--r-sm);padding:12px;margin:10px 0;background:var(--surface-2)}
+
+/* busca de paciente no agendamento */
+.ag-pac-busca{position:relative;flex:1;min-width:0}
+.ag-pac-busca .busca-res{top:calc(100% + 4px)}
+.ag-pac-novo{color:var(--primary);font-weight:600;border-top:1px solid var(--border);border-radius:0 0 8px 8px;margin-top:4px}

@@ -1083,8 +1083,8 @@ function renderAgendaCelular(){
 // cadastro rápido de paciente direto do agendamento (dentista, recepção, Master)
 function bindNovoPacienteRapido(){
   const btn=document.getElementById('btnAgNovoPac'), area=document.getElementById('agNovoPacArea'); if(!btn||!area) return;
-  btn.addEventListener('click',()=>{
-    if(area.innerHTML){ area.innerHTML=''; return; }
+  const abrir=(nomeIni,alternar)=>{
+    if(area.innerHTML && alternar){ area.innerHTML=''; return; }
     area.innerHTML=`<div class="ag-novo-pac"><p style="margin:0 0 8px"><strong>Cadastrar paciente</strong> <span class="muted">· o restante do cadastro pode ser completado depois, em Pacientes</span></p>
       <div class="row"><div><label for="npNome">Nome completo *</label><input id="npNome" autocomplete="off"></div>
       <div><label for="npTel">Telefone (WhatsApp) *</label><input id="npTel" type="tel" inputmode="tel" placeholder="(00) 00000-0000"></div></div>
@@ -1116,9 +1116,51 @@ function bindNovoPacienteRapido(){
       const sel=q('agPaciente');
       if(!sel.querySelector(`option[value="${pac.id}"]`)){ const o=document.createElement('option'); o.value=pac.id; o.textContent=pac.nome; sel.appendChild(o); }
       sel.value=pac.id; sel.dispatchEvent(new Event('change',{bubbles:true}));
+      const bi=q('agPacBusca'); if(bi) bi.value=pac.nome;
       area.innerHTML=''; avisar(dup?'Este paciente já estava cadastrado e foi selecionado.':'Paciente cadastrado e selecionado no agendamento.');
     });
-    q('npNome').focus();
+    if(nomeIni){ const d=soDigitos(nomeIni); if(d.length>=10 && d.length===nomeIni.replace(/[\s().-]/g,'').length) q('npTel').value=mascaraTel(d); else q('npNome').value=nomeIni; }
+    q(q('npNome').value?'npTel':'npNome').focus();
+  };
+  btn.addEventListener('click',()=>abrir('',true));
+  novoPacienteRapido=abrir;
+}
+let novoPacienteRapido=null;
+// busca de paciente no agendamento: digita e vai filtrando
+function bindBuscaPacienteAg(){
+  const inp=document.getElementById('agPacBusca'), res=document.getElementById('agPacRes'), sel=document.getElementById('agPaciente');
+  if(!inp||!res||!sel) return;
+  let itens=[], ativo=-1;
+  const fechar=()=>{ res.hidden=true; inp.setAttribute('aria-expanded','false'); ativo=-1; };
+  const escolher=p=>{
+    if(!sel.querySelector(`option[value="${p.id}"]`)){ const o=document.createElement('option'); o.value=p.id; o.textContent=p.nome; sel.appendChild(o); }
+    sel.value=p.id; inp.value=p.nome; fechar(); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+  const marcar=()=>res.querySelectorAll('.busca-item').forEach((b,i)=>{ b.classList.toggle('sel',i===ativo); b.setAttribute('aria-selected',i===ativo?'true':'false'); if(i===ativo) b.scrollIntoView({block:'nearest'}); });
+  const desenhar=()=>{
+    const t=inp.value.trim(), q=normTxt(t), qd=soDigitos(t);
+    if(!q){ fechar(); return; }
+    const pal=q.split(/\s+/).filter(Boolean);
+    itens=state.patients.filter(p=>{ const n=normTxt(p.nome); return pal.every(w=>n.includes(w)) || (qd.length>=3 && (soDigitos(p.cpf).includes(qd)||soDigitos(p.telefone).includes(qd))); })
+      .sort((x,y)=>{ const a=normTxt(x.nome).startsWith(q)?0:1, b=normTxt(y.nome).startsWith(q)?0:1; return a-b || (x.nome||'').localeCompare(y.nome||''); }).slice(0,8);
+    const podeNovo=!!document.getElementById('btnAgNovoPac');
+    res.innerHTML=itens.map((p,i)=>{ const idade=calcAge(p.nascimento); const sub=[idade!==null?idade+' anos':'',p.telefone||'',p.cpf?'CPF '+p.cpf:''].filter(Boolean).join(' · ');
+      return `<button type="button" class="busca-item" role="option" data-i="${i}"><span class="avatar">${esc(iniciais(p.nome))}</span><span><span class="busca-item-nome">${esc(p.nome)}</span>${sub?`<span class="busca-item-sub" style="display:block">${esc(sub)}</span>`:''}</span></button>`; }).join('')
+      +(itens.length?'':`<div class="busca-vazio">Nenhum paciente encontrado para “${esc(t)}”.${podeNovo?' Deseja cadastrar um novo paciente?':''}</div>`)
+      +(podeNovo?`<button type="button" class="busca-item ag-pac-novo" data-novo>${itens.length?'+ Não está na lista? Cadastrar novo paciente':'+ Cadastrar “'+esc(t)+'” como novo paciente'}</button>`:'');
+    res.hidden=false; inp.setAttribute('aria-expanded','true'); ativo=itens.length?0:-1; marcar();
+    res.querySelectorAll('[data-i]').forEach(b=>b.addEventListener('mousedown',ev=>{ ev.preventDefault(); escolher(itens[+b.getAttribute('data-i')]); }));
+    const nv=res.querySelector('[data-novo]'); if(nv) nv.addEventListener('mousedown',ev=>{ ev.preventDefault(); fechar(); if(novoPacienteRapido) novoPacienteRapido(itens.length?'':t); });
+  };
+  inp.addEventListener('input',()=>{ if(sel.value){ const p=pacPorId(sel.value); if(!p||p.nome!==inp.value){ sel.value=''; sel.dispatchEvent(new Event('change',{bubbles:true})); } } desenhar(); });
+  inp.addEventListener('focus',()=>{ if(inp.value.trim() && !sel.value) desenhar(); });
+  inp.addEventListener('blur',()=>setTimeout(fechar,150));
+  inp.addEventListener('keydown',ev=>{
+    if(res.hidden){ if(ev.key==='Enter') ev.preventDefault(); return; }
+    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(itens.length){ ativo=(ativo+1)%itens.length; marcar(); } }
+    else if(ev.key==='ArrowUp'){ ev.preventDefault(); if(itens.length){ ativo=(ativo-1+itens.length)%itens.length; marcar(); } }
+    else if(ev.key==='Enter'){ ev.preventDefault(); if(ativo>=0 && itens[ativo]) escolher(itens[ativo]); else if(!itens.length && novoPacienteRapido && document.getElementById('btnAgNovoPac')){ const t=inp.value.trim(); fechar(); novoPacienteRapido(t); } }
+    else if(ev.key==='Escape'){ fechar(); }
   });
 }
 function openAgendamentoForm(a){
@@ -1127,8 +1169,9 @@ function openAgendamentoForm(a){
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
   <form id="fAgendamento">
-  <label for="agPaciente">Paciente</label>
-  <div class="ag-pac-linha"><select id="agPaciente" required>
+  <label for="agPacBusca">Paciente</label>
+  <div class="ag-pac-linha"><div class="ag-pac-busca"><input id="agPacBusca" type="search" autocomplete="off" placeholder="Digite o nome, CPF ou telefone do paciente" role="combobox" aria-expanded="false" aria-controls="agPacRes" aria-autocomplete="list" value="${esc(a&&a.pacienteId?((pacPorId(a.pacienteId)||{}).nome||a.pacienteNome||''):'')}"><div class="busca-res" id="agPacRes" role="listbox" hidden></div></div>
+  <select id="agPaciente" hidden aria-hidden="true" tabindex="-1">
     <option value="">Selecione</option>
     ${state.patients.slice().sort((x,y)=>(x.nome||'').localeCompare(y.nome||'')).map(p=>`<option value="${p.id}" ${a&&a.pacienteId===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}
   </select>${permsDe(currentUser()).pacientes?'<button type="button" class="btn-s" id="btnAgNovoPac">+ Novo paciente</button>':''}</div>
@@ -1153,6 +1196,7 @@ function openAgendamentoForm(a){
   <div style="margin-top:14px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelAg" class="btn-s">Cancelar</button></div>
   </form></div>`;
   bindNovoPacienteRapido();
+  bindBuscaPacienteAg();
   document.getElementById('agPaciente').addEventListener('change', e=>{
     const sel=document.getElementById('agProcedimento');
     if(sel) sel.innerHTML=procedimentoChecksHtml(e.target.value,[]);
@@ -1169,6 +1213,7 @@ function openAgendamentoForm(a){
     ev.preventDefault();
     const pacienteId=document.getElementById('agPaciente').value;
     const paciente=state.patients.find(x=>x.id===pacienteId);
+    if(!paciente){ avisar('Escolha o paciente: digite o nome e toque nele na lista (ou cadastre um novo).'); const bi=document.getElementById('agPacBusca'); if(bi) bi.focus(); return; }
     const dentistaId=document.getElementById('agDentista').value;
     const dentista=state.users.find(x=>x.id===dentistaId);
     const tipo=document.getElementById('agTipo').value;
