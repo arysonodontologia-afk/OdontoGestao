@@ -3131,7 +3131,12 @@ function userFormFields(tipo, u, isNew){
   ${NUVEM?'<p class="muted" style="margin:6px 0 0">A pessoa entra com este e-mail: pelo botão <strong>Entrar com Google</strong> (se for uma conta Google) ou em <strong>Primeiro acesso · criar senha</strong>.</p>':''}
   ${tipo==='master'?`<label class="chk-linha" style="margin-top:14px"><input type="checkbox" id="fAtende" ${masterAtende(u)?'checked':''}> Atende pacientes como dentista (aparece na agenda e na escolha de dentista)</label>`:''}
   <div id="croWrap" style="display:${tipo==='dentista'||(tipo==='master'&&masterAtende(u))?'block':'none'}">
-    <label>CRO (ex: 10101-AM)</label><input id="fCro" value="${esc(u.cro)}">
+    <div class="row">
+      <div><label>CRO (ex: 10101-AM)</label><input id="fCro" value="${esc(u.cro)}"></div>
+      <div><label for="fWhats">WhatsApp do dentista *</label><input id="fWhats" type="tel" inputmode="tel" placeholder="(00) 00000-0000" value="${esc(u.whatsapp||'')}"></div>
+    </div>
+    <label class="chk-linha" style="margin-top:8px"><input type="checkbox" id="fAgendaDia" ${u.agendaDiaria===false?'':'checked'}> Receber a agenda do dia às 07:30 (pacientes, tratamento, horário e confirmação)</label>
+    <p class="muted" style="margin:4px 0 0;font-size:12.5px">É o contato direto do sistema com o dentista. O envio automático da agenda diária será ligado em breve.</p>
   </div>
   </div>`;
 }
@@ -3145,7 +3150,7 @@ function podeExcluirUsuario(alvo){ const eu=currentUser(); if(!eu || !alvo || al
 function renderUsuarios(){
   const lista=state.users.filter(usuarioAtivo).concat(state.users.filter(u=>!usuarioAtivo(u)));
   const rows=lista.map(u=>`<tr${usuarioAtivo(u)?'':' class="u-inativo"'}>
-    <td>${esc(nomeExibicao(u))}${usuarioAtivo(u)?'':' <span class="sit sit-cancelado-n">Desativado</span>'}${ehDentista(u)&&!u.sexo?' <span class="sit sit-nao_vem" title="Edite e informe o sexo">informe o sexo</span>':''}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
+    <td>${esc(nomeExibicao(u))}${usuarioAtivo(u)?'':' <span class="sit sit-cancelado-n">Desativado</span>'}${ehDentista(u)&&!u.sexo?' <span class="sit sit-nao_vem" title="Edite e informe o sexo">informe o sexo</span>':''}${ehDentista(u)&&usuarioAtivo(u)&&soDigitos(u.whatsapp).length<10?' <span class="sit sit-nao_vem" title="Edite e informe o WhatsApp do dentista">informe o WhatsApp</span>':''}<div class="muted">${NUVEM?(u.email?esc(u.email):'<span style="color:var(--danger)">sem e-mail de acesso</span>'):'@'+esc(u.username)}</div></td>
     <td><span class="badge ${badgeClass(u.tipo)}">${tipoLabel(u.tipo)}</span></td>
     <td>${esc(u.telefone)}</td>
     <td>${esc(u.cro||'-')}</td>
@@ -3190,6 +3195,9 @@ function openUserForm(u){
   });
   const fAt=document.getElementById('fAtende');
   if(fAt) fAt.addEventListener('change',()=>{ document.getElementById('croWrap').style.display=fAt.checked?'block':'none'; });
+  const fW=document.getElementById('fWhats');
+  if(fW){ fW.addEventListener('input',()=>{ const v=mascaraTel(fW.value); if(v!==fW.value) fW.value=v; });
+    const fT=document.getElementById('fTelefone'); if(fT && !fW.value) fT.addEventListener('change',()=>{ if(!fW.value && soDigitos(fT.value).length>=10) fW.value=mascaraTel(fT.value); }); }
   document.getElementById('btnCancelUser').addEventListener('click',()=>{ document.getElementById('userFormArea').innerHTML=''; });
   document.getElementById('fUser').addEventListener('submit', async ev=>{
     ev.preventDefault();
@@ -3201,6 +3209,8 @@ function openUserForm(u){
     }
     const sexoVal=document.getElementById('fSexo')?document.getElementById('fSexo').value:'';
     if((tipoVal==='dentista' || atendeVal) && !sexoVal){ avisar('Informe o sexo do dentista, para o sistema usar Dr. ou Dra. corretamente.'); return; }
+    const whatsVal=document.getElementById('fWhats')?document.getElementById('fWhats').value.trim():'';
+    if((tipoVal==='dentista' || atendeVal) && soDigitos(whatsVal).length<10){ avisar('Informe o WhatsApp do dentista, com DDD. É por ele que o sistema fala direto com o dentista (agenda do dia).'); return; }
     const data = {
       id: isNew? uid() : u.id,
       tipo: tipoVal,
@@ -3211,6 +3221,8 @@ function openUserForm(u){
       email: document.getElementById('fEmail').value.trim(),
       cro: (tipoVal==='dentista'||atendeVal)? cro.toUpperCase() : (tipoVal==='master'?String((u&&u.cro)||'').toUpperCase():''),
       atende: tipoVal==='master' ? atendeVal : undefined,
+      whatsapp: (tipoVal==='dentista'||atendeVal) ? whatsVal : ((u&&u.whatsapp)||''),
+      agendaDiaria: (tipoVal==='dentista'||atendeVal) ? !!(document.getElementById('fAgendaDia')&&document.getElementById('fAgendaDia').checked) : ((u&&u.agendaDiaria)!==false),
       permissions: isNew ? defaultPerms(tipoVal) : (isMaster ? {
         usuarios: document.getElementById('pUsuarios').checked,
         pacientes: document.getElementById('pPacientes').checked,
@@ -3975,10 +3987,22 @@ function limitePlanoMsg(novo,antigo){
 // =====================================================================
 let platAba='clinicas', platClinicas=null, platErro='', platRoadmap=null, platRoadmapOuvindo=false, platCarregando=false;
 const RM_STATUS=[
-  ['ideia','Sugestões'],['planejado','Planejado'],['desenvolvimento','Em desenvolvimento'],['teste','No ambiente de teste'],['publicado','Publicado para os clientes'],
+  ['ideia','Sugestões'],['planejado','Planejado'],['desenvolvimento','Em desenvolvimento'],['pronta','Pronta, aguardando contratação'],['teste','No ambiente de teste'],['publicado','Publicado para os clientes'],
 ];
 const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','Visual','Legal e LGPD','Outros'];
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
+// melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
+const RM_PREPARADAS=[
+  {chave:'agenda-diaria-dentista',titulo:'Agenda do dia para o dentista às 07:30',categoria:'Comunicação',prioridade:'alta',status:'pronta',tipo:'geral',alvo:'Todos os planos',
+   descricao:'Todo dia às 07:30 (fuso da clínica), cada dentista recebe a sua agenda: paciente, tratamento, horário e se está confirmado. Canal 1: notificação do app OdontoGestão no celular (grátis). Canal 2: WhatsApp do dentista pela API oficial do WhatsApp Business (cerca de R$ 1 por dentista/mês). Código pronto em functions/agenda-diaria (ver LEIAME). PARA INSTALAR: 1) Firebase: ativar o plano Blaze nos dois projetos (teste e produção). 2) Notificação: gerar a chave Web Push (Cloud Messaging) e informar. 3) WhatsApp (opcional): conta Meta Business verificada, número do OdontoGestão e modelo "agenda_do_dia" aprovado. 4) Publicar a função no teste, validar, aprovar para produção.',publico:false},
+];
+let rmPreparando=false;
+function conferirPreparadas(l){
+  if(rmPreparando || !l || !l.length || !NUVEM || !Nuvem.souAdmin() || !Nuvem.ambienteTeste()) return;
+  const falta=RM_PREPARADAS.filter(p=>!l.some(i=>i.chave===p.chave));
+  if(!falta.length) return;
+  rmPreparando=true; Nuvem.semearRoadmap(falta).catch(e=>console.warn(e)).finally(()=>{ rmPreparando=false; });
+}
 const RM_SEMENTE=[
   {titulo:'Várias clínicas, planos e período de teste',descricao:'Cada clínica com seus dados separados, plano Essencial/Clínico/Completo, módulos avulsos e teste de 30 dias com modo de consulta no final.',categoria:'Plataforma',prioridade:'alta',status:'teste',alvo:'Todos os planos'},
   {titulo:'Painel da plataforma e quadro de melhorias',descricao:'Gestão das clínicas (criar, prorrogar teste, ativar, suspender) e este quadro.',categoria:'Plataforma',prioridade:'alta',status:'teste',alvo:'Somente administrador'},
@@ -4003,7 +4027,7 @@ function carregarPlataforma(forcar){
   platCarregando=true; platErro='';
   Nuvem.listarClinicas().then(l=>{ platClinicas=l; }).catch(e=>{ console.error(e); platErro=Nuvem.mapErro(e); platClinicas=[]; })
     .finally(()=>{ platCarregando=false; if(currentTab==='plataforma' || (currentTab==='dashboard' && view==='home' && podeAtualizarSozinho())) render(); });
-  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l){ publicarVitrine(l); numerarRoadmap(l); } if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
+  if(!platRoadmapOuvindo){ platRoadmapOuvindo=true; Nuvem.ouvirRoadmap((l,e)=>{ platRoadmap=l||[]; if(l){ publicarVitrine(l); numerarRoadmap(l); conferirPreparadas(l); } if(e) platErro=Nuvem.mapErro(e); if(currentTab==='plataforma' && podeAtualizarSozinho()) render(); }); }
 }
 function fmtBRL(v){ return 'R$ '+Number(v||0).toFixed(2).replace('.',','); }
 function renderPlataforma(){
@@ -4230,7 +4254,7 @@ function carregarVitrine(){
 function previstasHtml(){
   const its=(vitrineCache&&vitrineCache.itens)||[];
   if(!its.length) return '<p class="muted" style="margin:0">Em breve publicaremos aqui as próximas melhorias.</p>';
-  const et={ideia:'Em estudo',planejado:'Planejado',desenvolvimento:'Em desenvolvimento',teste:'Em testes'};
+  const et={ideia:'Em estudo',planejado:'Planejado',desenvolvimento:'Em desenvolvimento',pronta:'Em breve',teste:'Em testes'};
   return `<ul class="bv-prev">${its.map(i=>`<li><span class="bv-et">${esc(et[i.status]||'Previsto')}</span><div><strong>${esc(i.titulo)}</strong>${i.descricao?`<div class="muted">${esc(i.descricao)}</div>`:''}</div></li>`).join('')}</ul>`;
 }
 function abrirBoasVindas(primeiraVez){
@@ -4272,7 +4296,7 @@ function itemPublico(i){ return i.publico!==undefined ? !!i.publico : (i.status!
 let ultimaVitrine='';
 function publicarVitrine(lista){
   if(!lista || !(NUVEM && Nuvem.souAdmin()) || !Nuvem.ambienteTeste()) return;
-  const ord={teste:0,desenvolvimento:1,planejado:2,ideia:3};
+  const ord={teste:0,pronta:1,desenvolvimento:1,planejado:2,ideia:3};
   const itens=lista.filter(i=>itemPublico(i) && i.status!=='publicado').sort((a,b)=>(ord[a.status]??9)-(ord[b.status]??9))
     .map(i=>({titulo:i.titulo||'',descricao:i.descricao||'',status:i.status||'ideia'})).slice(0,12);
   const s=JSON.stringify(itens); if(s===ultimaVitrine) return; ultimaVitrine=s;
