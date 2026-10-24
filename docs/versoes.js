@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.12.0', data:'2026-10-24', itens:[
+    'Orçamento: desconto ou acréscimo antes de aprovar, no total (% ou R$) e no valor de cada procedimento',
+    'Limite de desconto para a equipe definido pelo Master (Configurações → Clínica); acima dele, só o Master',
+    'Orçamento mostra valor de tabela, desconto/acréscimo, total final e quem ajustou',
+  ]},
   {v:'2.11.0', data:'2026-10-23', itens:[
     'Todas as datas no padrão dd/mm/aaaa, inclusive nos campos de data (digitando ou pelo calendário)',
     'WhatsApp comercial da clínica obrigatório no cadastro: é por ele que saem agendamentos, lembretes e confirmações',
