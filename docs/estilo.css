@@ -766,3 +766,14 @@ th.env-sel,td.env-sel{width:34px;text-align:center}
 .evol-sess-feitas{margin:6px 0;padding-left:18px;font-size:14px}
 .aviso-sess{color:var(--warn);font-size:12.5px;font-weight:600;margin-top:3px}
 @media (max-width:860px){ .login-versao{display:block} }
+
+/* música do paciente */
+.musica-campos{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px 12px;margin:14px 0 0}
+.musica-campos legend{font-weight:600;font-size:14px;padding:0 6px}
+.musica-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.chip-op{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--text);background:var(--surface)}
+.chip-op input{width:auto;margin:0}
+.chip-op:has(input:checked){border-color:var(--primary);background:var(--surface-2);font-weight:600}
+.btn-musica{white-space:nowrap}
+.cl-mus-pl summary{cursor:pointer;font-weight:600;font-size:14px;margin-top:8px}
+.toast-musica{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:999;box-shadow:var(--shadow-pop)}

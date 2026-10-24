@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.15.0', data:'2026-10-24', itens:[
+    'Preferência musical no cadastro do paciente: estilos, artistas favoritos ou "prefere silêncio"',
+    'Agenda: com o paciente na clínica, o botão 🎵 abre o app de música da clínica no estilo ou artista dele (sorteado entre as preferências)',
+    'Configurações → Clínica: app de música da sala (Spotify, YouTube Music, Deezer ou YouTube) e playlists próprias por estilo',
+  ]},
   {v:'2.14.0', data:'2026-10-24', itens:[
     'Tratamentos em várias sessões (ex.: canal): na evolução o dentista indica "Finalizado nesta sessão" ou "Continua, precisa de retorno"',
     'Retornos sem custo adicional, com a sessão indicada na agenda e na evolução (início, retornos e finalização)',
