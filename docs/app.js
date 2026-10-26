@@ -3529,7 +3529,10 @@ function openUserForm(u){
   document.getElementById('userFormArea').innerHTML = `<div class="card">
     <h3>${isNew?'Novo usuário':'Editar usuário'}</h3>
     <form id="fUser">${userFormFields(tipo, u||{}, isNew)}
-    ${isMaster && u ? `<label>Permissões (editável pelo Master)</label>
+    ${isMaster && u ? `<label for="fTipoEd" style="margin-top:14px">Tipo de usuário (só o Master altera)</label>
+      <select id="fTipoEd">${[['master','Master (acesso total)'],['administrativo','Administrativo'],['dentista','Dentista'],['recepcionista','Recepcionista']].map(([v,t])=>`<option value="${v}" ${u.tipo===v?'selected':''}>${t}</option>`).join('')}</select>
+      <p class="muted" id="fTipoEdDica" style="margin:4px 0 0;font-size:12.5px">${u.id===currentUser().id?'Para deixar de ser Master, é preciso ter outro Master ativo na clínica.':'O Master tem acesso total: usuários, financeiro, dados da clínica e exclusões.'}</p>
+      <label>Permissões (editável pelo Master)</label>
       <div class="perm">
         <label><input type="checkbox" id="pUsuarios" ${perms.usuarios?'checked':''}> Usuários</label>
         <label${(u?u.tipo:tipo)==='dentista'?' title="Dentista sempre pode cadastrar e atender pacientes"':''}><input type="checkbox" id="pPacientes" ${perms.pacientes||(u?u.tipo:tipo)==='dentista'?'checked':''}${(u?u.tipo:tipo)==='dentista'?' disabled':''}> Pacientes</label>
@@ -3545,15 +3548,24 @@ function openUserForm(u){
   });
   const fAt=document.getElementById('fAtende');
   if(fAt) fAt.addEventListener('change',()=>{ document.getElementById('croWrap').style.display=fAt.checked?'block':'none'; });
+  const fTE=document.getElementById('fTipoEd');
+  if(fTE) fTE.addEventListener('change',()=>{ const v=fTE.value, cw=document.getElementById('croWrap');
+    if(cw) cw.style.display=(v==='dentista'||(v==='master'&&(fAt?fAt.checked:ehDentista(u))))?'block':'none';
+    document.querySelectorAll('#fUser .perm input').forEach(c=>{ c.disabled=v==='master'||(c.id==='pPacientes'&&v==='dentista'); if(v==='master') c.checked=true; }); });
   const fW=document.getElementById('fWhats');
   if(fW){ fW.addEventListener('input',()=>{ const v=mascaraTel(fW.value); if(v!==fW.value) fW.value=v; });
     const fT=document.getElementById('fTelefone'); if(fT && !fW.value) fT.addEventListener('change',()=>{ if(!fW.value && soDigitos(fT.value).length>=10) fW.value=mascaraTel(fT.value); }); }
   document.getElementById('btnCancelUser').addEventListener('click',()=>{ document.getElementById('userFormArea').innerHTML=''; });
   document.getElementById('fUser').addEventListener('submit', async ev=>{
     ev.preventDefault();
-    const tipoVal = isNew ? document.getElementById('fTipo').value : u.tipo;
+    const fTEv=document.getElementById('fTipoEd');
+    const tipoVal = isNew ? document.getElementById('fTipo').value : (fTEv?fTEv.value:u.tipo);
+    const mudouTipo = !isNew && tipoVal!==u.tipo;
     const cro = document.getElementById('fCro') ? document.getElementById('fCro').value.trim() : '';
-    const atendeVal = tipoVal==='master' && !!(document.getElementById('fAtende') && document.getElementById('fAtende').checked);
+    const fAtEl=document.getElementById('fAtende');
+    const atendeVal = tipoVal==='master' && (fAtEl ? !!fAtEl.checked : (u && u.tipo==='dentista' && !!String(u.cro||'').trim()));
+    if(mudouTipo && u.tipo==='master' && !state.users.some(x=>x.id!==u.id && x.tipo==='master' && usuarioAtivo(x))){
+      avisar('A clínica precisa ter pelo menos um Master ativo. Promova outro usuário a Master antes de mudar este.'); return; }
     if((tipoVal==='dentista' || atendeVal) && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
       avisar(atendeVal?'Para atender como dentista, informe o CRO (ex: 10101-AM).':'Informe um CRO válido, ex: 10101-AM'); return;
     }
@@ -3573,7 +3585,7 @@ function openUserForm(u){
       atende: tipoVal==='master' ? atendeVal : undefined,
       whatsapp: (tipoVal==='dentista'||atendeVal) ? whatsVal : ((u&&u.whatsapp)||''),
       agendaDiaria: (tipoVal==='dentista'||atendeVal) ? !!(document.getElementById('fAgendaDia')&&document.getElementById('fAgendaDia').checked) : ((u&&u.agendaDiaria)!==false),
-      permissions: isNew ? defaultPerms(tipoVal) : (isMaster ? {
+      permissions: (isNew||mudouTipo) ? defaultPerms(tipoVal) : (isMaster ? {
         usuarios: document.getElementById('pUsuarios').checked,
         pacientes: document.getElementById('pPacientes').checked,
         clinica: document.getElementById('pClinica').checked,
@@ -3597,11 +3609,18 @@ function openUserForm(u){
     if(novaSenha && novaSenha.length<6){ avisar('A senha precisa ter pelo menos 6 caracteres.'); return; }
     if(novaSenha) Object.assign(data, await hashSenha(novaSenha));
     const lim=limitePlanoMsg(Object.assign({},u||{},data),u); if(lim){ avisar(lim); return; }
-    if(isNew) state.users.push(data);
-    else { Object.assign(u, data); if(novaSenha) delete u.password; }
-    saveData();
-    document.getElementById('userFormArea').innerHTML='';
-    render();
+    const gravar=()=>{
+      if(mudouTipo){ data.tipoHist=(u.tipoHist||[]).concat([{de:u.tipo,para:tipoVal,em:new Date().toISOString(),por:nomeExibicao(currentUser())}]); if(tipoVal!=='master') data.atende=undefined; }
+      if(isNew) state.users.push(data);
+      else { Object.assign(u, data); if(novaSenha) delete u.password; if(data.atende===undefined) delete u.atende; }
+      saveData();
+      document.getElementById('userFormArea').innerHTML='';
+      render();
+      if(mudouTipo) avisar(tipoVal==='master'?`${nomeExibicao(u)} agora é Master da clínica.`:`${nomeExibicao(u)} agora é ${tipoLabel(tipoVal)}.`);
+    };
+    if(mudouTipo && tipoVal==='master') customConfirm(`Promover ${semTitulo(u.nomeCompleto)} a Master? Ele passa a ter acesso total à clínica, inclusive usuários, financeiro e exclusões.`,gravar,'Promover a Master');
+    else if(mudouTipo && u.id===currentUser().id) customConfirm(`Deixar de ser Master e passar a ${tipoLabel(tipoVal)}? Você perde o acesso total, e o sistema vai recarregar.`,gravar,'Confirmar');
+    else gravar();
   });
 }
 

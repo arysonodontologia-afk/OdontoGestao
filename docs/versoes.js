@@ -14,6 +14,7 @@ window.NOTAS_VERSAO = [
     'Agenda: com o paciente na clínica, o botão 🎵 abre o app de música da clínica no estilo ou artista dele (sorteado entre as preferências)',
     'Configurações → Clínica: app de música da sala e playlist da clínica (link de qualquer plataforma)',
     'A playlist da clínica abre sozinha ao entrar no sistema, nos aparelhos marcados (ex.: computador da sala)',
+    'Usuários: o Master pode promover outro usuário a Master (ou deixar de ser, se houver outro Master ativo)',
   ]},
   {v:'2.14.0', data:'2026-10-24', itens:[
     'Tratamentos em várias sessões (ex.: canal): na evolução o dentista indica "Finalizado nesta sessão" ou "Continua, precisa de retorno"',
