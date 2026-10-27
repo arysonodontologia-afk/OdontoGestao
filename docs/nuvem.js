@@ -319,18 +319,38 @@ async function sincronizarEspelho(cid,f){
   await F.updateDoc(F.doc(db,'clinicas',cid),{nome:'Teste · '+(f.nome||f.id),origem:{cid:f.id,nome:f.nome||''},plano:f.plano||'completo',modulos:f.modulos||{},dentistasExtras:+f.dentistasExtras||0,personalizacoes:f.personalizacoes||[],
     personalizacoesInfo:f.personalizacoesInfo||{},personalizacoesHist:f.personalizacoesHist||[],sincronizadoEm:F.serverTimestamp()});
 }
-async function criarClinica(dados){
+async function criarClinica(dados,dbAlvo){
+  const d0=dbAlvo||db;
   const cid=(dados.slug||'clinica')+'-'+novoId().slice(-5);
   const dono=normEmail(dados.donoEmail);
-  const ex=await F.getDoc(F.doc(db,'membros',dono));
+  if(dono===ADMIN_EMAIL){ const e=new Error('Este é o e-mail do administrador da plataforma: ele fica sempre na sua clínica principal. Use outro e-mail para a nova base.'); e.code='email-em-uso'; throw e; }
+  const ex=await F.getDoc(F.doc(d0,'membros',dono));
   if(ex.exists()){ const e=new Error('Este e-mail já está ligado a outra clínica ('+ex.data().cid+').'); e.code='email-em-uso'; throw e; }
-  const wb=F.writeBatch(db);
-  wb.set(F.doc(db,'clinicas',cid),{nome:dados.nome,donoEmail:dono,plano:dados.plano,modulos:dados.modulos||{},dentistasExtras:+dados.dentistasExtras||0,
+  const wb=F.writeBatch(d0);
+  wb.set(F.doc(d0,'clinicas',cid),{nome:dados.nome,donoEmail:dono,plano:dados.plano,modulos:dados.modulos||{},dentistasExtras:+dados.dentistasExtras||0,
     status:'teste',testeAte:F.Timestamp.fromMillis(Date.now()+(+dados.dias||30)*86400000),criadaEm:F.serverTimestamp(),obs:dados.obs||'',contato:dados.contato||''});
-  wb.set(F.doc(db,'membros',dono),{cid});
+  wb.set(F.doc(d0,'membros',dono),{cid});
   await wb.commit();
   return cid;
 }
+// nova base real criada pelo ambiente de teste (grava na produção)
+async function criarClinicaOutro(dados){ const t=await ponteOutro(); if(!t.user) throw new Error('Conecte à produção primeiro.'); return criarClinica(dados,t.db); }
+// conta de acesso com senha inicial, criada sem mexer no seu login (app separado, sem guardar sessão)
+async function criarContaInicial(email,senha,noOutro){
+  let cfg=CFG;
+  if(noOutro){ cfg=window.ODONTO_CFG_OUTRO; if(!cfg){ const r=await fetch('config-outro.json',{cache:'no-store'}); if(!r.ok) throw new Error('Configuração da produção indisponível.'); cfg=await r.json(); } }
+  const mApp=await import(SDK+'firebase-app.js');
+  const app3=mApp.initializeApp(cfg,'criador-'+Date.now());
+  let a3; try{ a3=A.initializeAuth(app3,{persistence:A.inMemoryPersistence}); }catch(e){ a3=A.getAuth(app3); }
+  a3.languageCode='pt-BR';
+  try{
+    const c=await A.createUserWithEmailAndPassword(a3,normEmail(email),senha);
+    try{ await A.sendEmailVerification(c.user); }catch(e){ console.warn(e); }
+    return 'criada';
+  }catch(e){ if(e && e.code==='auth/email-already-in-use') return 'existe'; throw e; }
+  finally{ try{ await A.signOut(a3); }catch(e){} try{ if(mApp.deleteApp) await mApp.deleteApp(app3); }catch(e){} }
+}
+async function trocarSenha(nova){ if(!auth.currentUser) throw new Error('Entre de novo.'); await A.updatePassword(auth.currentUser,nova); }
 async function atualizarClinica(cid,mud){
   const d=Object.assign({},mud);
   if(typeof d.testeAte==='number') d.testeAte=F.Timestamp.fromMillis(d.testeAte);
@@ -656,7 +676,7 @@ async function apagarImagensExceto(manter){
 }
 
 window.Nuvem={
-  ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, reenviarVerificacao, verificarDeNovo,
+  ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
   redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,

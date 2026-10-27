@@ -1,5 +1,6 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
 const APP_VERSION='2.16.0';
+const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2663,6 +2664,14 @@ function renderTelaNuvem(){
       <button class="btn-p login-btn" id="nvTentar">Tentar de novo</button>
       <div class="login-links"><button class="lnk" id="nvSair">Usar outra conta</button></div>`);
   }
+  if(view==='nuvemNovaSenha'){
+    return telaNuvem(`<h3>Crie sua senha</h3>
+      <p class="muted">Você entrou com a senha inicial. Para proteger os dados da clínica, escolha uma senha só sua.</p>
+      <form id="fNvNovaSenha"><label>Nova senha</label><input id="nvNova1" type="password" autocomplete="new-password" minlength="6" required>
+      <label>Repita a nova senha</label><input id="nvNova2" type="password" autocomplete="new-password" minlength="6" required>
+      ${msgsNuvem()}<button class="btn-p login-btn">Salvar e continuar</button></form>
+      <div class="login-links"><button class="lnk" id="nvSair">Sair</button></div>`);
+  }
   if(view==='nuvemPerfil'){
     const em=Nuvem.meuEmail(); const au=Nuvem.usuarioAuth();
     return telaNuvem(`<h3>Seus dados</h3>
@@ -2714,7 +2723,8 @@ function bindNuvemEvents(){
   const fE=q('fNvEntrar');
   if(fE) fE.addEventListener('submit',async ev=>{
     ev.preventDefault(); nuvemErro=''; nuvemInfo=''; ocupado(fE,true);
-    try{ await Nuvem.entrarEmail(q('nvEmail').value,q('nvSenha').value); }
+    try{ const sv=q('nvSenha').value; try{ if(sv===SENHA_INICIAL) sessionStorage.setItem('odonto-trocar-senha','1'); else sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
+      await Nuvem.entrarEmail(q('nvEmail').value,sv); }
     catch(e){ ocupado(fE,false); nuvemErro=Nuvem.mapErro(e); render(); }
   });
   const fC=q('fNvCriar');
@@ -2747,6 +2757,18 @@ function bindNuvemEvents(){
     render();
   });
   if(q('nvSair')) q('nvSair').addEventListener('click',()=>Nuvem.sair(true));
+  const fNS=q('fNvNovaSenha');
+  if(fNS) fNS.addEventListener('submit',async ev=>{
+    ev.preventDefault(); nuvemErro='';
+    const a=q('nvNova1').value, b=q('nvNova2').value;
+    const erroN=t=>{ nuvemErro=t; render(); };
+    if(a.length<6) return erroN('A senha precisa ter pelo menos 6 caracteres.');
+    if(a===SENHA_INICIAL) return erroN('Escolha uma senha diferente da senha inicial.');
+    if(a!==b) return erroN('As duas senhas não são iguais.');
+    ocupado(fNS,true);
+    try{ await Nuvem.trocarSenha(a); try{ sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){} nuvemInfo='Senha alterada.'; aoMudarLogin(Nuvem.usuarioAuth()); }
+    catch(e){ ocupado(fNS,false); erroN(e&&e.code==='auth/requires-recent-login'?'Por segurança, saia e entre de novo com a senha inicial.':Nuvem.mapErro(e)); }
+  });
   if(q('nvTentar')) q('nvTentar').addEventListener('click',()=>{ nuvemErro=''; aoMudarLogin(Nuvem.usuarioAuth()); });
   const fP=q('fPerfilMaster');
   if(fP){ const at=q('pmAtende'); at.addEventListener('change',()=>{ q('pmDentista').style.display=at.value==='sim'?'block':'none'; }); }
@@ -2820,6 +2842,8 @@ async function aoMudarLogin(u){
   const meu=++nuvemFluxo;
   if(!u){ session=null; nuvemAcesso=null; view='nuvemLogin'; render(); return; }
   if(!u.emailVerified){ view='nuvemVerificar'; render(); return; }
+  let trocar=false; try{ trocar=sessionStorage.getItem('odonto-trocar-senha')==='1'; }catch(e){}
+  if(trocar){ view='nuvemNovaSenha'; render(); return; }
   view='nuvemCarregando'; nuvemMsg='Verificando acesso…'; nuvemErro=''; render();
   try{
     let ac=await Nuvem.carregarAcesso();
@@ -4462,8 +4486,8 @@ function modalPlat(html){
   bg.querySelectorAll('[data-fechar]').forEach(b=>b.addEventListener('click',()=>bg.remove()));
   return bg;
 }
-function abrirNovaClinica(){
-  const bg=modalPlat(`<h3 style="margin:0 0 4px">Nova clínica</h3><p class="muted" style="margin:0 0 8px">Libera um teste. O responsável entra com o e-mail informado (Google ou "Primeiro acesso") e faz o cadastro da clínica.</p>
+function abrirNovaClinica(naProducao){
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">${naProducao?'Nova base de cliente (produção)':'Nova clínica'}</h3><p class="muted" style="margin:0 0 8px">${naProducao?'Cria uma base <strong>real</strong> na produção, totalmente separada das outras. ':''}O responsável entra com o e-mail informado: pelo Google (se for conta Google) ou com a senha inicial <strong>${SENHA_INICIAL}</strong>, que ele troca no primeiro acesso. Depois faz o cadastro da clínica.</p>
     <div class="row"><div><label>Nome da clínica</label><input data-nc="nome" maxlength="80"></div><div><label>WhatsApp do responsável</label><input data-nc="contato" inputmode="tel" placeholder="(92) 99999-9999"></div></div>
     <label>E-mail do responsável (login)</label><input data-nc="email" type="email" autocomplete="off">
     ${planoCamposHtml()}
@@ -4480,10 +4504,15 @@ function abrirNovaClinica(){
     const pc=lerPlanoCampos(bg);
     q('ok').disabled=true; q('ok').textContent='Criando…';
     try{
-      const cid=await Nuvem.criarClinica(Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc));
+      const dadosNc=Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc);
+      const cid=naProducao?await Nuvem.criarClinicaOutro(dadosNc):await Nuvem.criarClinica(dadosNc);
+      let conta='erro'; try{ conta=await Nuvem.criarContaInicial(email,SENHA_INICIAL,!!naProducao); }catch(e){ console.warn(e); }
       bg.remove(); platClinicas=null; carregarPlataforma(true);
+      if(naProducao){ outroLigado=null; renderPlatClientes._ok=false; }
+      const url=naProducao?PROD_URL+'/':location.origin+location.pathname;
+      const comoEntrar=conta==='existe'?`Entre com o e-mail ${email} e a senha que você já usa (ou "Entrar com Google").`:`Entre com o e-mail ${email}: use "Entrar com Google" (se for conta Google) ou digite a senha inicial ${SENHA_INICIAL}. No primeiro acesso, confirme o e-mail pelo link que enviamos e crie a sua senha.`;
       const dias=+q('dias').value||30;
-      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${location.origin}${location.pathname}\n2. Entre com o e-mail ${email}: use "Entrar com Google" (se for Gmail) ou "Primeiro acesso" para criar uma senha.\n3. Preencha o cadastro da clínica e comece a usar.\n\nPlanos do OdontoGestão:\n• Essencial ${fmtBRL(PLANOS.essencial.preco)}/mês: agenda, pacientes, lembretes pelo WhatsApp e anamnese\n• Clínico ${fmtBRL(PLANOS.clinico.preco)}/mês: + prontuário completo e anamnese/termo assinados pelo celular\n• Completo ${fmtBRL(PLANOS.completo.preco)}/mês: + financeiro, relatórios e até 3 dentistas\n\nSem fidelidade, sem taxa de implantação e com todas as atualizações incluídas. Ao final do teste, todas as suas informações continuam guardadas.`;
+      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${url}\n2. ${comoEntrar}\n3. Preencha o cadastro da clínica e comece a usar.\n\nPlanos do OdontoGestão:\n• Essencial ${fmtBRL(PLANOS.essencial.preco)}/mês: agenda, pacientes, lembretes pelo WhatsApp e anamnese\n• Clínico ${fmtBRL(PLANOS.clinico.preco)}/mês: + prontuário completo e anamnese/termo assinados pelo celular\n• Completo ${fmtBRL(PLANOS.completo.preco)}/mês: + financeiro, relatórios e até 3 dentistas\n\nSem fidelidade, sem taxa de implantação e com todas as atualizações incluídas. Ao final do teste, todas as suas informações continuam guardadas.`;
       const fone=telefoneWhatsApp(q('contato').value);
       if(fone){ const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank'); if(!w) mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg); }
       else mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg);
@@ -5177,7 +5206,7 @@ function renderPlatClientes(){
       <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f,versaoDoCliente(f.id)||APP_VERSION))}</strong>${versaoDoCliente(f.id)&&prodVersoes&&prodVersoes.atual&&cmpVer(versaoDoCliente(f.id),prodVersoes.atual)<0?' <span class="sit sit-nao_vem">atualização disponível</span>':''}${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
       <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
   const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"><input type="checkbox" data-envsel="principal" aria-label="Selecionar sua clínica" ${envSelecionados.has('principal')?'checked':''}></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td><strong>${esc('Ver '+vCurta(versaoDoCliente('principal')||APP_VERSION))}</strong></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
-  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-s" data-ponterecarregar style="margin-left:auto">Atualizar</button></div>
+  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-p" data-novabase style="margin-left:auto">+ Nova base de cliente</button><button class="btn-s" data-ponterecarregar>Atualizar</button></div>
     ${envioVersaoHtml()}
     <div class="overflow"><table><thead><tr><th class="env-sel"><input type="checkbox" data-envtodos aria-label="Selecionar todos"></th><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão na produção e melhorias</th><th></th></tr></thead><tbody>${minha}${linhas}</tbody></table></div>
     ${l.length?'':'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum cliente na produção ainda. Crie clientes pela Plataforma da produção.</p></div>'}
@@ -5292,6 +5321,7 @@ function abrirPersonalizacoesCliente(cidProd){
 }
 function bindClientes(){
   bindPonte(); bindEnvioVersao();
+  const nb=document.querySelector('[data-novabase]'); if(nb) nb.addEventListener('click',()=>abrirNovaClinica(true));
   document.querySelectorAll('[data-baseabrir]').forEach(el=>{
     const abrir=e=>{ if(e.target.closest('[data-esppers]')||e.target.closest('[data-envsel]')||e.target.closest('.env-sel')) return; e.stopPropagation(); abrirBaseCliente(el.getAttribute('data-baseabrir'),el.tagName==='BUTTON'?el:null); };
     el.addEventListener('click',abrir); if(el.tagName==='TR') el.addEventListener('keydown',e=>{ if(e.key==='Enter') abrir(e); });
