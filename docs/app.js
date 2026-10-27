@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.15.0';
+const APP_VERSION='2.16.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -4581,7 +4581,7 @@ function abrirItemRoadmap(id){
   if(id) q('apagar').addEventListener('click',()=>customConfirm('Excluir esta melhoria do quadro?',()=>{ Nuvem.apagarItemRoadmap(id).then(()=>render()); bg.remove(); }));
 }
 function bindPlataforma(){
-  bindSugestoesPlat(); bindClientes();
+  bindSugestoesPlat(); bindClientes(); bindPublicacao();
   document.querySelectorAll('[data-plataba]').forEach(b=>b.addEventListener('click',()=>{ platAba=b.getAttribute('data-plataba'); if(platAba==='clientes' && outroLigado){ outroLigado=null; renderPlatClientes._ok=false; } render(); }));
   const nova=document.querySelector('[data-platnova]'); if(nova) nova.addEventListener('click',abrirNovaClinica);
   const rec=document.querySelector('[data-platrecarregar]'); if(rec) rec.addEventListener('click',()=>{ platClinicas=null; carregarPlataforma(true); render(); });
@@ -4864,6 +4864,54 @@ function historicoVersoesHtml(limite,destacar,lista){
   const base=lista||NOTAS, l=limite?base.slice(0,limite):base;
   return `<div class="nv-hist">${l.map(n=>`<div class="nv-ver${destacar&&destacar(n)?' pendente':''}"><div class="nv-ver-cab"><strong>Ver ${esc(vCurta(n.v))}</strong><span class="muted">${n.data?new Date(n.data+'T12:00:00').toLocaleDateString('pt-BR'):''}</span>${destacar&&destacar(n)?'<span class="sit sit-nao_vem">Aguardando aprovação</span>':''}</div><ul>${n.itens.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`;
 }
+// ---- publicar na produção a partir do ambiente de teste ----
+// O botão grava o pedido em plataforma/publicacao (produção). O GitHub confere o pedido a cada
+// poucos minutos, junta o teste na produção, publica e, se pedido, já envia a versão aos clientes.
+let pubPedido=null, pubLido=false, pubTimer=null;
+const PUB_ST={pedido:['Aguardando o GitHub iniciar (até ~10 min)','sit-agendado'],publicando:['Publicando na produção…','sit-confirmado'],publicado:['Publicada na produção','sit-chegou'],erro:['Não foi possível publicar','sit-faltou']};
+function lerPublicacao(forcar){
+  if(!outroLigado || (pubLido && !forcar)) return; pubLido=true;
+  Nuvem.lerPlataformaOutro('publicacao').then(d=>{ pubPedido=d||{}; if(currentTab==='plataforma' && platAba==='versoes' && podeAtualizarSozinho()) render();
+    clearTimeout(pubTimer); if(d && (d.status==='pedido'||d.status==='publicando')) pubTimer=setTimeout(()=>{ lerPublicacao(true); if(d.status==='publicando'||d.status==='pedido'){ prodVersoesLidas=false; versaoProducaoLida=false; } },30000);
+  }).catch(e=>{ pubPedido={erroLeitura:Nuvem.mapErro(e)}; });
+}
+function publicacaoHtml(){
+  verificarOutro().then(v=>{ if(v && !publicacaoHtml._ok){ publicacaoHtml._ok=true; if(currentTab==='plataforma' && platAba==='versoes') render(); } });
+  const cab='<section class="bloco"><div class="bloco-cab"><h2>Publicar na produção</h2></div><div class="bloco-corpo">';
+  if(!outroLigado) return ponteHtml()+cab+'<p class="muted" style="margin:0">Conecte à produção para publicar daqui.</p></div></section>';
+  lerPublicacao();
+  const pend=versaoProducao && cmpVer(APP_VERSION,versaoProducao)>0, p=pubPedido||{};
+  const ativo=p.status==='pedido'||p.status==='publicando';
+  const st=p.status?PUB_ST[p.status]:null;
+  const quando=t=>t?new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
+  return cab+`${st?`<p style="margin:0 0 8px"><span class="sit ${st[1]}">${esc(st[0])}</span> Ver ${esc(vCurta(p.versao||''))} · pedido ${esc(quando(p.pedidoEm))}${p.concluidoEm?' · concluído '+esc(quando(p.concluidoEm)):''}${p.enviarPara&&p.enviarPara!=='ninguem'?' · enviar para '+(p.enviarPara==='todos'?'todos os clientes':(p.clinicas||[]).length+' cliente(s)'):''}</p>${p.status==='erro'&&p.erro?`<p class="erro-campo" style="margin:0 0 8px">${esc(p.erro)}</p>`:''}`:''}
+    ${pend&&!ativo?`<p style="margin:0 0 8px">A <strong>Ver ${esc(vCurta(APP_VERSION))}</strong> deste teste ainda não está na produção (lá: Ver ${esc(vCurta(versaoProducao))}).</p>
+      <div class="pub-op" role="radiogroup" aria-label="Depois de publicar">
+        <label><input type="radio" name="pubPara" value="ninguem" checked> Só publicar (eu envio aos clientes depois, em Bases dos clientes)</label>
+        <label><input type="radio" name="pubPara" value="selecionados" ${envSelecionados.size?'':'disabled'}> Publicar e enviar para os ${envSelecionados.size||''} cliente(s) marcados em Bases dos clientes</label>
+        <label><input type="radio" name="pubPara" value="todos"> Publicar e enviar para todos os clientes</label></div>
+      <button class="btn-p" id="btnPublicar" style="margin-top:10px">Publicar Ver ${esc(vCurta(APP_VERSION))} na produção</button>`
+    :ativo?'<p class="muted" style="margin:0">Acompanhe por aqui: a tela atualiza sozinha. A publicação leva alguns minutos.</p>'
+    :versaoProducao===null?'<p class="muted" style="margin:0">Consultando a produção…</p>':'<p class="muted" style="margin:0">Teste e produção estão na mesma versão: nada para publicar.</p>'}
+    </div></section>`;
+}
+function bindPublicacao(){
+  bindPonte();
+  const b=document.getElementById('btnPublicar'); if(!b) return;
+  b.addEventListener('click',()=>{
+    const para=(document.querySelector('input[name="pubPara"]:checked')||{}).value||'ninguem';
+    const ids=para==='selecionados'?[...envSelecionados]:[];
+    const txt=para==='todos'?' e enviar para todos os clientes':para==='selecionados'?' e enviar para '+ids.length+' cliente(s)':' (os clientes continuam na versão atual até você enviar)';
+    customConfirm(`Publicar a Ver ${vCurta(APP_VERSION)} na produção${txt}?`,async()=>{
+      b.disabled=true;
+      try{
+        const d={versao:APP_VERSION,status:'pedido',pedidoEm:Date.now(),por:Nuvem.meuEmail(),enviarPara:para,clinicas:ids,erro:'',concluidoEm:null};
+        await Nuvem.salvarPlataformaOutro('publicacao',d); pubPedido=d; envSelecionados.clear();
+        avisar('Pedido enviado. O GitHub publica em alguns minutos; acompanhe nesta tela.'); render(); lerPublicacao(true);
+      }catch(e){ b.disabled=false; avisar(Nuvem.mapErro(e)); }
+    },'Publicar');
+  });
+}
 function renderPlatVersoes(){
   lerVersaoProducao();
   const teste=Nuvem.ambienteTeste(), pend=notasPendentes();
@@ -4872,8 +4920,9 @@ function renderPlatVersoes(){
   const tituloN=n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===+n); return it?it.titulo:''; };
   return `<section class="bloco"><div class="bloco-cab"><h2>Versão</h2></div><div class="bloco-corpo">
     <p style="margin:0 0 6px">Esta base: <strong>${esc(rotuloVersao())}</strong> · ${teste?'ambiente de teste':'produção'}${teste?` · produção: <strong>${versaoProducao===null?'consultando…':versaoProducao?'Ver '+esc(vCurta(versaoProducao)):'não consultada'}</strong>`:''}</p>
-    ${teste&&pend.length?`<p class="muted" style="margin:0">Itens marcados como "Aguardando aprovação" vão para todas as clínicas quando você aprovar.</p>`:''}
+    ${teste&&pend.length?`<p class="muted" style="margin:0">Itens marcados como "Aguardando aprovação" vão para a produção quando você publicar (abaixo); cada cliente só muda quando você enviar a versão para ele.</p>`:''}
   </div></section>
+  ${teste?publicacaoHtml():''}
   ${teste?`<section class="bloco"><div class="bloco-cab"><h2>Aguardando aprovação</h2></div><div class="bloco-corpo">${pend.length?historicoVersoesHtml(0,()=>true,pend):'<p class="muted" style="margin:0">Nada pendente: o teste está igual à produção.</p>'}</div></section>`:''}
   <section class="bloco"><div class="bloco-cab"><h2>Versão de cada clínica</h2></div>
     ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th></tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
