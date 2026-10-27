@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.14.0';
+const APP_VERSION='2.15.0';
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -923,6 +923,56 @@ function abrirLoteLembretes(data){
   };
   desenhar();
 }
+// ---- música do paciente na sala de atendimento ----
+// O sistema abre o app de música da clínica já no estilo, artista ou playlist do paciente; o app monta a sequência.
+const MUSICA_GENEROS=['Sertanejo','MPB','Pagode e samba','Forró','Gospel','Rock','Pop','Pop nacional','Brega e arrocha','Boi-bumbá','Reggae','Eletrônica','Rap e hip-hop','Funk','Jazz e blues','Clássica e instrumental','Relaxante','Infantil'];
+const MUSICA_APPS={spotify:'Spotify',ytmusic:'YouTube Music',deezer:'Deezer',youtube:'YouTube'};
+function musicaDe(p){ const m=(p&&p.musica)||{}; return {generos:m.generos||[],artistas:String(m.artistas||'').split(/[,;\n]/).map(x=>x.trim()).filter(Boolean),silencio:!!m.silencio}; }
+function musicaTemPreferencia(p){ const m=musicaDe(p); return m.silencio || m.generos.length || m.artistas.length; }
+function musicaTexto(p){ const m=musicaDe(p); if(m.silencio) return 'Prefere silêncio'; return m.generos.concat(m.artistas).join(', '); }
+function musicaLink(op){
+  const c=state.clinic||{}, app=c.musicaApp||'spotify';
+  const q=op.tipo==='artista'?(app==='spotify'?'This Is '+op.v:op.v+' mix'):op.v+(app==='spotify'||app==='deezer'?'':' playlist');
+  const e=encodeURIComponent(q);
+  if(app==='ytmusic') return 'https://music.youtube.com/search?q='+e;
+  if(app==='deezer') return 'https://www.deezer.com/search/'+e+'/playlist';
+  if(app==='youtube') return 'https://www.youtube.com/results?search_query='+e;
+  return 'https://open.spotify.com/search/'+e+'/playlists';
+}
+function tocarMusicaPaciente(p){
+  const m=musicaDe(p); if(m.silencio){ avisar('Este paciente prefere silêncio durante o atendimento.'); return; }
+  const ops=m.generos.map(v=>({tipo:'genero',v})).concat(m.artistas.map(v=>({tipo:'artista',v})));
+  if(!ops.length){ avisar('Este paciente ainda não tem preferência musical cadastrada. Edite os dados do paciente.'); return; }
+  const op=ops[Math.floor(Math.random()*ops.length)];
+  const w=window.open(musicaLink(op),'_blank');
+  if(w){ try{ w.opener=null; }catch(e){} avisarRapido('🎵 Abrindo '+(MUSICA_APPS[(state.clinic||{}).musicaApp||'spotify'])+': '+op.v); }
+  else avisar('O navegador bloqueou a abertura. Permita janelas para este site e tente de novo.');
+}
+function musicaAutoNoAparelho(v){
+  try{ if(v===undefined) return localStorage.getItem('odonto-musica-auto')==='1'; if(v) localStorage.setItem('odonto-musica-auto','1'); else localStorage.removeItem('odonto-musica-auto'); }catch(e){ return false; }
+}
+function abrirPlaylistClinica(){
+  const u=(state.clinic||{}).musicaPlaylist; if(!u) return false;
+  const w=window.open(u,'odonto-musica'); if(w){ try{ w.opener=null; }catch(e){} return true; } return false;
+}
+// ao abrir o sistema: tenta abrir a playlist; se o navegador bloquear, abre no primeiro toque na tela
+function iniciarPlaylistAuto(){
+  if(!musicaAutoNoAparelho() || !(state.clinic||{}).musicaPlaylist) return;
+  try{ if(sessionStorage.getItem('odonto-musica-tocada')) return; sessionStorage.setItem('odonto-musica-tocada','1'); }catch(e){}
+  if(abrirPlaylistClinica()){ avisarRapido('🎵 Playlist da clínica aberta'); return; }
+  const fx=document.createElement('button'); fx.className='faixa-musica'; fx.type='button';
+  fx.textContent='🎵 Toque aqui (ou em qualquer lugar) para iniciar a playlist da clínica';
+  document.body.appendChild(fx);
+  const iniciar=()=>{ document.removeEventListener('pointerdown',iniciar,true); document.removeEventListener('keydown',iniciar,true); fx.remove(); if(abrirPlaylistClinica()) avisarRapido('🎵 Playlist da clínica aberta'); };
+  document.addEventListener('pointerdown',iniciar,true); document.addEventListener('keydown',iniciar,true);
+}
+function avisarRapido(t){ const d=document.createElement('div'); d.className='toast-musica'; d.setAttribute('role','status'); d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2600); }
+function botaoMusicaHtml(a){
+  const p=pacPorId(a.pacienteId); if(!p || !musicaTemPreferencia(p)) return '';
+  const m=musicaDe(p);
+  if(m.silencio) return '<span class="sit sit-cancelado-n" title="Prefere silêncio durante o atendimento">🔇 Silêncio</span>';
+  return `<button class="btn-s btn-musica" data-agmusica="${a.id}" title="Tocar no app de música da clínica: ${esc(musicaTexto(p))}">🎵 Música</button>`;
+}
 function agStatusSelect(a){
   const atual=statusAg(a), travado=statusAgExib(a)==='atendido';
   return `<select class="ag-status-sel" data-agstatus="${a.id}" ${travado?'disabled title="Atendimento já registrado no prontuário"':''}>${[['agendado','Sem confirmação'],['confirmado','Confirmado'],['chegou','Na clínica'],['nao_vem','Não vem'],['faltou','Faltou'],['cancelado','Cancelado']].map(([v,t])=>`<option value="${v}" ${atual===v?'selected':''}>${t}</option>`).join('')}</select>`;
@@ -949,6 +999,7 @@ function agendaCardsList(list){
       <div class="ag-card-actions">
         ${agStatusSelect(a)}
         ${podeChegou(a)?`<button class="btn-p" data-agchegou="${a.id}">Chegou</button>`:''}
+        ${st==='chegou'?botaoMusicaHtml(a):''}
         ${(st==='agendado'||st==='confirmado')?`<button class="btn-icone peq" data-agwpp="${a.id}" aria-label="Enviar lembrete por WhatsApp" title="Enviar lembrete por WhatsApp">${ICONES.zap}</button>`:''}
         <button class="btn-icone peq" data-editag="${a.id}" aria-label="Editar ou remarcar" title="Editar ou remarcar">${ICONES.editar}</button>
         <button class="btn-icone peq btn-perigo" data-delag="${a.id}" aria-label="Excluir agendamento" title="Excluir">${ICONES.lixo}</button>
@@ -1165,6 +1216,7 @@ function renderAgendaCelular(){
           <button class="btn-s" data-agwpp="${a.id}">WhatsApp</button>
           <button class="btn-s" data-editag="${a.id}">Remarcar</button>
           ${podeChegou(a)?`<button class="btn-p" data-agchegou="${a.id}">Chegou</button>`:''}
+          ${st==='chegou'?botaoMusicaHtml(a):''}
         </div>`:''}
       </div></div>`;
   });
@@ -2798,6 +2850,7 @@ async function aoMudarLogin(u){
       } else {
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
+        setTimeout(()=>{ try{ iniciarPlaylistAuto(); }catch(e){ console.warn(e); } },800);
       }
     }
     render();
@@ -3005,6 +3058,17 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     </div>
   </section>
   <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Música na sala de atendimento</h3><p>Quando o paciente está na clínica, o botão 🎵 da agenda abre este app já no estilo ou artista preferido dele, e o app monta a sequência. O app precisa estar instalado e com a conta da clínica no aparelho da sala.</p></div>
+    <div class="cl-grade">
+      <div class="cl-campo"><label for="clMusApp">App de música da clínica</label><select id="clMusApp"${dis}>${Object.entries(MUSICA_APPS).map(([k,t])=>`<option value="${k}" ${(d.musicaApp||'spotify')===k?'selected':''}>${t}</option>`).join('')}</select></div>
+    </div>
+    <div class="cl-grade">
+      <div class="cl-campo c2"><label for="clMusPl">Playlist da clínica (link)</label><input id="clMusPl" type="url" value="${esc(d.musicaPlaylist||'')}" placeholder="https://open.spotify.com/playlist/… ou link do YouTube, Deezer…"${dis}><div class="cl-dica">Cole o link da playlist em qualquer plataforma. Ela abre sozinha ao entrar no sistema nos aparelhos marcados abaixo.</div></div>
+    </div>
+    <label class="chk-linha" style="margin-top:8px"><input type="checkbox" id="clMusAuto" ${musicaAutoNoAparelho()?'checked':''}> Iniciar a playlist automaticamente ao abrir o sistema <strong>neste aparelho</strong></label>
+    <p class="cl-dica" style="margin:4px 0 0">Marque só no computador ou tablet da sala (cada aparelho tem a sua opção). ${d.musicaPlaylist?`<button type="button" class="lnk-forte" data-mustestar>Testar a playlist</button>`:''}</p>
+  </section>
+  <section class="cl-secao">
     <div class="cl-secao-cab"><h3>Endereço</h3><p>Digite o CEP para preencher o restante.</p></div>
     <div class="cl-grade cl-grade-end">
       <div class="cl-campo c2"><label for="clCep">CEP</label><input id="clCep" value="${esc(e.cep||'')}" inputmode="numeric" data-mask="cep" placeholder="00000-000"${dis}><div class="cl-dica" id="clCepMsg"></div></div>
@@ -3076,6 +3140,10 @@ function bindClinicaForm(formId,aoSalvar){
     c.alvaraNumero=val('clAlvara'); c.alvaraValidade=val('clAlvaraVal');
     c.rtNome=val('clRtNome'); c.rtCro=val('clRtCro').toUpperCase();
     c.telefone=val('clTel'); c.whatsapp=val('clZap'); c.email=val('clEmail'); c.site=val('clSite'); c.instagram=val('clInsta');
+    if(q('clMusApp')){ c.musicaApp=val('clMusApp')||'spotify'; const pl=val('clMusPl');
+      if(pl && !/^https?:\/\/\S+$/i.test(pl)){ avisar('O link da playlist precisa começar com https://'); return; }
+      c.musicaPlaylist=pl; delete c.musicaPlaylists;
+      if(q('clMusAuto')) musicaAutoNoAparelho(q('clMusAuto').checked); }
     c.end={cep:val('clCep'),logradouro:val('clLogr'),numero:val('clNum'),complemento:val('clCompl'),bairro:val('clBairro'),cidade:val('clCidade'),uf:val('clUf')};
     c.horarios={}; DIAS_CLINICA.forEach(([k])=>{ c.horarios[k]={aberto:q('hAb_'+k).checked,ini:q('hIni_'+k).value||'08:00',fim:q('hFim_'+k).value||'18:00'}; });
     c.intervalo={ini:val('clIntIni'),fim:val('clIntFim')}; c.duracaoPadrao=parseInt(val('clDur'),10)||30;
@@ -3461,7 +3529,10 @@ function openUserForm(u){
   document.getElementById('userFormArea').innerHTML = `<div class="card">
     <h3>${isNew?'Novo usuário':'Editar usuário'}</h3>
     <form id="fUser">${userFormFields(tipo, u||{}, isNew)}
-    ${isMaster && u ? `<label>Permissões (editável pelo Master)</label>
+    ${isMaster && u ? `<label for="fTipoEd" style="margin-top:14px">Tipo de usuário (só o Master altera)</label>
+      <select id="fTipoEd">${[['master','Master (acesso total)'],['administrativo','Administrativo'],['dentista','Dentista'],['recepcionista','Recepcionista']].map(([v,t])=>`<option value="${v}" ${u.tipo===v?'selected':''}>${t}</option>`).join('')}</select>
+      <p class="muted" id="fTipoEdDica" style="margin:4px 0 0;font-size:12.5px">${u.id===currentUser().id?'Para deixar de ser Master, é preciso ter outro Master ativo na clínica.':'O Master tem acesso total: usuários, financeiro, dados da clínica e exclusões.'}</p>
+      <label>Permissões (editável pelo Master)</label>
       <div class="perm">
         <label><input type="checkbox" id="pUsuarios" ${perms.usuarios?'checked':''}> Usuários</label>
         <label${(u?u.tipo:tipo)==='dentista'?' title="Dentista sempre pode cadastrar e atender pacientes"':''}><input type="checkbox" id="pPacientes" ${perms.pacientes||(u?u.tipo:tipo)==='dentista'?'checked':''}${(u?u.tipo:tipo)==='dentista'?' disabled':''}> Pacientes</label>
@@ -3477,15 +3548,24 @@ function openUserForm(u){
   });
   const fAt=document.getElementById('fAtende');
   if(fAt) fAt.addEventListener('change',()=>{ document.getElementById('croWrap').style.display=fAt.checked?'block':'none'; });
+  const fTE=document.getElementById('fTipoEd');
+  if(fTE) fTE.addEventListener('change',()=>{ const v=fTE.value, cw=document.getElementById('croWrap');
+    if(cw) cw.style.display=(v==='dentista'||(v==='master'&&(fAt?fAt.checked:ehDentista(u))))?'block':'none';
+    document.querySelectorAll('#fUser .perm input').forEach(c=>{ c.disabled=v==='master'||(c.id==='pPacientes'&&v==='dentista'); if(v==='master') c.checked=true; }); });
   const fW=document.getElementById('fWhats');
   if(fW){ fW.addEventListener('input',()=>{ const v=mascaraTel(fW.value); if(v!==fW.value) fW.value=v; });
     const fT=document.getElementById('fTelefone'); if(fT && !fW.value) fT.addEventListener('change',()=>{ if(!fW.value && soDigitos(fT.value).length>=10) fW.value=mascaraTel(fT.value); }); }
   document.getElementById('btnCancelUser').addEventListener('click',()=>{ document.getElementById('userFormArea').innerHTML=''; });
   document.getElementById('fUser').addEventListener('submit', async ev=>{
     ev.preventDefault();
-    const tipoVal = isNew ? document.getElementById('fTipo').value : u.tipo;
+    const fTEv=document.getElementById('fTipoEd');
+    const tipoVal = isNew ? document.getElementById('fTipo').value : (fTEv?fTEv.value:u.tipo);
+    const mudouTipo = !isNew && tipoVal!==u.tipo;
     const cro = document.getElementById('fCro') ? document.getElementById('fCro').value.trim() : '';
-    const atendeVal = tipoVal==='master' && !!(document.getElementById('fAtende') && document.getElementById('fAtende').checked);
+    const fAtEl=document.getElementById('fAtende');
+    const atendeVal = tipoVal==='master' && (fAtEl ? !!fAtEl.checked : (u && u.tipo==='dentista' && !!String(u.cro||'').trim()));
+    if(mudouTipo && u.tipo==='master' && !state.users.some(x=>x.id!==u.id && x.tipo==='master' && usuarioAtivo(x))){
+      avisar('A clínica precisa ter pelo menos um Master ativo. Promova outro usuário a Master antes de mudar este.'); return; }
     if((tipoVal==='dentista' || atendeVal) && !/^\d{3,6}-[A-Za-z]{2}$/.test(cro)){
       avisar(atendeVal?'Para atender como dentista, informe o CRO (ex: 10101-AM).':'Informe um CRO válido, ex: 10101-AM'); return;
     }
@@ -3505,7 +3585,7 @@ function openUserForm(u){
       atende: tipoVal==='master' ? atendeVal : undefined,
       whatsapp: (tipoVal==='dentista'||atendeVal) ? whatsVal : ((u&&u.whatsapp)||''),
       agendaDiaria: (tipoVal==='dentista'||atendeVal) ? !!(document.getElementById('fAgendaDia')&&document.getElementById('fAgendaDia').checked) : ((u&&u.agendaDiaria)!==false),
-      permissions: isNew ? defaultPerms(tipoVal) : (isMaster ? {
+      permissions: (isNew||mudouTipo) ? defaultPerms(tipoVal) : (isMaster ? {
         usuarios: document.getElementById('pUsuarios').checked,
         pacientes: document.getElementById('pPacientes').checked,
         clinica: document.getElementById('pClinica').checked,
@@ -3529,11 +3609,18 @@ function openUserForm(u){
     if(novaSenha && novaSenha.length<6){ avisar('A senha precisa ter pelo menos 6 caracteres.'); return; }
     if(novaSenha) Object.assign(data, await hashSenha(novaSenha));
     const lim=limitePlanoMsg(Object.assign({},u||{},data),u); if(lim){ avisar(lim); return; }
-    if(isNew) state.users.push(data);
-    else { Object.assign(u, data); if(novaSenha) delete u.password; }
-    saveData();
-    document.getElementById('userFormArea').innerHTML='';
-    render();
+    const gravar=()=>{
+      if(mudouTipo){ data.tipoHist=(u.tipoHist||[]).concat([{de:u.tipo,para:tipoVal,em:new Date().toISOString(),por:nomeExibicao(currentUser())}]); if(tipoVal!=='master') data.atende=undefined; }
+      if(isNew) state.users.push(data);
+      else { Object.assign(u, data); if(novaSenha) delete u.password; if(data.atende===undefined) delete u.atende; }
+      saveData();
+      document.getElementById('userFormArea').innerHTML='';
+      render();
+      if(mudouTipo) avisar(tipoVal==='master'?`${nomeExibicao(u)} agora é Master da clínica.`:`${nomeExibicao(u)} agora é ${tipoLabel(tipoVal)}.`);
+    };
+    if(mudouTipo && tipoVal==='master') customConfirm(`Promover ${semTitulo(u.nomeCompleto)} a Master? Ele passa a ter acesso total à clínica, inclusive usuários, financeiro e exclusões.`,gravar,'Promover a Master');
+    else if(mudouTipo && u.id===currentUser().id) customConfirm(`Deixar de ser Master e passar a ${tipoLabel(tipoVal)}? Você perde o acesso total, e o sistema vai recarregar.`,gravar,'Confirmar');
+    else gravar();
   });
 }
 
@@ -3696,7 +3783,9 @@ function renderDadosPessoais(p){
     ${infoBox('Responsável (se menor)', p.responsavel)}
     ${infoBox('Contato de emergência', p.contatoEmergencia)}
     ${infoBox('Última consulta confirmada', fmtDataBR(ultimaConsultaConfirmada(p)))}
+    ${infoBox('Preferência musical', musicaTexto(p))}
   </div>
+  ${musicaTemPreferencia(p)&&!musicaDe(p).silencio?`<button class="btn-s" data-pacmusica="${p.id}" style="margin-top:8px">🎵 Tocar a música do paciente</button>`:''}
   ${(p.historicoAnterior||[]).length?`<div class="section-title">Histórico do sistema anterior</div><ul class="hist-ant">${p.historicoAnterior.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}
   ${p.idAntigo?`<p class="muted" style="font-size:12px;margin:8px 0 0">Importado do sistema anterior (código ${esc(p.idAntigo)}).</p>`:''}
   <div style="margin-top:18px"><button id="btnEditPatientData" class="btn-p">Editar dados cadastrais</button></div>
@@ -5496,6 +5585,11 @@ function openPatientForm(p){
     <div><label>Responsável (se menor)</label><input id="pResponsavel" value="${esc(d.responsavel)}"></div>
   </div>
   <label>Contato de emergência (nome e telefone)</label><input id="pEmergencia" value="${esc(d.contatoEmergencia)}">
+  <fieldset class="musica-campos"><legend>Preferência musical durante o atendimento</legend>
+    <div class="musica-chips">${MUSICA_GENEROS.map(g=>`<label class="chip-op"><input type="checkbox" data-pmgen value="${esc(g)}" ${musicaDe(d).generos.includes(g)?'checked':''}> ${esc(g)}</label>`).join('')}</div>
+    <label for="pMusArt">Artistas ou cantores favoritos</label><input id="pMusArt" value="${esc((d.musica&&d.musica.artistas)||'')}" placeholder="Ex.: Marisa Monte, Jorge e Mateus (separe por vírgula)">
+    <label class="chk-linha" style="margin-top:8px"><input type="checkbox" id="pMusSil" ${d.musica&&d.musica.silencio?'checked':''}> Prefere silêncio</label>
+  </fieldset>
   <p class="muted" style="margin-top:8px">A anamnese odontológica completa fica disponível na ficha do paciente (aba Anamnese) depois de salvo.</p>
   <div style="margin-top:16px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelPatient" class="btn-s">Cancelar</button></div>
   </form></div>`;
@@ -5508,6 +5602,7 @@ function openPatientForm(p){
       sexo: pSexo.value, estadoCivil: pEstadoCivil.value, profissao: pProfissao.value,
       endereco: pEndereco.value, telefone: pTelefone.value, email: pEmail.value,
       convenio: pConvenio.value, responsavel: pResponsavel.value, contatoEmergencia: pEmergencia.value,
+      musica: {generos:[...document.querySelectorAll('[data-pmgen]:checked')].map(c=>c.value), artistas:(document.getElementById('pMusArt')||{}).value||'', silencio:!!(document.getElementById('pMusSil')||{}).checked},
     };
     if(!p) { data.anamneses=[]; data.ultimaConsultaConfirmada=''; }
     if(p) Object.assign(p, data); else state.patients.push(data);
@@ -5877,6 +5972,9 @@ function bindEvents(){
   document.querySelectorAll('[data-aggradepor]').forEach(b=>b.addEventListener('click',()=>{ agendaGradePor=b.getAttribute('data-aggradepor'); render(); }));
   document.querySelectorAll('[data-agdent]').forEach(b=>b.addEventListener('click',()=>{ agDentFiltro=b.getAttribute('data-agdent'); render(); }));
   document.querySelectorAll('[data-agchegou]').forEach(b=>b.addEventListener('click',()=>mudarStatusAg(b.getAttribute('data-agchegou'),'chegou')));
+  document.querySelectorAll('[data-agmusica]').forEach(b=>b.addEventListener('click',ev=>{ ev.stopPropagation(); const a=(state.agendamentos||[]).find(x=>x.id===b.getAttribute('data-agmusica')); if(a) tocarMusicaPaciente(pacPorId(a.pacienteId)); }));
+  document.querySelectorAll('[data-mustestar]').forEach(b=>b.addEventListener('click',()=>{ if(!abrirPlaylistClinica()) avisar('O navegador bloqueou a abertura. Permita janelas para este site.'); }));
+  document.querySelectorAll('[data-pacmusica]').forEach(b=>b.addEventListener('click',()=>tocarMusicaPaciente(pacPorId(b.getAttribute('data-pacmusica')))));
   document.querySelectorAll('[data-lote]').forEach(b=>b.addEventListener('click',()=>abrirLoteLembretes(b.getAttribute('data-lote'))));
   document.querySelectorAll('[data-agcol]').forEach(col=>col.addEventListener('click',e=>{
     if(e.target!==col) return;
