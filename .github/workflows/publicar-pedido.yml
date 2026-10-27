@@ -1,0 +1,67 @@
+# Publica na PRODUÇÃO quando o administrador pede pelo ambiente de teste
+# (Plataforma → Versões → "Publicar na produção"). Confere o pedido a cada 10 minutos.
+name: Publicar pedido do teste
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-producao
+  cancel-in-progress: false
+
+jobs:
+  pedido:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Há pedido?
+        id: ver
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          pip install --quiet google-auth requests
+          python3 .github/pedido.py ver > "$RUNNER_TEMP/ver.txt" || { echo "::error::Não foi possível ler o pedido no Firestore (a conta de serviço precisa do papel 'Cloud Datastore User')"; exit 1; }
+          cat "$RUNNER_TEMP/ver.txt" >> "$GITHUB_OUTPUT"; cat "$RUNNER_TEMP/ver.txt"
+      - name: Juntar o teste na produção
+        if: steps.ver.outputs.versao != ''
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PEDIDA: ${{ steps.ver.outputs.versao }}
+        run: |
+          python3 .github/pedido.py marcar publicando
+          git fetch -q origin teste
+          V=$(git show origin/teste:docs/versao.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["versao"])')
+          if [ "$V" != "$PEDIDA" ]; then python3 .github/pedido.py marcar erro "O teste está na Ver $V e o pedido era da Ver $PEDIDA. Peça de novo."; exit 1; fi
+          git config user.name "OdontoGestão (publicação)"; git config user.email "actions@users.noreply.github.com"
+          if ! git merge --no-ff origin/teste -m "Produção: $V (publicado pelo ambiente de teste)"; then git merge --abort; python3 .github/pedido.py marcar erro "Conflito ao juntar o teste na produção. Chame o suporte."; exit 1; fi
+          git push origin HEAD:main
+      - uses: actions/setup-node@v5
+        if: steps.ver.outputs.versao != ''
+        with:
+          node-version: 22
+      - name: Publicar
+        if: steps.ver.outputs.versao != ''
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GITHUB_REF_NAME: main
+        run: |
+          printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/chave.json"
+          curl -fsS "https://odontogestao-teste.web.app/__/firebase/init.json" -o docs/config-outro.json || echo "::warning::sem config do teste"
+          python3 .github/montar_site.py
+          if npx --yes firebase-tools@13 deploy --project default --only hosting,firestore:rules --non-interactive; then
+            python3 .github/pedido.py enviar || echo "::warning::publicado, mas não foi possível enviar aos clientes"
+            python3 .github/pedido.py marcar publicado
+          else
+            python3 .github/pedido.py marcar erro "A publicação no Firebase falhou. Veja o GitHub Actions."; exit 1
+          fi
+      - name: Apagar a chave
+        if: always()
+        run: rm -f "$RUNNER_TEMP/chave.json"
