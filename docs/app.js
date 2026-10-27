@@ -2678,7 +2678,8 @@ function renderTelaNuvem(){
         <p class="muted" style="font-size:12.5px;margin:6px 0 0">Quem não atende não aparece na agenda nem na escolha de dentista. Dá para mudar depois em Usuários.</p>
         ${msgsNuvem()}
         <button class="btn-p login-btn">Concluir</button>
-      </form>`);
+      </form>
+      <div class="login-links"><button class="lnk" id="nvSair">Sair e usar outra conta</button></div>`);
   }
   // nuvemLogin
   if(nuvemModo==='esqueci') return telaNuvem(`<h3>Esqueci minha senha</h3>
