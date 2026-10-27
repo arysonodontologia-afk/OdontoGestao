@@ -9,6 +9,13 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.16.0', data:'2026-10-27', itens:[
+    'Publicar na produção pelo próprio ambiente de teste (Plataforma → Versões), sem depender do suporte',
+    'Na mesma ação, enviar a nova versão para todos os clientes, para os marcados ou para ninguém (envio depois)',
+    'Acompanhamento da publicação na tela: aguardando, publicando, publicada ou erro',
+    'Nova base de cliente real criada pelo ambiente de teste (Bases dos clientes), com acesso por Google ou senha inicial 123456',
+    'No primeiro acesso com a senha inicial, o sistema obriga a criar uma senha própria',
+  ]},
   {v:'2.15.0', data:'2026-10-24', itens:[
     'Preferência musical no cadastro do paciente: estilos, artistas favoritos ou "prefere silêncio"',
     'Agenda: com o paciente na clínica, o botão 🎵 abre o app de música da clínica no estilo ou artista dele (sorteado entre as preferências)',

@@ -1,5 +1,6 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.15.0';
+const APP_VERSION='2.16.0';
+const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
 function estadoVazio(){ return {clinic:null, users:[], patients:[], meta:{}}; }
@@ -2663,6 +2664,14 @@ function renderTelaNuvem(){
       <button class="btn-p login-btn" id="nvTentar">Tentar de novo</button>
       <div class="login-links"><button class="lnk" id="nvSair">Usar outra conta</button></div>`);
   }
+  if(view==='nuvemNovaSenha'){
+    return telaNuvem(`<h3>Crie sua senha</h3>
+      <p class="muted">Você entrou com a senha inicial. Para proteger os dados da clínica, escolha uma senha só sua.</p>
+      <form id="fNvNovaSenha"><label>Nova senha</label><input id="nvNova1" type="password" autocomplete="new-password" minlength="6" required>
+      <label>Repita a nova senha</label><input id="nvNova2" type="password" autocomplete="new-password" minlength="6" required>
+      ${msgsNuvem()}<button class="btn-p login-btn">Salvar e continuar</button></form>
+      <div class="login-links"><button class="lnk" id="nvSair">Sair</button></div>`);
+  }
   if(view==='nuvemPerfil'){
     const em=Nuvem.meuEmail(); const au=Nuvem.usuarioAuth();
     return telaNuvem(`<h3>Seus dados</h3>
@@ -2714,7 +2723,8 @@ function bindNuvemEvents(){
   const fE=q('fNvEntrar');
   if(fE) fE.addEventListener('submit',async ev=>{
     ev.preventDefault(); nuvemErro=''; nuvemInfo=''; ocupado(fE,true);
-    try{ await Nuvem.entrarEmail(q('nvEmail').value,q('nvSenha').value); }
+    try{ const sv=q('nvSenha').value; try{ if(sv===SENHA_INICIAL) sessionStorage.setItem('odonto-trocar-senha','1'); else sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
+      await Nuvem.entrarEmail(q('nvEmail').value,sv); }
     catch(e){ ocupado(fE,false); nuvemErro=Nuvem.mapErro(e); render(); }
   });
   const fC=q('fNvCriar');
@@ -2747,6 +2757,18 @@ function bindNuvemEvents(){
     render();
   });
   if(q('nvSair')) q('nvSair').addEventListener('click',()=>Nuvem.sair(true));
+  const fNS=q('fNvNovaSenha');
+  if(fNS) fNS.addEventListener('submit',async ev=>{
+    ev.preventDefault(); nuvemErro='';
+    const a=q('nvNova1').value, b=q('nvNova2').value;
+    const erroN=t=>{ nuvemErro=t; render(); };
+    if(a.length<6) return erroN('A senha precisa ter pelo menos 6 caracteres.');
+    if(a===SENHA_INICIAL) return erroN('Escolha uma senha diferente da senha inicial.');
+    if(a!==b) return erroN('As duas senhas não são iguais.');
+    ocupado(fNS,true);
+    try{ await Nuvem.trocarSenha(a); try{ sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){} nuvemInfo='Senha alterada.'; aoMudarLogin(Nuvem.usuarioAuth()); }
+    catch(e){ ocupado(fNS,false); erroN(e&&e.code==='auth/requires-recent-login'?'Por segurança, saia e entre de novo com a senha inicial.':Nuvem.mapErro(e)); }
+  });
   if(q('nvTentar')) q('nvTentar').addEventListener('click',()=>{ nuvemErro=''; aoMudarLogin(Nuvem.usuarioAuth()); });
   const fP=q('fPerfilMaster');
   if(fP){ const at=q('pmAtende'); at.addEventListener('change',()=>{ q('pmDentista').style.display=at.value==='sim'?'block':'none'; }); }
@@ -2820,6 +2842,8 @@ async function aoMudarLogin(u){
   const meu=++nuvemFluxo;
   if(!u){ session=null; nuvemAcesso=null; view='nuvemLogin'; render(); return; }
   if(!u.emailVerified){ view='nuvemVerificar'; render(); return; }
+  let trocar=false; try{ trocar=sessionStorage.getItem('odonto-trocar-senha')==='1'; }catch(e){}
+  if(trocar){ view='nuvemNovaSenha'; render(); return; }
   view='nuvemCarregando'; nuvemMsg='Verificando acesso…'; nuvemErro=''; render();
   try{
     let ac=await Nuvem.carregarAcesso();
@@ -4462,8 +4486,8 @@ function modalPlat(html){
   bg.querySelectorAll('[data-fechar]').forEach(b=>b.addEventListener('click',()=>bg.remove()));
   return bg;
 }
-function abrirNovaClinica(){
-  const bg=modalPlat(`<h3 style="margin:0 0 4px">Nova clínica</h3><p class="muted" style="margin:0 0 8px">Libera um teste. O responsável entra com o e-mail informado (Google ou "Primeiro acesso") e faz o cadastro da clínica.</p>
+function abrirNovaClinica(naProducao){
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">${naProducao?'Nova base de cliente (produção)':'Nova clínica'}</h3><p class="muted" style="margin:0 0 8px">${naProducao?'Cria uma base <strong>real</strong> na produção, totalmente separada das outras. ':''}O responsável entra com o e-mail informado: pelo Google (se for conta Google) ou com a senha inicial <strong>${SENHA_INICIAL}</strong>, que ele troca no primeiro acesso. Depois faz o cadastro da clínica.</p>
     <div class="row"><div><label>Nome da clínica</label><input data-nc="nome" maxlength="80"></div><div><label>WhatsApp do responsável</label><input data-nc="contato" inputmode="tel" placeholder="(92) 99999-9999"></div></div>
     <label>E-mail do responsável (login)</label><input data-nc="email" type="email" autocomplete="off">
     ${planoCamposHtml()}
@@ -4480,10 +4504,15 @@ function abrirNovaClinica(){
     const pc=lerPlanoCampos(bg);
     q('ok').disabled=true; q('ok').textContent='Criando…';
     try{
-      const cid=await Nuvem.criarClinica(Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc));
+      const dadosNc=Object.assign({nome,slug:slugDe(nome),donoEmail:email,dias:+q('dias').value||30,obs:q('obs').value.trim(),contato:q('contato').value.trim()},pc);
+      const cid=naProducao?await Nuvem.criarClinicaOutro(dadosNc):await Nuvem.criarClinica(dadosNc);
+      let conta='erro'; try{ conta=await Nuvem.criarContaInicial(email,SENHA_INICIAL,!!naProducao); }catch(e){ console.warn(e); }
       bg.remove(); platClinicas=null; carregarPlataforma(true);
+      if(naProducao){ outroLigado=null; renderPlatClientes._ok=false; }
+      const url=naProducao?PROD_URL+'/':location.origin+location.pathname;
+      const comoEntrar=conta==='existe'?`Entre com o e-mail ${email} e a senha que você já usa (ou "Entrar com Google").`:`Entre com o e-mail ${email}: use "Entrar com Google" (se for conta Google) ou digite a senha inicial ${SENHA_INICIAL}. No primeiro acesso, confirme o e-mail pelo link que enviamos e crie a sua senha.`;
       const dias=+q('dias').value||30;
-      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${location.origin}${location.pathname}\n2. Entre com o e-mail ${email}: use "Entrar com Google" (se for Gmail) ou "Primeiro acesso" para criar uma senha.\n3. Preencha o cadastro da clínica e comece a usar.\n\nPlanos do OdontoGestão:\n• Essencial ${fmtBRL(PLANOS.essencial.preco)}/mês: agenda, pacientes, lembretes pelo WhatsApp e anamnese\n• Clínico ${fmtBRL(PLANOS.clinico.preco)}/mês: + prontuário completo e anamnese/termo assinados pelo celular\n• Completo ${fmtBRL(PLANOS.completo.preco)}/mês: + financeiro, relatórios e até 3 dentistas\n\nSem fidelidade, sem taxa de implantação e com todas as atualizações incluídas. Ao final do teste, todas as suas informações continuam guardadas.`;
+      const msg=`Olá! Seu acesso de teste ao OdontoGestão (${dias} dias, plano ${planoDe(pc).nome}) está liberado.\n\n1. Acesse ${url}\n2. ${comoEntrar}\n3. Preencha o cadastro da clínica e comece a usar.\n\nPlanos do OdontoGestão:\n• Essencial ${fmtBRL(PLANOS.essencial.preco)}/mês: agenda, pacientes, lembretes pelo WhatsApp e anamnese\n• Clínico ${fmtBRL(PLANOS.clinico.preco)}/mês: + prontuário completo e anamnese/termo assinados pelo celular\n• Completo ${fmtBRL(PLANOS.completo.preco)}/mês: + financeiro, relatórios e até 3 dentistas\n\nSem fidelidade, sem taxa de implantação e com todas as atualizações incluídas. Ao final do teste, todas as suas informações continuam guardadas.`;
       const fone=telefoneWhatsApp(q('contato').value);
       if(fone){ const w=window.open('https://wa.me/'+fone+'?text='+encodeURIComponent(msg),'_blank'); if(!w) mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg); }
       else mostrarMensagem('Clínica criada ('+cid+'). Envie esta mensagem ao responsável:',msg);
@@ -4582,7 +4611,7 @@ function abrirItemRoadmap(id){
   if(id) q('apagar').addEventListener('click',()=>customConfirm('Excluir esta melhoria do quadro?',()=>{ Nuvem.apagarItemRoadmap(id).then(()=>render()); bg.remove(); }));
 }
 function bindPlataforma(){
-  bindSugestoesPlat(); bindClientes();
+  bindSugestoesPlat(); bindClientes(); bindPublicacao();
   document.querySelectorAll('[data-plataba]').forEach(b=>b.addEventListener('click',()=>{ platAba=b.getAttribute('data-plataba'); if(platAba==='clientes' && outroLigado){ outroLigado=null; renderPlatClientes._ok=false; } render(); }));
   const nova=document.querySelector('[data-platnova]'); if(nova) nova.addEventListener('click',abrirNovaClinica);
   const rec=document.querySelector('[data-platrecarregar]'); if(rec) rec.addEventListener('click',()=>{ platClinicas=null; carregarPlataforma(true); render(); });
@@ -4865,6 +4894,54 @@ function historicoVersoesHtml(limite,destacar,lista){
   const base=lista||NOTAS, l=limite?base.slice(0,limite):base;
   return `<div class="nv-hist">${l.map(n=>`<div class="nv-ver${destacar&&destacar(n)?' pendente':''}"><div class="nv-ver-cab"><strong>Ver ${esc(vCurta(n.v))}</strong><span class="muted">${n.data?new Date(n.data+'T12:00:00').toLocaleDateString('pt-BR'):''}</span>${destacar&&destacar(n)?'<span class="sit sit-nao_vem">Aguardando aprovação</span>':''}</div><ul>${n.itens.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`;
 }
+// ---- publicar na produção a partir do ambiente de teste ----
+// O botão grava o pedido em plataforma/publicacao (produção). O GitHub confere o pedido a cada
+// poucos minutos, junta o teste na produção, publica e, se pedido, já envia a versão aos clientes.
+let pubPedido=null, pubLido=false, pubTimer=null;
+const PUB_ST={pedido:['Aguardando o GitHub iniciar (até ~10 min)','sit-agendado'],publicando:['Publicando na produção…','sit-confirmado'],publicado:['Publicada na produção','sit-chegou'],erro:['Não foi possível publicar','sit-faltou']};
+function lerPublicacao(forcar){
+  if(!outroLigado || (pubLido && !forcar)) return; pubLido=true;
+  Nuvem.lerPlataformaOutro('publicacao').then(d=>{ pubPedido=d||{}; if(currentTab==='plataforma' && platAba==='versoes' && podeAtualizarSozinho()) render();
+    clearTimeout(pubTimer); if(d && (d.status==='pedido'||d.status==='publicando')) pubTimer=setTimeout(()=>{ lerPublicacao(true); if(d.status==='publicando'||d.status==='pedido'){ prodVersoesLidas=false; versaoProducaoLida=false; } },30000);
+  }).catch(e=>{ pubPedido={erroLeitura:Nuvem.mapErro(e)}; });
+}
+function publicacaoHtml(){
+  verificarOutro().then(v=>{ if(v && !publicacaoHtml._ok){ publicacaoHtml._ok=true; if(currentTab==='plataforma' && platAba==='versoes') render(); } });
+  const cab='<section class="bloco"><div class="bloco-cab"><h2>Publicar na produção</h2></div><div class="bloco-corpo">';
+  if(!outroLigado) return ponteHtml()+cab+'<p class="muted" style="margin:0">Conecte à produção para publicar daqui.</p></div></section>';
+  lerPublicacao();
+  const pend=versaoProducao && cmpVer(APP_VERSION,versaoProducao)>0, p=pubPedido||{};
+  const ativo=p.status==='pedido'||p.status==='publicando';
+  const st=p.status?PUB_ST[p.status]:null;
+  const quando=t=>t?new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
+  return cab+`${st?`<p style="margin:0 0 8px"><span class="sit ${st[1]}">${esc(st[0])}</span> Ver ${esc(vCurta(p.versao||''))} · pedido ${esc(quando(p.pedidoEm))}${p.concluidoEm?' · concluído '+esc(quando(p.concluidoEm)):''}${p.enviarPara&&p.enviarPara!=='ninguem'?' · enviar para '+(p.enviarPara==='todos'?'todos os clientes':(p.clinicas||[]).length+' cliente(s)'):''}</p>${p.status==='erro'&&p.erro?`<p class="erro-campo" style="margin:0 0 8px">${esc(p.erro)}</p>`:''}`:''}
+    ${pend&&!ativo?`<p style="margin:0 0 8px">A <strong>Ver ${esc(vCurta(APP_VERSION))}</strong> deste teste ainda não está na produção (lá: Ver ${esc(vCurta(versaoProducao))}).</p>
+      <div class="pub-op" role="radiogroup" aria-label="Depois de publicar">
+        <label><input type="radio" name="pubPara" value="ninguem" checked> Só publicar (eu envio aos clientes depois, em Bases dos clientes)</label>
+        <label><input type="radio" name="pubPara" value="selecionados" ${envSelecionados.size?'':'disabled'}> Publicar e enviar para os ${envSelecionados.size||''} cliente(s) marcados em Bases dos clientes</label>
+        <label><input type="radio" name="pubPara" value="todos"> Publicar e enviar para todos os clientes</label></div>
+      <button class="btn-p" id="btnPublicar" style="margin-top:10px">Publicar Ver ${esc(vCurta(APP_VERSION))} na produção</button>`
+    :ativo?'<p class="muted" style="margin:0">Acompanhe por aqui: a tela atualiza sozinha. A publicação leva alguns minutos.</p>'
+    :versaoProducao===null?'<p class="muted" style="margin:0">Consultando a produção…</p>':'<p class="muted" style="margin:0">Teste e produção estão na mesma versão: nada para publicar.</p>'}
+    </div></section>`;
+}
+function bindPublicacao(){
+  bindPonte();
+  const b=document.getElementById('btnPublicar'); if(!b) return;
+  b.addEventListener('click',()=>{
+    const para=(document.querySelector('input[name="pubPara"]:checked')||{}).value||'ninguem';
+    const ids=para==='selecionados'?[...envSelecionados]:[];
+    const txt=para==='todos'?' e enviar para todos os clientes':para==='selecionados'?' e enviar para '+ids.length+' cliente(s)':' (os clientes continuam na versão atual até você enviar)';
+    customConfirm(`Publicar a Ver ${vCurta(APP_VERSION)} na produção${txt}?`,async()=>{
+      b.disabled=true;
+      try{
+        const d={versao:APP_VERSION,status:'pedido',pedidoEm:Date.now(),por:Nuvem.meuEmail(),enviarPara:para,clinicas:ids,erro:'',concluidoEm:null};
+        await Nuvem.salvarPlataformaOutro('publicacao',d); pubPedido=d; envSelecionados.clear();
+        avisar('Pedido enviado. O GitHub publica em alguns minutos; acompanhe nesta tela.'); render(); lerPublicacao(true);
+      }catch(e){ b.disabled=false; avisar(Nuvem.mapErro(e)); }
+    },'Publicar');
+  });
+}
 function renderPlatVersoes(){
   lerVersaoProducao();
   const teste=Nuvem.ambienteTeste(), pend=notasPendentes();
@@ -4873,8 +4950,9 @@ function renderPlatVersoes(){
   const tituloN=n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===+n); return it?it.titulo:''; };
   return `<section class="bloco"><div class="bloco-cab"><h2>Versão</h2></div><div class="bloco-corpo">
     <p style="margin:0 0 6px">Esta base: <strong>${esc(rotuloVersao())}</strong> · ${teste?'ambiente de teste':'produção'}${teste?` · produção: <strong>${versaoProducao===null?'consultando…':versaoProducao?'Ver '+esc(vCurta(versaoProducao)):'não consultada'}</strong>`:''}</p>
-    ${teste&&pend.length?`<p class="muted" style="margin:0">Itens marcados como "Aguardando aprovação" vão para todas as clínicas quando você aprovar.</p>`:''}
+    ${teste&&pend.length?`<p class="muted" style="margin:0">Itens marcados como "Aguardando aprovação" vão para a produção quando você publicar (abaixo); cada cliente só muda quando você enviar a versão para ele.</p>`:''}
   </div></section>
+  ${teste?publicacaoHtml():''}
   ${teste?`<section class="bloco"><div class="bloco-cab"><h2>Aguardando aprovação</h2></div><div class="bloco-corpo">${pend.length?historicoVersoesHtml(0,()=>true,pend):'<p class="muted" style="margin:0">Nada pendente: o teste está igual à produção.</p>'}</div></section>`:''}
   <section class="bloco"><div class="bloco-cab"><h2>Versão de cada clínica</h2></div>
     ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th></tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
@@ -5128,7 +5206,7 @@ function renderPlatClientes(){
       <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f,versaoDoCliente(f.id)||APP_VERSION))}</strong>${versaoDoCliente(f.id)&&prodVersoes&&prodVersoes.atual&&cmpVer(versaoDoCliente(f.id),prodVersoes.atual)<0?' <span class="sit sit-nao_vem">atualização disponível</span>':''}${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
       <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
   const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"><input type="checkbox" data-envsel="principal" aria-label="Selecionar sua clínica" ${envSelecionados.has('principal')?'checked':''}></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td><strong>${esc('Ver '+vCurta(versaoDoCliente('principal')||APP_VERSION))}</strong></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
-  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-s" data-ponterecarregar style="margin-left:auto">Atualizar</button></div>
+  return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-p" data-novabase style="margin-left:auto">+ Nova base de cliente</button><button class="btn-s" data-ponterecarregar>Atualizar</button></div>
     ${envioVersaoHtml()}
     <div class="overflow"><table><thead><tr><th class="env-sel"><input type="checkbox" data-envtodos aria-label="Selecionar todos"></th><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão na produção e melhorias</th><th></th></tr></thead><tbody>${minha}${linhas}</tbody></table></div>
     ${l.length?'':'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum cliente na produção ainda. Crie clientes pela Plataforma da produção.</p></div>'}
@@ -5243,6 +5321,7 @@ function abrirPersonalizacoesCliente(cidProd){
 }
 function bindClientes(){
   bindPonte(); bindEnvioVersao();
+  const nb=document.querySelector('[data-novabase]'); if(nb) nb.addEventListener('click',()=>abrirNovaClinica(true));
   document.querySelectorAll('[data-baseabrir]').forEach(el=>{
     const abrir=e=>{ if(e.target.closest('[data-esppers]')||e.target.closest('[data-envsel]')||e.target.closest('.env-sel')) return; e.stopPropagation(); abrirBaseCliente(el.getAttribute('data-baseabrir'),el.tagName==='BUTTON'?el:null); };
     el.addEventListener('click',abrir); if(el.tagName==='TR') el.addEventListener('keydown',e=>{ if(e.key==='Enter') abrir(e); });
