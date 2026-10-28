@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.17.0';
+const APP_VERSION='2.17.1';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
@@ -623,10 +623,11 @@ function descontoMaxPct(){ const v=state.clinic&&state.clinic.descontoMaxPct; re
 function lerValor(v){ v=String(v==null?'':v).trim(); if(!v) return NaN; v=v.replace(/[R$\s]/g,''); if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); return +v; }
 function abrirAjusteOrcamento(p,o){
   const u=currentUser(), master=u&&u.tipo==='master', lim=descontoMaxPct();
+  const motivoObrig=master && temPersonalizacaoChave('desconto-master-motivo');   // personalização da clínica
   const a=Object.assign({tipo:'',modo:'pct',valor:'',motivo:''},o.ajuste||{});
   const fmtIn=v=>(+v||0).toFixed(2).replace('.',',');
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Desconto ou acréscimo</h3>
-    <p class="muted" style="margin:0 0 10px">Ajuste os valores antes de aprovar. ${master?'Como Master, você não tem limite de desconto.':`Seu limite de desconto é de <strong>${fmtPct(lim)}%</strong> sobre a tabela; acima disso, só o Master.`}</p>
+    <p class="muted" style="margin:0 0 10px">Ajuste os valores antes de aprovar. ${master?(motivoObrig?'Como Master, você pode dar até 100% de desconto, informando o motivo.':'Como Master, você não tem limite de desconto.'):`Seu limite de desconto é de <strong>${fmtPct(lim)}%</strong> sobre a tabela; acima disso, só o Master.`}</p>
     <div class="overflow"><table class="orc-aj-tab"><thead><tr><th>Procedimento</th><th>Tabela</th><th>Valor no orçamento</th></tr></thead><tbody>
     ${(o.itens||[]).map((it,i)=>`<tr><td>${esc(it.nome)}<div class="muted" style="font-size:12px">${esc(it.ref||'')}</div></td><td style="white-space:nowrap">${fmtMoney(it.valorTabela!=null?it.valorTabela:it.valor)}</td><td><input data-ajit="${i}" inputmode="decimal" value="${fmtIn(it.valor)}" aria-label="Valor de ${esc(it.nome)}" style="max-width:130px"></td></tr>`).join('')}
     </tbody></table></div>
@@ -636,7 +637,7 @@ function abrirAjusteOrcamento(p,o){
       <div><label for="ajModo">Em</label><select id="ajModo"><option value="pct" ${a.modo!=='valor'?'selected':''}>Porcentagem (%)</option><option value="valor" ${a.modo==='valor'?'selected':''}>Valor (R$)</option></select></div>
       <div><label for="ajValor">Quanto</label><input id="ajValor" inputmode="decimal" value="${a.valor!==''&&a.valor!=null?String(a.valor).replace('.',','):''}" placeholder="Ex.: 10"></div>
     </div>
-    <label for="ajMotivo">Motivo (opcional)</label><input id="ajMotivo" value="${esc(a.motivo||'')}" placeholder="Ex.: pagamento à vista, cortesia, material especial">
+    <label for="ajMotivo">Motivo ${motivoObrig?'<strong>(obrigatório para desconto)</strong>':'(opcional)'}</label><input id="ajMotivo" value="${esc(a.motivo||'')}" placeholder="Ex.: pagamento à vista, cortesia, material especial">
     <div class="orc-resumo" data-aj="resumo"></div>
     <p class="erro-campo" data-aj="erro" role="alert"></p>
     <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn-s" data-aj="limpar">Voltar aos valores da tabela</button><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-aj="ok">Salvar valores</button></div>`);
@@ -654,6 +655,7 @@ function abrirAjusteOrcamento(p,o){
     else if(aj.tipo && !(aj.valor>0)) erro='Informe quanto de '+(aj.tipo==='desconto'?'desconto':'acréscimo')+'.';
     else if(aj.tipo==='desconto' && aj.modo==='pct' && aj.valor>100) erro='O desconto não pode passar de 100%.';
     else if(!master && descPct>lim+0.001) erro=`Desconto de ${fmtPct(descPct)}% sobre a tabela passa do seu limite (${fmtPct(lim)}%). Peça ao Master.`;
+    else if(motivoObrig && descPct>0.001 && aj.motivo.length<3) erro='Informe o motivo do desconto para salvar.';
     return {itens,sub,aj,ajv,total,tab,descPct,erro};
   };
   const desenhar=()=>{ const r=ler();
@@ -670,6 +672,7 @@ function abrirAjusteOrcamento(p,o){
     const r=ler(); if(r.erro){ desenhar(); return; }
     r.itens.forEach(({it,v})=>{ const tab=it.valorTabela!=null?+it.valorTabela:+it.valor; if(r2(v)!==r2(tab)) it.valorTabela=tab; else delete it.valorTabela; it.valor=r2(v); });
     if(r.aj.tipo && r.aj.valor>0) o.ajuste={tipo:r.aj.tipo,modo:r.aj.modo,valor:r.aj.valor,motivo:r.aj.motivo}; else delete o.ajuste;
+    if(r.aj.motivo) o.motivoAjuste=r.aj.motivo; else delete o.motivoAjuste;
     o.subtotal=r.sub; o.total=r.total;
     const mexeu=o.ajuste || (o.itens||[]).some(it=>it.valorTabela!=null);
     if(mexeu){ o.ajustadoPorNome=nomeExibicao(u); o.ajustadoPorId=u.id; o.ajustadoEm=hojeISO(); } else { delete o.ajustadoPorNome; delete o.ajustadoPorId; delete o.ajustadoEm; delete o.subtotal; }
@@ -696,7 +699,7 @@ function renderOrcamento(p){
     <tbody>${rows||'<tr><td colspan="4" class="muted">Nenhum item</td></tr>'}</tbody></table></div>
     ${aj?`<div class="orc-resumo"><div><span>Subtotal</span><span>${fmtMoney(sub)}</span></div><div class="${aj<0?'orc-desc':'orc-acr'}"><span>${aj<0?'Desconto':'Acréscimo'}${o.ajuste&&o.ajuste.modo==='pct'?' ('+fmtPct(o.ajuste.valor)+'%)':''}${o.ajuste&&o.ajuste.motivo?' · '+esc(o.ajuste.motivo):''}</span><span>${aj<0?'− ':'+ '}${fmtMoney(Math.abs(aj))}</span></div></div>`:''}
     <p style="margin-top:12px"><strong>Total do Orçamento:</strong> ${fmtMoney(o.total)}${orcTabela(o)>o.total+0.004?` <span class="muted">(${fmtPct((1-o.total/orcTabela(o))*100)}% abaixo da tabela)</span>`:''}</p>
-    ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}.</p>`:''}
+    ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}${o.motivoAjuste&&!(o.ajuste&&o.ajuste.motivo)?' · motivo: '+esc(o.motivoAjuste):''}.</p>`:''}
     ${aprovado?'<p class="muted">Este orçamento já está disponível na aba Financeiro.</p>':''}
     </div>`;
   }).join('');
@@ -1956,6 +1959,7 @@ function aplicarTaxaSimples(pc,forma){
 let fpRasc=null;   // rascunho da tela de formas de pagamento
 function renderFormasPagamento(){
   const pode=permsDe(currentUser()).financeiro, dis=pode?'':' disabled';
+  const aberto=document.getElementById('fFormas'); if(aberto && pode){ fpRasc=lerFormas(aberto); const sv=formasPag(); if(JSON.stringify(Object.assign({},fpRasc,{configurado:sv.configurado}))===JSON.stringify(sv)) fpRasc=null; }   // redesenho inesperado não perde o que foi digitado
   const fp=fpRasc||JSON.parse(JSON.stringify(formasPag()));
   const n=v=>String(v==null?'':v).replace('.',',');
   return `<div class="card"><h3 style="margin:0 0 4px">Formas de pagamento</h3>
@@ -4723,6 +4727,8 @@ const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','V
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
 // melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
 const RM_PREPARADAS=[
+  {chave:'desconto-master-motivo',titulo:'Master: desconto de até 100% com motivo obrigatório',categoria:'Financeiro',prioridade:'media',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
+   descricao:'Personalização: na base em que estiver ligada, o Master pode dar desconto de até 100% no orçamento, mas só salva informando o motivo do desconto.'},
   {chave:'agenda-diaria-dentista',titulo:'Agenda do dia para o dentista às 07:30',categoria:'Comunicação',prioridade:'alta',status:'pronta',tipo:'geral',alvo:'Todos os planos',
    descricao:'Todo dia às 07:30 (fuso da clínica), cada dentista recebe a sua agenda: paciente, tratamento, horário e se está confirmado. Canal 1: notificação do app OdontoGestão no celular (grátis). Canal 2: WhatsApp do dentista pela API oficial do WhatsApp Business (cerca de R$ 1 por dentista/mês). Código pronto em functions/agenda-diaria (ver LEIAME). PARA INSTALAR: 1) Firebase: ativar o plano Blaze nos dois projetos (teste e produção). 2) Notificação: gerar a chave Web Push (Cloud Messaging) e informar. 3) WhatsApp (opcional): conta Meta Business verificada, número do OdontoGestão e modelo "agenda_do_dia" aprovado. 4) Publicar a função no teste, validar, aprovar para produção.',publico:false},
 ];
@@ -5192,6 +5198,11 @@ function cmpVer(a,b){ const x=String(a||'0').split('.').map(Number), y=String(b|
 function personalizacoesDe(f){ return [...new Set(((f&&f.personalizacoes)||[]).map(Number).filter(Boolean))].sort((a,b)=>a-b); }
 // para usar no código de uma personalização: if(temPersonalizacao(184)){ ... }
 function temPersonalizacao(n){ return personalizacoesDe(fichaClinica()).includes(+n); }
+function temPersonalizacaoChave(ch){
+  const f=fichaClinica(); if(!f) return false; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
+  const prep=RM_PREPARADAS.find(p=>p.chave===ch);
+  return ativos.some(n=>ch2[n]===ch || (prep && info[n]===prep.titulo));
+}
 function rotuloVersao(f){ const p=personalizacoesDe(f===undefined?fichaClinica():f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 function rotuloVersaoDe(f,v){ const p=personalizacoesDe(f); return 'Ver '+vCurta(v||APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 
@@ -5644,7 +5655,8 @@ function abrirPersonalizacoesCliente(cidProd){
       novas.filter(n=>!atuais.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'ativada',em,versao:APP_VERSION,ambiente:'producao'}));
       atuais.filter(n=>!novas.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'desativada',em,versao:APP_VERSION,ambiente:'producao'}));
       const info=Object.assign({},f.personalizacoesInfo||{}); novas.forEach(n=>{ info[n]=tit(n); });
-      const mud={personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info};
+      const chaves=Object.assign({},f.personalizacoesChaves||{}); novas.forEach(n=>{ const it=itens.find(i=>i.numero===n); if(it&&it.chave) chaves[n]=it.chave; });
+      const mud={personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info,personalizacoesChaves:chaves};
       try{
         await Nuvem.atualizarClinicaOutro(f.id,mud); Object.assign(f,mud);
         const e=espelhoDe(f.id); if(e){ await Nuvem.sincronizarEspelho(e.id,f); Object.assign(e,mud); }

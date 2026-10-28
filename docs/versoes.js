@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.17.1', data:'2026-10-28', itens:[
+    'Personalização (só nas bases escolhidas): Master pode dar desconto de até 100% no orçamento, com motivo obrigatório',
+  ]},
   {v:'2.17.0', data:'2026-10-28', itens:[
     'Formas de pagamento (Configurações): dinheiro, Pix, boleto e outras com taxa e prazo; cartão com várias operadoras e bandeiras, cada uma com suas taxas',
     'Recebimento no cartão: taxa da operadora/bandeira por nº de parcelas descontada na hora, com o custo da taxa sempre à mostra',
