@@ -9,6 +9,13 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.17.0', data:'2026-10-28', itens:[
+    'Formas de pagamento (Configurações): dinheiro, Pix, boleto e outras com taxa e prazo; cartão com várias operadoras e bandeiras, cada uma com suas taxas',
+    'Recebimento no cartão: taxa da operadora/bandeira por nº de parcelas descontada na hora, com o custo da taxa sempre à mostra',
+    'Despesas que se repetem todo mês: valor fixo ou variável (os meses seguintes entram como estimado e você informa o valor real ao dar baixa)',
+    'Compra com itens, entrada e parcelas para fornecedores, com "Ver compra" (itens, pago e saldo)',
+    'Patrimônio: bens da clínica com valor de compra, depreciação e evolução do valor (só para consulta)',
+  ]},
   {v:'2.16.0', data:'2026-10-27', itens:[
     'Publicar na produção pelo próprio ambiente de teste (Plataforma → Versões), sem depender do suporte',
     'Na mesma ação, enviar a nova versão para todos os clientes, para os marcados ou para ninguém (envio depois)',
