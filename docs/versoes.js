@@ -10,7 +10,8 @@
 // =====================================================================
 window.NOTAS_VERSAO = [
   {v:'2.17.0', data:'2026-10-28', itens:[
-    'Recebimento no cartão: taxa da operadora por nº de parcelas descontada na hora, com o custo da taxa sempre à mostra (Configurações → Taxas de cartão)',
+    'Formas de pagamento (Configurações): dinheiro, Pix, boleto e outras com taxa e prazo; cartão com várias operadoras e bandeiras, cada uma com suas taxas',
+    'Recebimento no cartão: taxa da operadora/bandeira por nº de parcelas descontada na hora, com o custo da taxa sempre à mostra',
     'Despesas que se repetem todo mês: valor fixo ou variável (os meses seguintes entram como estimado e você informa o valor real ao dar baixa)',
     'Compra com itens, entrada e parcelas para fornecedores, com "Ver compra" (itens, pago e saldo)',
     'Patrimônio: bens da clínica com valor de compra, depreciação e evolução do valor (só para consulta)',

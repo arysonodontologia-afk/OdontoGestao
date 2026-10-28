@@ -1527,14 +1527,14 @@ function calcParcelas(o){
     list.push({label:'Pagamento único', valor:total, vencimento:base});
   }
   if(ehCartao(pag.forma)){
-    // cartão: a clínica recebe de uma vez, já com a taxa da operadora descontada
+    // cartão: a clínica recebe de uma vez, já com a taxa da operadora/bandeira descontada
     const ent=pag.condicao==='parcelado_com'?Math.min(parseFloat(pag.valorEntrada)||0,total):0;
     const n=pag.forma==='Cartão de Débito'?1:(pag.condicao==='avista'||!pag.condicao?1:Math.max(1,Math.min(12,parseInt(pag.numParcelas)||1)));
-    const bruto=r2(total-ent), pct=taxaDoCartao(pag.forma,n), taxa=r2(bruto*pct/100);
+    const bruto=r2(total-ent), pct=taxaDoCartao(pag,n), taxa=r2(bruto*pct/100), {op,b}=cartaoEscolhido(pag);
     list=[];
     if(ent>0) list.push({label:'Entrada', valor:r2(ent), vencimento:base});
-    list.push({label:pag.forma==='Cartão de Débito'?'Cartão de débito':'Cartão de crédito '+n+'x', valor:r2(bruto-taxa), valorBruto:bruto, taxaPct:pct, taxaValor:taxa, vencimento:addDaysStr(base,prazoDoCartao(pag.forma))});
-  }
+    list.push({label:pag.forma==='Cartão de Débito'?'Cartão de débito':'Cartão de crédito '+n+'x', valor:r2(bruto-taxa), valorBruto:bruto, taxaPct:pct, taxaValor:taxa, cartao:[op&&op.nome,b&&b.nome].filter(Boolean).join(' · '), vencimento:addDaysStr(base,prazoDoCartao(pag))});
+  } else if(pag.forma) list=list.map(pc=>aplicarTaxaSimples(pc,pag.forma));
   return list;
 }
 function parcelasPagasDoOrc(o){ return (state.fluxoFinanceiro||[]).filter(e=>e.orcamentoId===o.id && e.confirmado); }
@@ -1552,7 +1552,7 @@ function generateFluxo(p,o){
   }
   novas.forEach(pc=>{
     const reg={id:uid(), pacienteId:p.id, pacienteNome:p.nome, orcamentoId:o.id, label:pc.label, valor:pc.valor, vencimento:pc.vencimento, tipo:'receita', confirmado:false, dataPagamento:'', forma:(o.pagamento||{}).forma||''};
-    if(pc.taxaValor!=null){ reg.valorBruto=pc.valorBruto; reg.taxaPct=pc.taxaPct; reg.taxaValor=pc.taxaValor; }
+    if(pc.taxaValor!=null){ reg.valorBruto=pc.valorBruto; reg.taxaPct=pc.taxaPct; reg.taxaValor=pc.taxaValor; if(pc.taxaFixa) reg.taxaFixa=pc.taxaFixa; if(pc.cartao) reg.cartao=pc.cartao; }
     state.fluxoFinanceiro.push(reg);
   });
   o.fluxoGerado=true; o.fluxoGeradoEm=hojeISO();
@@ -1819,7 +1819,7 @@ function renderConfiguracoesPrincipal(){
   const subTabs=[{id:'clinica', label:'🏥 Clínica'}];
   if(perms.procedimentos) subTabs.push({id:'procedimentos', label:'🦷 Procedimentos'});
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
-  if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Taxas de cartão'});
+  if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Formas de pagamento'});
   if(perms.usuarios) subTabs.push({id:'backup', label:'💾 Backup'});
   if(!subTabs.find(t=>t.id===configSubTab)) configSubTab='clinica';
   const bar=subTabs.map(t=>`<button data-consub="${t.id}" class="${configSubTab===t.id?'active':''}">${t.label}</button>`).join('');
@@ -1827,7 +1827,7 @@ function renderConfiguracoesPrincipal(){
   if(configSubTab==='clinica') body=renderClinica();
   else if(configSubTab==='procedimentos') body=renderProcedimentos();
   else if(configSubTab==='tipodespesas') body=renderTiposDespesa();
-  else if(configSubTab==='taxas') body=renderTaxasCartao();
+  else if(configSubTab==='taxas') body=renderFormasPagamento();
   else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
@@ -1922,36 +1922,105 @@ function renderFluxoFinanceiro(){
 // Financeiro 2: taxas de cartão, contas que se repetem, compras com itens
 // e parcelas, patrimônio com depreciação
 // =====================================================================
-// ---- taxas da maquininha (recebimento de pacientes) ----
-const TAXAS_EXEMPLO={debito:1.99,credito:[3.49,5.49,6.29,7.09,7.89,8.69,9.49,10.29,11.09,11.89,12.69,13.49],prazoCredito:1,prazoDebito:1};
-function taxasCartao(){ const t=(state.meta&&state.meta.taxasCartao)||{}; return {debito:t.debito!=null?+t.debito:TAXAS_EXEMPLO.debito, credito:TAXAS_EXEMPLO.credito.map((v,i)=>t.credito&&t.credito[i]!=null&&t.credito[i]!==''?+t.credito[i]:v), prazoCredito:t.prazoCredito!=null?+t.prazoCredito:1, prazoDebito:t.prazoDebito!=null?+t.prazoDebito:1, configurado:!!t.configurado}; }
-function ehCartao(forma){ return forma==='Cartão de Crédito'||forma==='Cartão de Débito'; }
-function taxaDoCartao(forma,n){ const t=taxasCartao(); return forma==='Cartão de Débito'?t.debito:t.credito[Math.min(Math.max(n,1),12)-1]; }
-function prazoDoCartao(forma){ const t=taxasCartao(); return forma==='Cartão de Débito'?t.prazoDebito:t.prazoCredito; }
-function valorQuitado(e){ return e && e.valorBruto!=null ? +e.valorBruto : (+e.valor||0); }   // o que o paciente pagou (antes da taxa)
-function linhaTaxaHtml(e){ return e.taxaValor?`<div class="muted" style="font-size:12px">pago ${fmtMoney(e.valorBruto)} · taxa ${fmtPct(e.taxaPct)}% (−${fmtMoney(e.taxaValor)})</div>`:''; }
-function renderTaxasCartao(){
-  const t=taxasCartao(), pode=permsDe(currentUser()).financeiro, dis=pode?'':' disabled';
-  const n=v=>String(v).replace('.',',');
-  return `<div class="card"><h3 style="margin:0 0 4px">Taxas da maquininha</h3>
-  <p class="muted" style="margin:0 0 12px">Usadas quando o paciente paga com cartão: o sistema desconta a taxa e lança no Financeiro o valor que você realmente recebe, mostrando quanto custou a taxa. ${t.configurado?'':'<strong>Os valores abaixo são exemplos: confira com a sua operadora e salve.</strong>'}</p>
-  <form id="fTaxas"><div class="row">
-    <div><label for="txDeb">Débito (%)</label><input id="txDeb" inputmode="decimal" value="${n(t.debito)}"${dis}></div>
-    <div><label for="txPrDeb">Recebo o débito em (dias)</label><input id="txPrDeb" type="number" min="0" max="60" value="${t.prazoDebito}"${dis}></div>
-    <div><label for="txPrCred">Recebo o crédito em (dias)</label><input id="txPrCred" type="number" min="0" max="60" value="${t.prazoCredito}"${dis}><div class="cl-dica">Com antecipação, normalmente 1 dia.</div></div>
-  </div>
-  <label style="margin-top:10px">Crédito por número de parcelas (%)</label>
-  <div class="tx-grade">${t.credito.map((v,i)=>`<div><label for="txC${i}">${i+1}x</label><input id="txC${i}" data-txc="${i}" inputmode="decimal" value="${n(v)}"${dis}></div>`).join('')}</div>
-  ${pode?'<div style="margin-top:12px"><button class="btn-p">Salvar taxas</button></div>':''}</form></div>`;
+// ---- formas de pagamento (recebimento de pacientes): taxas por forma, operadora e bandeira ----
+const CRED_EXEMPLO=[3.49,5.49,6.29,7.09,7.89,8.69,9.49,10.29,11.09,11.89,12.69,13.49];
+function fpPadrao(){
+  const ant=(state.meta&&state.meta.taxasCartao)||null;   // configuração antiga (só uma maquininha)
+  return {configurado:!!(ant&&ant.configurado),
+    simples:[{id:'dinheiro',nome:'Dinheiro',taxaPct:0,taxaFixa:0,prazo:0,ativo:true},{id:'pix',nome:'Pix',taxaPct:0,taxaFixa:0,prazo:0,ativo:true},
+      {id:'boleto',nome:'Boleto',taxaPct:0,taxaFixa:0,prazo:1,ativo:true},{id:'transferencia',nome:'Transferência',taxaPct:0,taxaFixa:0,prazo:0,ativo:true}],
+    operadoras:[{id:'op1',nome:'Minha maquininha',prazoDebito:ant?+ant.prazoDebito||1:1,prazoCredito:ant?+ant.prazoCredito||1:1,
+      bandeiras:ant?[{id:'b1',nome:'Todas as bandeiras',debito:+ant.debito,credito:(ant.credito||CRED_EXEMPLO).map(Number)}]
+        :[{id:'b1',nome:'Visa e Mastercard',debito:1.99,credito:CRED_EXEMPLO.slice()},{id:'b2',nome:'Elo, Amex e Hipercard',debito:2.49,credito:CRED_EXEMPLO.map(v=>r2(v+0.6))}]}]};
 }
-function salvarTaxas(f){
-  const num=id=>lerValor(f.querySelector('#'+id).value);
-  const cred=[...f.querySelectorAll('[data-txc]')].map(i=>lerValor(i.value));
-  const ruim=[num('txDeb'),...cred].some(v=>isNaN(v)||v<0||v>40);
-  if(ruim){ avisar('Confira as taxas: use números entre 0 e 40 (ex.: 3,49).'); return; }
-  state.meta=state.meta||{};
-  state.meta.taxasCartao={debito:num('txDeb'),credito:cred,prazoDebito:parseInt(f.querySelector('#txPrDeb').value,10)||0,prazoCredito:parseInt(f.querySelector('#txPrCred').value,10)||0,configurado:true};
-  saveData(); avisar('Taxas salvas.'); render();
+function formasPag(){ const f=state.meta&&state.meta.formasPagamento; return f&&f.simples?f:fpPadrao(); }
+function ehCartao(forma){ return forma==='Cartão de Crédito'||forma==='Cartão de Débito'; }
+function cartaoEscolhido(pag){
+  const fp=formasPag(), op=fp.operadoras.find(o=>o.id===pag.operadoraId)||fp.operadoras[0];
+  const b=op?(op.bandeiras.find(x=>x.id===pag.bandeiraId)||op.bandeiras[0]):null;
+  return {op,b};
+}
+function taxaDoCartao(pag,n){ const {b}=cartaoEscolhido(pag); if(!b) return 0; return pag.forma==='Cartão de Débito'?(+b.debito||0):(+(b.credito||[])[Math.min(Math.max(n,1),12)-1]||0); }
+function prazoDoCartao(pag){ const {op}=cartaoEscolhido(pag); if(!op) return 1; return pag.forma==='Cartão de Débito'?(+op.prazoDebito||0):(+op.prazoCredito||0); }
+function formaSimples(nome){ return formasPag().simples.find(s=>s.nome===nome); }
+function valorQuitado(e){ return e && e.valorBruto!=null ? +e.valorBruto : (+e.valor||0); }   // o que o paciente pagou (antes da taxa)
+function linhaTaxaHtml(e){ return e.taxaValor?`<div class="muted" style="font-size:12px">pago ${fmtMoney(e.valorBruto)} · taxa ${e.taxaPct?fmtPct(e.taxaPct)+'%':''}${e.taxaFixa?(e.taxaPct?' + ':'')+fmtMoney(e.taxaFixa):''} (−${fmtMoney(e.taxaValor)})${e.cartao?' · '+esc(e.cartao):''}</div>`:''; }
+// aplica a taxa de uma forma simples (Pix, boleto…) em cada recebimento
+function aplicarTaxaSimples(pc,forma){
+  const f=formaSimples(forma); if(!f || (!(+f.taxaPct>0) && !(+f.taxaFixa>0) && !(+f.prazo>0))) return pc;
+  const taxa=r2(pc.valor*(+f.taxaPct||0)/100+(+f.taxaFixa||0));
+  const out=Object.assign({},pc,{vencimento:addDaysStr(pc.vencimento,+f.prazo||0)});
+  if(taxa>0) Object.assign(out,{valorBruto:pc.valor,taxaPct:+f.taxaPct||0,taxaFixa:+f.taxaFixa||0,taxaValor:taxa,valor:r2(pc.valor-taxa)});
+  return out;
+}
+let fpRasc=null;   // rascunho da tela de formas de pagamento
+function renderFormasPagamento(){
+  const pode=permsDe(currentUser()).financeiro, dis=pode?'':' disabled';
+  const fp=fpRasc||JSON.parse(JSON.stringify(formasPag()));
+  const n=v=>String(v==null?'':v).replace('.',',');
+  return `<div class="card"><h3 style="margin:0 0 4px">Formas de pagamento</h3>
+  <p class="muted" style="margin:0 0 12px">As formas e taxas usadas quando o paciente paga. O sistema desconta a taxa e lança no Financeiro o valor que você realmente recebe, sempre mostrando quanto custou. ${fp.configurado?'':'<strong>As taxas abaixo são exemplos: confira com o seu banco e a sua operadora e salve.</strong>'}</p>
+  <form id="fFormas">
+  <h4 style="margin:6px 0 6px">Sem cartão</h4>
+  <div class="overflow"><table class="fp-tab"><thead><tr><th>Forma</th><th>Taxa (%)</th><th>Taxa fixa (R$)</th><th>Recebo em (dias)</th><th>Ativa</th><th></th></tr></thead><tbody>
+  ${fp.simples.map((s,i)=>`<tr><td><input data-fps="${i}" data-k="nome" value="${esc(s.nome)}" aria-label="Nome da forma"${dis}></td>
+    <td><input data-fps="${i}" data-k="taxaPct" inputmode="decimal" value="${n(s.taxaPct)}" style="width:80px" aria-label="Taxa em %"${dis}></td>
+    <td><input data-fps="${i}" data-k="taxaFixa" inputmode="decimal" value="${n(s.taxaFixa)}" style="width:90px" aria-label="Taxa fixa"${dis}></td>
+    <td><input data-fps="${i}" data-k="prazo" type="number" min="0" max="60" value="${s.prazo||0}" style="width:80px" aria-label="Prazo"${dis}></td>
+    <td style="text-align:center"><input type="checkbox" data-fps="${i}" data-k="ativo" ${s.ativo!==false?'checked':''} style="width:auto" aria-label="Ativa"${dis}></td>
+    <td>${pode&&!['dinheiro','pix'].includes(s.id)?`<button type="button" class="btn-icone peq btn-perigo" data-fpsdel="${i}" aria-label="Remover">${ICONES.lixo}</button>`:''}</td></tr>`).join('')}
+  </tbody></table></div>
+  ${pode?'<button type="button" class="btn-s" id="fpAddSimples" style="margin-top:6px">+ Outra forma</button>':''}
+  <h4 style="margin:18px 0 6px">Cartão: operadoras (maquininhas) e bandeiras</h4>
+  ${fp.operadoras.map((op,oi)=>`<div class="fp-op">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:2 1 220px"><label>Operadora</label><input data-fpo="${oi}" data-k="nome" value="${esc(op.nome)}" placeholder="Ex.: Stone, Cielo, PagSeguro"${dis}></div>
+      <div><label>Débito cai em (dias)</label><input data-fpo="${oi}" data-k="prazoDebito" type="number" min="0" max="60" value="${op.prazoDebito||0}"${dis}></div>
+      <div><label>Crédito cai em (dias)</label><input data-fpo="${oi}" data-k="prazoCredito" type="number" min="0" max="60" value="${op.prazoCredito||0}"${dis}><div class="cl-dica">Com antecipação, normalmente 1.</div></div>
+      ${pode&&fp.operadoras.length>1?`<div style="flex:0 0 auto"><button type="button" class="btn-s" data-fpodel="${oi}">Remover operadora</button></div>`:''}
+    </div>
+    <div class="overflow"><table class="fp-tab fp-band"><thead><tr><th>Bandeira</th><th>Débito</th>${CRED_EXEMPLO.map((_,i)=>`<th>${i+1}x</th>`).join('')}<th></th></tr></thead><tbody>
+    ${op.bandeiras.map((b,bi)=>`<tr><td><input data-fpb="${oi}.${bi}" data-k="nome" value="${esc(b.nome)}" placeholder="Ex.: Visa e Master" style="min-width:150px"${dis}></td>
+      <td><input data-fpb="${oi}.${bi}" data-k="debito" inputmode="decimal" value="${n(b.debito)}" aria-label="Débito %"${dis}></td>
+      ${CRED_EXEMPLO.map((_,i)=>`<td><input data-fpb="${oi}.${bi}" data-k="c${i}" inputmode="decimal" value="${n((b.credito||[])[i])}" aria-label="Crédito ${i+1}x %"${dis}></td>`).join('')}
+      <td>${pode&&op.bandeiras.length>1?`<button type="button" class="btn-icone peq btn-perigo" data-fpbdel="${oi}.${bi}" aria-label="Remover bandeira">${ICONES.lixo}</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="cl-dica" style="margin:4px 0 0">Taxas em %. ${pode?`<button type="button" class="lnk-forte" data-fpbadd="${oi}">+ Bandeira</button>`:''}</p>
+  </div>`).join('')}
+  ${pode?`<button type="button" class="btn-s" id="fpAddOp" style="margin-top:8px">+ Outra operadora</button>
+  <div style="margin-top:16px"><button class="btn-p">Salvar formas de pagamento</button>${fpRasc?' <span class="muted" style="font-size:12.5px">alterações ainda não salvas</span>':''}</div>`:''}
+  </form></div>`;
+}
+function lerFormas(form){
+  const fp=JSON.parse(JSON.stringify(fpRasc||formasPag())), num=v=>{ const x=lerValor(v); return isNaN(x)?0:x; };
+  form.querySelectorAll('[data-fps]').forEach(el=>{ const s=fp.simples[+el.getAttribute('data-fps')], k=el.getAttribute('data-k'); if(!s) return;
+    s[k]=k==='ativo'?el.checked:k==='nome'?el.value.trim():k==='prazo'?(parseInt(el.value,10)||0):num(el.value); });
+  form.querySelectorAll('[data-fpo]').forEach(el=>{ const o=fp.operadoras[+el.getAttribute('data-fpo')], k=el.getAttribute('data-k'); if(!o) return;
+    o[k]=k==='nome'?el.value.trim():(parseInt(el.value,10)||0); });
+  form.querySelectorAll('[data-fpb]').forEach(el=>{ const [oi,bi]=el.getAttribute('data-fpb').split('.').map(Number), b=fp.operadoras[oi]&&fp.operadoras[oi].bandeiras[bi], k=el.getAttribute('data-k'); if(!b) return;
+    if(k==='nome') b.nome=el.value.trim(); else if(k==='debito') b.debito=num(el.value); else { b.credito=b.credito||[]; b.credito[+k.slice(1)]=num(el.value); } });
+  return fp;
+}
+function bindFormasPagamento(){
+  const f=document.getElementById('fFormas'); if(!f) return;
+  const mexer=fn=>{ fpRasc=lerFormas(f); fn(fpRasc); render(); };
+  const add=document.getElementById('fpAddSimples'); if(add) add.addEventListener('click',()=>mexer(fp=>fp.simples.push({id:uid(),nome:'',taxaPct:0,taxaFixa:0,prazo:0,ativo:true})));
+  const addOp=document.getElementById('fpAddOp'); if(addOp) addOp.addEventListener('click',()=>mexer(fp=>fp.operadoras.push({id:uid(),nome:'',prazoDebito:1,prazoCredito:1,bandeiras:[{id:uid(),nome:'Visa e Mastercard',debito:0,credito:CRED_EXEMPLO.map(()=>0)}]})));
+  f.querySelectorAll('[data-fpsdel]').forEach(b=>b.addEventListener('click',()=>mexer(fp=>fp.simples.splice(+b.getAttribute('data-fpsdel'),1))));
+  f.querySelectorAll('[data-fpodel]').forEach(b=>b.addEventListener('click',()=>mexer(fp=>fp.operadoras.splice(+b.getAttribute('data-fpodel'),1))));
+  f.querySelectorAll('[data-fpbadd]').forEach(b=>b.addEventListener('click',()=>mexer(fp=>fp.operadoras[+b.getAttribute('data-fpbadd')].bandeiras.push({id:uid(),nome:'',debito:0,credito:CRED_EXEMPLO.map(()=>0)}))));
+  f.querySelectorAll('[data-fpbdel]').forEach(b=>b.addEventListener('click',()=>{ const [oi,bi]=b.getAttribute('data-fpbdel').split('.').map(Number); mexer(fp=>fp.operadoras[oi].bandeiras.splice(bi,1)); }));
+  f.addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const fp=lerFormas(f);
+    if(fp.simples.some(s=>!s.nome)) return avisar('Dê um nome para cada forma de pagamento.');
+    if(fp.operadoras.some(o=>!o.nome)) return avisar('Informe o nome de cada operadora.');
+    if(fp.operadoras.some(o=>o.bandeiras.some(b=>!b.nome))) return avisar('Informe o nome de cada bandeira.');
+    const taxas=fp.simples.map(s=>s.taxaPct).concat(...fp.operadoras.map(o=>o.bandeiras.map(b=>[b.debito].concat(b.credito||[]))).flat());
+    if(taxas.some(v=>v<0||v>40)) return avisar('Confira as taxas: use porcentagens entre 0 e 40 (ex.: 3,49).');
+    fp.configurado=true; state.meta=state.meta||{}; state.meta.formasPagamento=fp; fpRasc=null;
+    saveData(); avisar('Formas de pagamento salvas.'); render();
+  });
 }
 // ---- contas que se repetem (fixas ou variáveis) e compras com itens ----
 let despModo='conta', compraItens=null, compraRasc=null;
@@ -2172,7 +2241,7 @@ function bindPatrimonio(){
 }
 function bindFinanceiro2(){
   bindLancarDespesa(); bindPatrimonio();
-  const ft=document.getElementById('fTaxas'); if(ft) ft.addEventListener('submit',ev=>{ ev.preventDefault(); salvarTaxas(ft); });
+  bindFormasPagamento();
   document.querySelectorAll('[data-vercompra2]').forEach(b=>b.addEventListener('click',()=>abrirCompra(b.getAttribute('data-vercompra2'))));
   document.querySelectorAll('[data-pararrep]').forEach(b=>b.addEventListener('click',()=>{
     const e=(state.fluxoFinanceiro||[]).find(x=>x.id===b.getAttribute('data-pararrep')); if(!e) return;
@@ -2199,7 +2268,7 @@ function renderFinanceiro(p){
     const comEntrada=pag.condicao==='parcelado_com';
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
     const parcelas=calcParcelas(o);
-    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${pc.taxaValor!=null?`${fmtMoney(pc.valorBruto)} <span class="muted">pago pelo paciente</span><div style="font-size:12.5px">Taxa ${fmtPct(pc.taxaPct)}%: <span style="color:var(--warn)">−${fmtMoney(pc.taxaValor)}</span> · <strong>você recebe ${fmtMoney(pc.valor)}</strong></div>`:fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
+    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}${pc.cartao?`<div class="muted" style="font-size:12px">${esc(pc.cartao)}</div>`:''}</td><td>${pc.taxaValor!=null?`${fmtMoney(pc.valorBruto)} <span class="muted">pago pelo paciente</span><div style="font-size:12.5px">Taxa ${pc.taxaPct?fmtPct(pc.taxaPct)+'%':''}${pc.taxaFixa?(pc.taxaPct?' + ':'')+fmtMoney(pc.taxaFixa):''}: <span style="color:var(--warn)">−${fmtMoney(pc.taxaValor)}</span> · <strong>você recebe ${fmtMoney(pc.valor)}</strong></div>`:fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
     const cartao=ehCartao(pag.forma), credito=pag.forma==='Cartão de Crédito';
     return `<div class="card">
     <h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))}</h3>
@@ -2214,12 +2283,12 @@ function renderFinanceiro(p){
       <div><label>Forma de pagamento</label>
         <select data-finfield="forma" data-orcid="${o.id}">
           <option value="" ${!pag.forma?'selected':''}>Selecione</option>
-          <option value="Dinheiro" ${pag.forma==='Dinheiro'?'selected':''}>Dinheiro</option>
-          <option value="Pix" ${pag.forma==='Pix'?'selected':''}>Pix</option>
+          ${formasPag().simples.filter(f=>f.ativo!==false||f.nome===pag.forma).map(f=>`<option value="${esc(f.nome)}" ${pag.forma===f.nome?'selected':''}>${esc(f.nome)}</option>`).join('')}
           <option value="Cartão de Débito" ${pag.forma==='Cartão de Débito'?'selected':''}>Cartão de Débito</option>
           <option value="Cartão de Crédito" ${pag.forma==='Cartão de Crédito'?'selected':''}>Cartão de Crédito</option>
-          <option value="Boleto" ${pag.forma==='Boleto'?'selected':''}>Boleto</option>
         </select></div>
+      ${cartao?(()=>{ const fp=formasPag(), {op,b}=cartaoEscolhido(pag); return `<div><label>Operadora</label><select data-finfield="operadoraId" data-orcid="${o.id}">${fp.operadoras.map(x=>`<option value="${esc(x.id)}" ${op&&op.id===x.id?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>
+        <div><label>Bandeira</label><select data-finfield="bandeiraId" data-orcid="${o.id}">${(op?op.bandeiras:[]).map(x=>`<option value="${esc(x.id)}" ${b&&b.id===x.id?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>`; })():''}
       ${comEntrada?`<div><label>Valor da entrada (R$)</label><input type="number" step="0.01" min="0" data-finfield="valorEntrada" data-orcid="${o.id}" value="${esc(pag.valorEntrada||'')}"></div>`:''}
       ${parcelado&&!(cartao&&!credito)?`<div><label>${credito?'Parcelas no cartão (1 a 12)':comEntrada?'Nº de parcelas (saldo restante)':'Número de parcelas'}</label><input type="number" min="1" ${credito?'max="12"':''} data-finfield="numParcelas" data-orcid="${o.id}" value="${esc(pag.numParcelas||'')}"></div>`:''}
       ${parcelado&&!cartao?`<div><label>Intervalo entre parcelas</label><select data-finfield="intervaloDias" data-orcid="${o.id}">
@@ -2228,7 +2297,7 @@ function renderFinanceiro(p){
       </select></div>`:''}
     </div>
     <label>Observações financeiras</label><input type="text" data-finfield="obs" data-orcid="${o.id}" value="${esc(pag.obs||'')}" placeholder="Ex: desconto combinado, forma de cobrança etc.">
-    ${cartao?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">💳 No cartão você recebe de uma vez, ${prazoDoCartao(pag.forma)===0?'no mesmo dia':'em '+prazoDoCartao(pag.forma)+' dia(s)'}, com a taxa da operadora já descontada.${comEntrada?' A entrada é paga à parte (dinheiro ou Pix).':''} ${taxasCartao().configurado?'':'<strong>Taxas de exemplo:</strong> confira em Configurações → Taxas de cartão.'}</p>`:''}
+    ${cartao?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">💳 No cartão você recebe de uma vez, ${prazoDoCartao(pag)===0?'no mesmo dia':'em '+prazoDoCartao(pag)+' dia(s)'}, com a taxa da operadora já descontada.${comEntrada?' A entrada é paga à parte (dinheiro ou Pix).':''} ${formasPag().configurado?'':'<strong>Taxas de exemplo:</strong> confira em Configurações → Formas de pagamento.'}</p>`:''}
     <div class="overflow" style="margin-top:14px"><table><thead><tr><th>${cartao?'Recebimento':'Parcela'}</th><th>Valor</th><th>${cartao?'Você recebe em':'Vencimento'}</th></tr></thead>
     <tbody>${parcRows}</tbody></table></div>
     <div style="margin-top:14px">${o.fluxoGerado?`<span class="muted">Fluxo gerado em ${esc(o.fluxoGeradoEm)} — já está no Financeiro do consultório.</span> <button class="btn-s" data-genfluxo="${o.id}" style="margin-left:8px">Atualizar Fluxo</button>`:`<button class="btn-p" data-genfluxo="${o.id}">Gerar Fluxo</button>`}</div>
@@ -6566,6 +6635,7 @@ function bindEvents(){
     const o=p.orcamentos.find(x=>x.id===el.getAttribute('data-orcid'));
     o.pagamento=o.pagamento||{};
     o.pagamento[el.getAttribute('data-finfield')]=el.value;
+    if(el.getAttribute('data-finfield')==='operadoraId') delete o.pagamento.bandeiraId;
     saveData();
     render();
   }));
