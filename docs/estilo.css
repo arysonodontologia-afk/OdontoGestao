@@ -780,3 +780,19 @@ th.env-sel,td.env-sel{width:34px;text-align:center}
 .pub-op{display:flex;flex-direction:column;gap:6px;font-size:14px}
 .pub-op label{display:flex;gap:8px;align-items:flex-start;color:var(--text)}
 .pub-op input{width:auto;margin-top:3px}
+
+/* financeiro 2 */
+.tx-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.tx-grade label{font-size:12.5px;margin:0 0 2px}
+.cp-itens td{vertical-align:middle}
+.cp-itens input,.cp-itens select{min-width:0}
+.kpis-mini{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+.kpis-mini>div{flex:1 1 180px;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;background:var(--surface-2)}
+.kpis-mini span{display:block;font-size:12.5px;color:var(--muted)}
+.kpis-mini strong{font-size:18px}
+.pt-barra{height:5px;border-radius:3px;background:var(--border);margin-top:4px;max-width:120px;overflow:hidden}
+.pt-barra i{display:block;height:100%;background:var(--primary)}
+.pt-evol{display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding-bottom:4px}
+.pt-col{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:58px;font-size:11.5px;color:var(--muted)}
+.pt-col i{display:block;width:26px;background:var(--primary);border-radius:4px 4px 0 0;opacity:.85}
+.pt-val{font-size:10.5px;color:var(--text)}

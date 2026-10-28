@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.16.0';
+const APP_VERSION='2.17.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
@@ -1526,13 +1526,22 @@ function calcParcelas(o){
   } else {
     list.push({label:'Pagamento único', valor:total, vencimento:base});
   }
+  if(ehCartao(pag.forma)){
+    // cartão: a clínica recebe de uma vez, já com a taxa da operadora descontada
+    const ent=pag.condicao==='parcelado_com'?Math.min(parseFloat(pag.valorEntrada)||0,total):0;
+    const n=pag.forma==='Cartão de Débito'?1:(pag.condicao==='avista'||!pag.condicao?1:Math.max(1,Math.min(12,parseInt(pag.numParcelas)||1)));
+    const bruto=r2(total-ent), pct=taxaDoCartao(pag.forma,n), taxa=r2(bruto*pct/100);
+    list=[];
+    if(ent>0) list.push({label:'Entrada', valor:r2(ent), vencimento:base});
+    list.push({label:pag.forma==='Cartão de Débito'?'Cartão de débito':'Cartão de crédito '+n+'x', valor:r2(bruto-taxa), valorBruto:bruto, taxaPct:pct, taxaValor:taxa, vencimento:addDaysStr(base,prazoDoCartao(pag.forma))});
+  }
   return list;
 }
 function parcelasPagasDoOrc(o){ return (state.fluxoFinanceiro||[]).filter(e=>e.orcamentoId===o.id && e.confirmado); }
 function generateFluxo(p,o){
   // Parcelas já pagas são preservadas; só as pendentes são recalculadas sobre o saldo restante.
   const pagas=parcelasPagasDoOrc(o);
-  const totalPago=Math.round(pagas.reduce((s,e)=>s+(e.valor||0),0)*100)/100;
+  const totalPago=Math.round(pagas.reduce((s,e)=>s+valorQuitado(e),0)*100)/100;
   state.fluxoFinanceiro=(state.fluxoFinanceiro||[]).filter(e=>e.orcamentoId!==o.id || e.confirmado);
   let novas=calcParcelas(o).filter(pc=>!pagas.some(e=>e.label===pc.label));
   const saldo=Math.round(((o.total||0)-totalPago)*100)/100;
@@ -1542,7 +1551,9 @@ function generateFluxo(p,o){
     novas=novas.map((pc,i)=>Object.assign({},pc,{valor: i===novas.length-1 ? Math.round((saldo-vp*(novas.length-1))*100)/100 : vp}));
   }
   novas.forEach(pc=>{
-    state.fluxoFinanceiro.push({id:uid(), pacienteId:p.id, pacienteNome:p.nome, orcamentoId:o.id, label:pc.label, valor:pc.valor, vencimento:pc.vencimento, tipo:'receita', confirmado:false, dataPagamento:''});
+    const reg={id:uid(), pacienteId:p.id, pacienteNome:p.nome, orcamentoId:o.id, label:pc.label, valor:pc.valor, vencimento:pc.vencimento, tipo:'receita', confirmado:false, dataPagamento:'', forma:(o.pagamento||{}).forma||''};
+    if(pc.taxaValor!=null){ reg.valorBruto=pc.valorBruto; reg.taxaPct=pc.taxaPct; reg.taxaValor=pc.taxaValor; }
+    state.fluxoFinanceiro.push(reg);
   });
   o.fluxoGerado=true; o.fluxoGeradoEm=hojeISO();
   saveData();
@@ -1565,7 +1576,7 @@ function ensureFluxoTipos(){
     if(e.confirmado===undefined){ e.confirmado=e.status==='pago'; e.dataPagamento=e.dataPagamento||(e.confirmado?e.vencimento:''); }
   });
 }
-const CATEGORIAS_DESPESA=['Instalações','Contas e Utilidades','Pessoal','Materiais e Insumos','Serviços','Impostos e Taxas','Marketing','Outros'];
+const CATEGORIAS_DESPESA=['Instalações','Contas e Utilidades','Pessoal','Materiais e Insumos','Equipamentos','Serviços','Impostos e Taxas','Marketing','Outros'];
 function seedDespesasCatalogo(){
   return [
     {id:uid(),categoria:'Instalações',nome:'Aluguel'},
@@ -1598,10 +1609,11 @@ function seedDespesasCatalogo(){
 }
 function ensureDespesasCatalogo(){ if(NUVEM && !(currentUser() && permsDe(currentUser()).financeiro)) return; if(!state.despesasCatalogo || !state.despesasCatalogo.length){ state.despesasCatalogo=seedDespesasCatalogo(); saveData(); } }
 function renderFinanceiroPrincipal(){
-  const subTabs=[{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'}];
+  const subTabs=[{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'},{id:'patrimonio', label:'🏷️ Patrimônio'}];
   const bar=subTabs.map(t=>`<button data-finsub="${t.id}" class="${financeiroSubTab===t.id?'active':''}">${t.label}</button>`).join('');
   let body='';
   if(financeiroSubTab==='lancardespesa') body=renderLancarDespesa();
+  else if(financeiroSubTab==='patrimonio') body=renderPatrimonio();
   else body=renderFluxoFinanceiro();
   return `<h2 style="margin:0 0 10px 0">Financeiro</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -1807,6 +1819,7 @@ function renderConfiguracoesPrincipal(){
   const subTabs=[{id:'clinica', label:'🏥 Clínica'}];
   if(perms.procedimentos) subTabs.push({id:'procedimentos', label:'🦷 Procedimentos'});
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
+  if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Taxas de cartão'});
   if(perms.usuarios) subTabs.push({id:'backup', label:'💾 Backup'});
   if(!subTabs.find(t=>t.id===configSubTab)) configSubTab='clinica';
   const bar=subTabs.map(t=>`<button data-consub="${t.id}" class="${configSubTab===t.id?'active':''}">${t.label}</button>`).join('');
@@ -1814,6 +1827,7 @@ function renderConfiguracoesPrincipal(){
   if(configSubTab==='clinica') body=renderClinica();
   else if(configSubTab==='procedimentos') body=renderProcedimentos();
   else if(configSubTab==='tipodespesas') body=renderTiposDespesa();
+  else if(configSubTab==='taxas') body=renderTaxasCartao();
   else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
@@ -1874,17 +1888,19 @@ function renderFluxoFinanceiro(){
   const saidaReal=entries.filter(e=>e.tipo==='despesa'&&e.confirmado).reduce((s,e)=>s+(e.valor||0),0);
   const saidaPendente=entries.filter(e=>e.tipo==='despesa'&&!e.confirmado).reduce((s,e)=>s+(e.valor||0),0);
   const saldoRealizado=entradaReal-saidaReal;
+  const taxasPer=r2(entries.filter(e=>e.tipo==='receita'&&e.taxaValor).reduce((s,e)=>s+(+e.taxaValor||0),0));
   const rows=entries.map(e=>{
     const despesa=e.tipo==='despesa';
     const situacao=e.confirmado?'Realizado':(despesa?'Pendente':'Entrada Prevista');
     const situacaoClass=e.confirmado?'b-dent':(despesa?'b-harm':'b-recep');
     const pagCell=e.confirmado
       ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
-      : `<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
+      : `${e.estimado?`<input data-valreal="${e.id}" inputmode="decimal" placeholder="Valor real" aria-label="Valor real da conta" style="width:110px;display:inline-block"> `:''}<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
     return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
     <td>${esc(despesa?(e.fornecedor||'-'):e.pacienteNome)}</td>
-    <td>${esc(e.label)}</td><td>${fmtMoney(e.valor)}</td>
+    <td>${esc(e.label)}${e.forma?`<div class="muted" style="font-size:12px">${esc(e.forma)}</div>`:''}${e.compraId?` <button class="lnk-forte" data-vercompra2="${e.compraId}" style="font-size:12.5px">Ver compra</button>`:''}${e.recorrenciaId&&!e.confirmado?` <button class="lnk-forte" data-pararrep="${e.id}" style="font-size:12.5px">Parar de repetir</button>`:''}</td>
+    <td style="white-space:nowrap">${e.estimado?'<span class="sit sit-agendado" title="Valor estimado: informe o valor real ao dar baixa">estimado</span> ≈ ':''}${fmtMoney(e.valor)}${linhaTaxaHtml(e)}</td>
     <td><span class="badge ${situacaoClass}">${situacao}</span></td>
     <td>${pagCell}</td>
     <td>${despesa?`<button class="btn-d" data-delfluxo="${e.id}">Excluir</button>`:''}</td></tr>`;
@@ -1899,24 +1915,271 @@ function renderFluxoFinanceiro(){
   <p><strong>Entrada Realizada:</strong> ${fmtMoney(entradaReal)} &nbsp;·&nbsp; <strong>Entrada Prevista:</strong> ${fmtMoney(entradaPrevista)}</p>
   <p><strong>Saída Realizada:</strong> ${fmtMoney(saidaReal)} &nbsp;·&nbsp; <strong>Despesa Pendente:</strong> ${fmtMoney(saidaPendente)}</p>
   <p><strong>Saldo Realizado:</strong> <span style="color:${saldoRealizado<0?'var(--danger)':'var(--ok)'};font-weight:700">${fmtMoney(saldoRealizado)}</span></p>
+  ${taxasPer?`<p><strong>Custo com taxas de cartão:</strong> <span style="color:var(--warn);font-weight:700">${fmtMoney(taxasPer)}</span> <span class="muted">(já descontado das entradas acima)</span></p>`:''}
   </div>`;
 }
-function renderLancarDespesa(){
-  ensureDespesasCatalogo();
-  return `<div class="card"><h3>Lançar Nova Despesa</h3>
-  <form id="fDespesa">
-  <label>Tipo de despesa</label>
-  <select id="dpTipo">${CATEGORIAS_DESPESA.map(cat=>{
-    const opts=state.despesasCatalogo.filter(d=>d.categoria===cat).map(d=>`<option value="${d.id}">${esc(d.nome)}</option>`).join('');
-    return opts?`<optgroup label="${cat}">${opts}</optgroup>`:'';
-  }).join('')}</select>
-  <div class="row">
-    <div><label>Empresa / Pessoa (fornecedor)</label><input id="dpFornecedor" placeholder="Ex: nome da empresa de energia"></div>
-    <div><label>Valor (R$)</label><input id="dpValor" type="number" step="0.01" min="0" required></div>
-    <div><label>Vencimento</label><input id="dpVencimento" type="date" required></div>
+// =====================================================================
+// Financeiro 2: taxas de cartão, contas que se repetem, compras com itens
+// e parcelas, patrimônio com depreciação
+// =====================================================================
+// ---- taxas da maquininha (recebimento de pacientes) ----
+const TAXAS_EXEMPLO={debito:1.99,credito:[3.49,5.49,6.29,7.09,7.89,8.69,9.49,10.29,11.09,11.89,12.69,13.49],prazoCredito:1,prazoDebito:1};
+function taxasCartao(){ const t=(state.meta&&state.meta.taxasCartao)||{}; return {debito:t.debito!=null?+t.debito:TAXAS_EXEMPLO.debito, credito:TAXAS_EXEMPLO.credito.map((v,i)=>t.credito&&t.credito[i]!=null&&t.credito[i]!==''?+t.credito[i]:v), prazoCredito:t.prazoCredito!=null?+t.prazoCredito:1, prazoDebito:t.prazoDebito!=null?+t.prazoDebito:1, configurado:!!t.configurado}; }
+function ehCartao(forma){ return forma==='Cartão de Crédito'||forma==='Cartão de Débito'; }
+function taxaDoCartao(forma,n){ const t=taxasCartao(); return forma==='Cartão de Débito'?t.debito:t.credito[Math.min(Math.max(n,1),12)-1]; }
+function prazoDoCartao(forma){ const t=taxasCartao(); return forma==='Cartão de Débito'?t.prazoDebito:t.prazoCredito; }
+function valorQuitado(e){ return e && e.valorBruto!=null ? +e.valorBruto : (+e.valor||0); }   // o que o paciente pagou (antes da taxa)
+function linhaTaxaHtml(e){ return e.taxaValor?`<div class="muted" style="font-size:12px">pago ${fmtMoney(e.valorBruto)} · taxa ${fmtPct(e.taxaPct)}% (−${fmtMoney(e.taxaValor)})</div>`:''; }
+function renderTaxasCartao(){
+  const t=taxasCartao(), pode=permsDe(currentUser()).financeiro, dis=pode?'':' disabled';
+  const n=v=>String(v).replace('.',',');
+  return `<div class="card"><h3 style="margin:0 0 4px">Taxas da maquininha</h3>
+  <p class="muted" style="margin:0 0 12px">Usadas quando o paciente paga com cartão: o sistema desconta a taxa e lança no Financeiro o valor que você realmente recebe, mostrando quanto custou a taxa. ${t.configurado?'':'<strong>Os valores abaixo são exemplos: confira com a sua operadora e salve.</strong>'}</p>
+  <form id="fTaxas"><div class="row">
+    <div><label for="txDeb">Débito (%)</label><input id="txDeb" inputmode="decimal" value="${n(t.debito)}"${dis}></div>
+    <div><label for="txPrDeb">Recebo o débito em (dias)</label><input id="txPrDeb" type="number" min="0" max="60" value="${t.prazoDebito}"${dis}></div>
+    <div><label for="txPrCred">Recebo o crédito em (dias)</label><input id="txPrCred" type="number" min="0" max="60" value="${t.prazoCredito}"${dis}><div class="cl-dica">Com antecipação, normalmente 1 dia.</div></div>
   </div>
-  <div style="margin-top:12px"><button class="btn-p">Salvar Despesa</button></div>
+  <label style="margin-top:10px">Crédito por número de parcelas (%)</label>
+  <div class="tx-grade">${t.credito.map((v,i)=>`<div><label for="txC${i}">${i+1}x</label><input id="txC${i}" data-txc="${i}" inputmode="decimal" value="${n(v)}"${dis}></div>`).join('')}</div>
+  ${pode?'<div style="margin-top:12px"><button class="btn-p">Salvar taxas</button></div>':''}</form></div>`;
+}
+function salvarTaxas(f){
+  const num=id=>lerValor(f.querySelector('#'+id).value);
+  const cred=[...f.querySelectorAll('[data-txc]')].map(i=>lerValor(i.value));
+  const ruim=[num('txDeb'),...cred].some(v=>isNaN(v)||v<0||v>40);
+  if(ruim){ avisar('Confira as taxas: use números entre 0 e 40 (ex.: 3,49).'); return; }
+  state.meta=state.meta||{};
+  state.meta.taxasCartao={debito:num('txDeb'),credito:cred,prazoDebito:parseInt(f.querySelector('#txPrDeb').value,10)||0,prazoCredito:parseInt(f.querySelector('#txPrCred').value,10)||0,configurado:true};
+  saveData(); avisar('Taxas salvas.'); render();
+}
+// ---- contas que se repetem (fixas ou variáveis) e compras com itens ----
+let despModo='conta', compraItens=null, compraRasc=null;
+const RASC_IDS=['cpTipo','cpFornecedor','cpData','cpNf','cpForma','cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga'];
+function lerRasc(){ const r={}; RASC_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) r[id]=el.type==='checkbox'?el.checked:el.value; }); return r; }
+const FORMAS_PAG=['Pix','Boleto','Cartão de Crédito','Cartão de Débito','Transferência','Dinheiro','Débito automático'];
+function garantirTipoEquipamento(){
+  ensureDespesasCatalogo();
+  if(state.despesasCatalogo && !state.despesasCatalogo.some(d=>d.categoria==='Equipamentos')){
+    state.despesasCatalogo.push({id:uid(),categoria:'Equipamentos',nome:'Equipamentos odontológicos'},{id:uid(),categoria:'Equipamentos',nome:'Móveis e informática'}); saveData(); }
+}
+function opcoesTipoDespesa(sel){ return CATEGORIAS_DESPESA.map(cat=>{ const o=state.despesasCatalogo.filter(d=>d.categoria===cat).map(d=>`<option value="${d.id}" ${sel===d.id?'selected':''}>${esc(d.nome)}</option>`).join(''); return o?`<optgroup label="${cat}">${o}</optgroup>`:''; }).join(''); }
+function renderLancarDespesa(){
+  garantirTipoEquipamento();
+  const modos=`<div class="seg" role="group" aria-label="Tipo de lançamento" style="margin-bottom:12px"><button type="button" data-despmodo="conta" class="${despModo==='conta'?'active':''}">Conta (luz, internet, aluguel…)</button><button type="button" data-despmodo="compra" class="${despModo==='compra'?'active':''}">Compra com itens e parcelas</button></div>`;
+  if(despModo==='compra') return `<div class="card"><h3>Lançar despesa</h3>${modos}${compraFormHtml()}</div>`;
+  const equipId=(state.despesasCatalogo.find(d=>d.categoria!=='Equipamentos')||{}).id;
+  return `<div class="card"><h3>Lançar despesa</h3>${modos}
+  <form id="fDespesa">
+  <label for="dpTipo">Tipo de despesa</label>
+  <select id="dpTipo">${opcoesTipoDespesa(equipId)}</select>
+  <div class="row">
+    <div><label for="dpFornecedor">Empresa / Pessoa (fornecedor)</label><input id="dpFornecedor" placeholder="Ex: nome da empresa de energia"></div>
+    <div><label for="dpValor">Valor (R$)</label><input id="dpValor" inputmode="decimal" required placeholder="0,00"></div>
+    <div><label for="dpVencimento">Vencimento</label><input id="dpVencimento" type="date" required></div>
+    <div><label for="dpForma">Forma de pagamento</label><select id="dpForma"><option value="">Selecione</option>${FORMAS_PAG.map(f=>`<option>${f}</option>`).join('')}</select></div>
+  </div>
+  <label for="dpRepetir">Repetir todo mês?</label>
+  <select id="dpRepetir"><option value="nao">Não, só esta vez</option><option value="fixo">Sim, valor fixo (ex.: internet, coleta de resíduos)</option><option value="variavel">Sim, valor variável (ex.: energia, água)</option></select>
+  <div id="dpRepWrap" style="display:none"><div class="row"><div><label for="dpMeses">Por quantos meses</label><select id="dpMeses">${[3,6,12,24].map(m=>`<option value="${m}" ${m===12?'selected':''}>${m} meses</option>`).join('')}</select></div></div>
+    <p class="muted" id="dpRepDica" style="margin:4px 0 0;font-size:12.5px"></p></div>
+  <div style="margin-top:12px"><button class="btn-p">Salvar despesa</button></div>
   </form></div>`;
+}
+function compraFormHtml(){
+  if(!compraItens) compraItens=[{nome:'',qtd:1,unit:'',patrimonio:true,vida:10}];
+  const tot=compraTotal();
+  const equip=(state.despesasCatalogo.find(d=>d.categoria==='Equipamentos')||{}).id;
+  return `<form id="fCompra">
+  <div class="row">
+    <div><label for="cpTipo">Tipo de despesa</label><select id="cpTipo">${opcoesTipoDespesa(equip)}</select></div>
+    <div><label for="cpFornecedor">Fornecedor</label><input id="cpFornecedor" required placeholder="Ex.: Dental Exemplo"></div>
+  </div>
+  <div class="row">
+    <div><label for="cpData">Data da compra</label><input id="cpData" type="date" value="${hojeISO()}" required></div>
+    <div><label for="cpNf">Nota fiscal (opcional)</label><input id="cpNf"></div>
+  </div>
+  <h4 style="margin:14px 0 6px">Itens da compra</h4>
+  <div class="overflow"><table class="cp-itens"><thead><tr><th>Item</th><th>Qtd</th><th>Valor unitário</th><th>Total</th><th title="Entra no patrimônio da clínica, com depreciação">Patrimônio</th><th>Vida útil</th><th></th></tr></thead><tbody>
+  ${compraItens.map((it,i)=>`<tr><td><input data-cpi="${i}" data-k="nome" value="${esc(it.nome)}" placeholder="Ex.: Autoclave 21 L" aria-label="Item"></td>
+    <td><input data-cpi="${i}" data-k="qtd" type="number" min="1" value="${esc(it.qtd)}" style="width:70px" aria-label="Quantidade"></td>
+    <td><input data-cpi="${i}" data-k="unit" inputmode="decimal" value="${esc(it.unit)}" placeholder="0,00" style="width:120px" aria-label="Valor unitário"></td>
+    <td style="white-space:nowrap" data-cptot="${i}">${fmtMoney((+it.qtd||0)*(lerValor(it.unit)||0))}</td>
+    <td style="text-align:center"><input type="checkbox" data-cpi="${i}" data-k="patrimonio" ${it.patrimonio?'checked':''} aria-label="Patrimônio" style="width:auto"></td>
+    <td><select data-cpi="${i}" data-k="vida" aria-label="Vida útil" ${it.patrimonio?'':'disabled'}>${[3,5,10,15,20].map(a=>`<option value="${a}" ${+it.vida===a?'selected':''}>${a} anos</option>`).join('')}</select></td>
+    <td>${compraItens.length>1?`<button type="button" class="btn-icone peq btn-perigo" data-cprm="${i}" aria-label="Remover item">${ICONES.lixo}</button>`:''}</td></tr>`).join('')}
+  </tbody></table></div>
+  <button type="button" class="btn-s" id="cpAdd" style="margin-top:6px">+ Adicionar item</button>
+  <p style="margin:10px 0 0;font-size:15px"><strong>Total da compra: <span id="cpTotal">${fmtMoney(tot)}</span></strong></p>
+  <h4 style="margin:14px 0 6px">Pagamento</h4>
+  <div class="row">
+    <div><label for="cpForma">Forma de pagamento</label><select id="cpForma">${FORMAS_PAG.map(f=>`<option>${f}</option>`).join('')}</select></div>
+    <div><label for="cpCond">Condição</label><select id="cpCond"><option value="avista">À vista</option><option value="parc_com">Entrada + parcelas</option><option value="parc_sem">Parcelado sem entrada</option></select></div>
+  </div>
+  <div class="row" id="cpEntWrap" style="display:none">
+    <div><label for="cpEntrada">Valor da entrada (R$)</label><input id="cpEntrada" inputmode="decimal" placeholder="0,00"></div>
+    <div><label for="cpEntData">Data da entrada</label><input id="cpEntData" type="date" value="${hojeISO()}"></div>
+    <div style="align-self:flex-end"><label class="chk-linha"><input type="checkbox" id="cpEntPaga" checked> Entrada já paga</label></div>
+  </div>
+  <div class="row" id="cpParcWrap" style="display:none">
+    <div><label for="cpN">Nº de parcelas</label><input id="cpN" type="number" min="1" max="60" value="10"></div>
+    <div><label for="cpPrim">1ª parcela vence em</label><input id="cpPrim" type="date" value="${addDaysStr(hojeISO(),30)}"></div>
+    <div><label for="cpInt">Intervalo</label><select id="cpInt"><option value="30">Mensal</option><option value="15">A cada 15 dias</option></select></div>
+  </div>
+  <div class="row" id="cpVistaWrap"><div><label for="cpVenc">Vencimento</label><input id="cpVenc" type="date" value="${hojeISO()}"></div><div style="align-self:flex-end"><label class="chk-linha"><input type="checkbox" id="cpVistaPaga"> Já foi paga</label></div></div>
+  <div class="orc-resumo" id="cpResumo"></div>
+  <div style="margin-top:12px"><button class="btn-p">Salvar compra</button></div>
+  </form>`;
+}
+function compraTotal(){ return r2((compraItens||[]).reduce((s,it)=>s+(+it.qtd||0)*(lerValor(it.unit)||0),0)); }
+function compraParcelas(){
+  const q=id=>document.getElementById(id), total=compraTotal(), cond=q('cpCond').value;
+  if(cond==='avista') return [{label:'Pagamento único',valor:total,vencimento:q('cpVenc').value,pago:q('cpVistaPaga').checked}];
+  const lista=[]; let saldo=total;
+  if(cond==='parc_com'){ const ent=r2(lerValor(q('cpEntrada').value)||0); lista.push({label:'Entrada',valor:ent,vencimento:q('cpEntData').value,pago:q('cpEntPaga').checked}); saldo=r2(total-ent); }
+  const n=Math.max(1,parseInt(q('cpN').value,10)||1), vp=r2(saldo/n), int=parseInt(q('cpInt').value,10)||30;
+  for(let i=0;i<n;i++){
+    let venc=q('cpPrim').value;
+    if(int===30){ const d=new Date(venc+'T00:00:00'), dia=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+i); const ult=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(dia,ult)); venc=isoLocal(d); }
+    else venc=addDaysStr(venc,i*int);
+    lista.push({label:'Parcela '+(i+1)+'/'+n,valor:i===n-1?r2(saldo-vp*(n-1)):vp,vencimento:venc,pago:false});
+  }
+  return lista;
+}
+function bindLancarDespesa(){
+  document.querySelectorAll('[data-despmodo]').forEach(b=>b.addEventListener('click',()=>{ despModo=b.getAttribute('data-despmodo'); render(); }));
+  const f=document.getElementById('fDespesa');
+  if(f){
+    const rep=f.querySelector('#dpRepetir'), w=f.querySelector('#dpRepWrap'), dica=f.querySelector('#dpRepDica');
+    rep.addEventListener('change',()=>{ w.style.display=rep.value==='nao'?'none':'block';
+      dica.textContent=rep.value==='fixo'?'Lança o mesmo valor em todos os meses, no mesmo dia de vencimento.':rep.value==='variavel'?'Este mês fica com o valor informado. Os próximos meses entram como "estimado" com esse valor; quando a conta chegar, você informa o valor real ao dar baixa.':''; });
+    f.addEventListener('submit',ev=>{
+      ev.preventDefault();
+      const tipo=state.despesasCatalogo.find(d=>d.id===f.querySelector('#dpTipo').value);
+      const valor=r2(lerValor(f.querySelector('#dpValor').value)), venc=f.querySelector('#dpVencimento').value;
+      if(isNaN(valor)||valor<=0){ avisar('Informe o valor da despesa.'); return; }
+      if(!venc){ avisar('Informe o vencimento.'); return; }
+      const modo=rep.value, meses=modo==='nao'?1:parseInt(f.querySelector('#dpMeses').value,10)||12, recId=modo==='nao'?null:uid();
+      state.fluxoFinanceiro=state.fluxoFinanceiro||[];
+      const d0=new Date(venc+'T00:00:00'), dia=d0.getDate();
+      for(let i=0;i<meses;i++){
+        const d=new Date(d0); d.setDate(1); d.setMonth(d.getMonth()+i); const ult=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(dia,ult));
+        const e={id:uid(),tipo:'despesa',categoria:tipo?tipo.categoria:'',fornecedor:f.querySelector('#dpFornecedor').value.trim(),label:tipo?tipo.nome:'',valor,vencimento:isoLocal(d),confirmado:false,dataPagamento:'',forma:f.querySelector('#dpForma').value};
+        if(recId){ e.recorrenciaId=recId; e.recorrencia=modo; if(meses>1) e.label+=' ('+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()+')'; }
+        if(modo==='variavel' && i>0) e.estimado=true;
+        state.fluxoFinanceiro.push(e);
+      }
+      saveData(); financeiroSubTab='fluxo'; render();
+      if(meses>1) avisar(`Despesa lançada para ${meses} meses${modo==='variavel'?' (os próximos como valor estimado)':''}.`);
+    });
+  }
+  const fc=document.getElementById('fCompra'); if(!fc) return;
+  const q=id=>document.getElementById(id);
+  const atualizarResumo=()=>{
+    q('cpTotal').textContent=fmtMoney(compraTotal());
+    compraItens.forEach((it,i)=>{ const c=fc.querySelector(`[data-cptot="${i}"]`); if(c) c.textContent=fmtMoney((+it.qtd||0)*(lerValor(it.unit)||0)); });
+    const cond=q('cpCond').value;
+    q('cpEntWrap').style.display=cond==='parc_com'?'flex':'none'; q('cpParcWrap').style.display=cond==='avista'?'none':'flex'; q('cpVistaWrap').style.display=cond==='avista'?'flex':'none';
+    const ps=compraParcelas();
+    q('cpResumo').innerHTML=`<div><span>Total da compra</span><span>${fmtMoney(compraTotal())}</span></div>`+ps.slice(0,4).map(p=>`<div><span>${esc(p.label)} · ${fmtDataBR(p.vencimento)}${p.pago?' · paga':''}</span><span>${fmtMoney(p.valor)}</span></div>`).join('')+(ps.length>4?`<div class="muted"><span>… e mais ${ps.length-4} parcela(s) até ${fmtDataBR(ps[ps.length-1].vencimento)}</span><span></span></div>`:'');
+  };
+  fc.querySelectorAll('[data-cpi]').forEach(el=>{ const ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
+    el.addEventListener(ev,()=>{ const it=compraItens[+el.getAttribute('data-cpi')], k=el.getAttribute('data-k'); it[k]=el.type==='checkbox'?el.checked:el.value;
+      if(k==='patrimonio'){ const s=fc.querySelector(`select[data-cpi="${el.getAttribute('data-cpi')}"][data-k="vida"]`); if(s) s.disabled=!el.checked; } atualizarResumo(); }); });
+  if(compraRasc){ RASC_IDS.forEach(id=>{ const el=q(id); if(el && compraRasc[id]!==undefined){ if(el.type==='checkbox') el.checked=compraRasc[id]; else el.value=compraRasc[id]; } }); compraRasc=null; }
+  fc.querySelectorAll('[data-cprm]').forEach(b=>b.addEventListener('click',()=>{ compraRasc=lerRasc(); compraItens.splice(+b.getAttribute('data-cprm'),1); render(); }));
+  q('cpAdd').addEventListener('click',()=>{ compraRasc=lerRasc(); compraItens.push({nome:'',qtd:1,unit:'',patrimonio:true,vida:10}); render(); setTimeout(()=>{ const l=fc.ownerDocument.querySelectorAll('[data-k="nome"]'); if(l.length) l[l.length-1].focus(); },0); });
+  ['cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga'].forEach(id=>{ const el=q(id); if(el){ el.addEventListener('input',atualizarResumo); el.addEventListener('change',atualizarResumo); } });
+  atualizarResumo();
+  fc.addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const itens=compraItens.map(it=>({nome:String(it.nome||'').trim(),qtd:Math.max(1,parseInt(it.qtd,10)||1),unit:r2(lerValor(it.unit)||0),patrimonio:!!it.patrimonio,vida:+it.vida||10})).filter(it=>it.nome||it.unit);
+    if(!itens.length || itens.some(it=>!it.nome||!(it.unit>0))){ avisar('Informe o nome e o valor unitário de cada item.'); return; }
+    const forn=q('cpFornecedor').value.trim(); if(!forn){ avisar('Informe o fornecedor.'); return; }
+    const total=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0)), ps=compraParcelas();
+    if(q('cpCond').value==='parc_com'){ const ent=ps[0].valor; if(!(ent>0)||ent>=total){ avisar('A entrada precisa ser maior que zero e menor que o total.'); return; } }
+    if(ps.some(p=>!p.vencimento)){ avisar('Informe as datas de pagamento.'); return; }
+    const tipo=state.despesasCatalogo.find(d=>d.id===q('cpTipo').value), dataC=q('cpData').value||hojeISO(), id=uid();
+    state.compras=state.compras||[]; state.patrimonio=state.patrimonio||[]; state.fluxoFinanceiro=state.fluxoFinanceiro||[];
+    state.compras.push({id,data:dataC,fornecedor:forn,nf:q('cpNf').value.trim(),tipoNome:tipo?tipo.nome:'',categoria:tipo?tipo.categoria:'',itens,total,forma:q('cpForma').value,condicao:q('cpCond').value,parcelas:ps.length,criadaEm:new Date().toISOString()});
+    ps.forEach(p=>state.fluxoFinanceiro.push({id:uid(),tipo:'despesa',categoria:tipo?tipo.categoria:'',fornecedor:forn,label:(tipo?tipo.nome:'Compra')+' · '+p.label,valor:p.valor,vencimento:p.vencimento,confirmado:!!p.pago,dataPagamento:p.pago?p.vencimento:'',forma:q('cpForma').value,compraId:id}));
+    itens.filter(it=>it.patrimonio).forEach(it=>state.patrimonio.push({id:uid(),compraId:id,nome:it.nome,qtd:it.qtd,custo:r2(it.qtd*it.unit),dataCompra:dataC,vidaAnos:it.vida,fornecedor:forn}));
+    compraItens=null; saveData(); financeiroSubTab='fluxo'; render();
+    avisar(`Compra de ${fmtMoney(total)} lançada: ${ps.length} pagamento(s) no Financeiro${itens.some(it=>it.patrimonio)?' e '+itens.filter(it=>it.patrimonio).length+' item(ns) no Patrimônio':''}.`);
+  });
+}
+function abrirCompra(id){
+  const c=(state.compras||[]).find(x=>x.id===id); if(!c) return;
+  const fl=(state.fluxoFinanceiro||[]).filter(e=>e.compraId===id).sort((a,b)=>(a.vencimento||'').localeCompare(b.vencimento||''));
+  const pago=r2(fl.filter(e=>e.confirmado).reduce((s,e)=>s+(+e.valor||0),0));
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Compra · ${esc(c.fornecedor)}</h3>
+    <p class="muted" style="margin:0 0 10px">${esc(fmtDataBR(c.data))}${c.nf?' · NF '+esc(c.nf):''} · ${esc(c.tipoNome||'')} · ${esc(c.forma||'')}</p>
+    <div class="overflow"><table><thead><tr><th>Item</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${c.itens.map(it=>`<tr><td>${esc(it.nome)}${it.patrimonio?' <span class="sit sit-chegou">patrimônio</span>':''}</td><td>${it.qtd}</td><td>${fmtMoney(it.unit)}</td><td>${fmtMoney(it.qtd*it.unit)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="orc-resumo"><div><span>Total da compra</span><span>${fmtMoney(c.total)}</span></div><div class="orc-desc"><span>Já pago</span><span>${fmtMoney(pago)}</span></div><div class="orc-total"><span>Falta pagar</span><span>${fmtMoney(r2(c.total-pago))}</span></div></div>
+    <h4 style="margin:12px 0 6px">Pagamentos</h4>
+    <div class="overflow" style="max-height:220px"><table><tbody>${fl.map(e=>`<tr><td>${esc(e.label.split(' · ').pop())}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td>${e.confirmado?'<span class="sit sit-chegou">Pago</span>':'<span class="sit sit-agendado">A pagar</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn-d" data-cpexc>Excluir compra</button><button class="btn-p" data-fechar>Fechar</button></div>`);
+  bg.querySelector('[data-cpexc]').addEventListener('click',()=>{
+    const pend=fl.filter(e=>!e.confirmado).length, pagas=fl.length-pend;
+    customConfirm(`Excluir esta compra? ${pend} pagamento(s) a pagar serão apagados${pagas?` e os ${pagas} já pagos ficam no Financeiro`:''}. Os itens saem do Patrimônio.`,()=>{
+      state.fluxoFinanceiro=state.fluxoFinanceiro.filter(e=>!(e.compraId===id && !e.confirmado));
+      state.compras=state.compras.filter(x=>x.id!==id); state.patrimonio=(state.patrimonio||[]).filter(p=>p.compraId!==id);
+      saveData(); bg.remove(); render(); });
+  });
+}
+// ---- patrimônio: depreciação linear (só para consulta) ----
+function mesesDesde(iso,ate){ const a=new Date(iso+'T00:00:00'), b=new Date((ate||hojeISO())+'T00:00:00'); return Math.max(0,(b.getFullYear()-a.getFullYear())*12+(b.getMonth()-a.getMonth())-(b.getDate()<a.getDate()?1:0)); }
+function valorDepreciado(p,ate){ const vida=(+p.vidaAnos||10)*12, m=Math.min(mesesDesde(p.dataCompra,ate),vida); return r2(Math.max(0,p.custo*(1-m/vida))); }
+function renderPatrimonio(){
+  const l=(state.patrimonio||[]).slice().sort((a,b)=>(a.dataCompra||'').localeCompare(b.dataCompra||''));
+  const custo=r2(l.reduce((s,p)=>s+p.custo,0)), atual=r2(l.reduce((s,p)=>s+valorDepreciado(p),0));
+  const ano=new Date().getFullYear(), anos=[0,1,2,3,4,5,6,7,8,9,10].map(i=>ano+i);
+  const evol=anos.map(a=>({a,v:r2(l.reduce((s,p)=>s+valorDepreciado(p,a+'-12-31'),0))}));
+  const max=Math.max(1,...evol.map(x=>x.v));
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h3 style="margin:0 0 4px">Patrimônio da clínica</h3>
+    <p class="muted" style="margin:0">Valor de compra e valor depreciado de cada bem (depreciação linear pela vida útil). Só para consulta: não gera lançamentos no Financeiro. Serve de base para venda, seguro e para o contador.</p></div>
+    <button class="btn-s" id="ptNovo">+ Bem já existente</button></div>
+    <div id="ptForm"></div>
+    ${l.length?`<div class="kpis-mini"><div><span>Custo de compra</span><strong>${fmtMoney(custo)}</strong></div><div><span>Valor atual (depreciado)</span><strong>${fmtMoney(atual)}</strong></div><div><span>Depreciação acumulada</span><strong>${fmtMoney(r2(custo-atual))}</strong></div></div>
+    <div class="overflow"><table><thead><tr><th>Bem</th><th>Compra</th><th>Custo</th><th>Vida útil</th><th>Depreciação/mês</th><th>Valor atual</th><th></th></tr></thead><tbody>
+    ${l.map(p=>{ const v=valorDepreciado(p), pct=p.custo?Math.round((1-v/p.custo)*100):0; return `<tr><td><strong>${esc(p.nome)}</strong>${p.qtd>1?` <span class="muted">(${p.qtd} un.)</span>`:''}<div class="muted" style="font-size:12px">${esc(p.fornecedor||'')}</div></td><td>${fmtDataBR(p.dataCompra)}</td><td>${fmtMoney(p.custo)}</td>
+      <td><select data-ptvida="${p.id}" aria-label="Vida útil">${[3,5,10,15,20].map(a=>`<option value="${a}" ${+p.vidaAnos===a?'selected':''}>${a} anos</option>`).join('')}</select></td>
+      <td>${fmtMoney(r2(p.custo/((+p.vidaAnos||10)*12)))}</td><td><strong>${fmtMoney(v)}</strong><div class="pt-barra" title="${pct}% depreciado"><i style="width:${100-pct}%"></i></div></td>
+      <td>${p.compraId?`<button class="btn-s" data-vercompra="${p.compraId}">Compra</button>`:`<button class="btn-icone peq btn-perigo" data-ptdel="${p.id}" aria-label="Excluir">${ICONES.lixo}</button>`}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <h4 style="margin:16px 0 8px">Evolução do valor do patrimônio (31/12 de cada ano)</h4>
+    <div class="pt-evol">${evol.map(x=>`<div class="pt-col" title="${x.a}: ${fmtMoney(x.v)}"><span class="pt-val">${fmtMoney(x.v).replace(',00','').replace('R$ ','')}</span><i style="height:${Math.max(2,Math.round(x.v/max*120))}px"></i><span>${x.a}</span></div>`).join('')}</div>`
+    :'<p class="muted" style="margin:12px 0 0">Nenhum bem ainda. Ao lançar uma compra com itens marcados como Patrimônio, eles aparecem aqui. Bens comprados antes podem ser incluídos em "+ Bem já existente".</p>'}
+  </div>`;
+}
+function bindPatrimonio(){
+  document.querySelectorAll('[data-ptvida]').forEach(s=>s.addEventListener('change',()=>{ const p=(state.patrimonio||[]).find(x=>x.id===s.getAttribute('data-ptvida')); if(p){ p.vidaAnos=+s.value; saveData(); render(); } }));
+  document.querySelectorAll('[data-ptdel]').forEach(b=>b.addEventListener('click',()=>customConfirm('Excluir este bem do patrimônio?',()=>{ state.patrimonio=state.patrimonio.filter(x=>x.id!==b.getAttribute('data-ptdel')); saveData(); render(); })));
+  document.querySelectorAll('[data-vercompra]').forEach(b=>b.addEventListener('click',()=>abrirCompra(b.getAttribute('data-vercompra'))));
+  const n=document.getElementById('ptNovo'); if(!n) return;
+  n.addEventListener('click',()=>{
+    const a=document.getElementById('ptForm');
+    a.innerHTML=`<form id="fPt" class="ag-novo-pac"><div class="row"><div><label for="ptNome">Bem</label><input id="ptNome" required placeholder="Ex.: Cadeira odontológica"></div><div><label for="ptData">Data da compra</label><input id="ptData" type="date" required></div></div>
+      <div class="row"><div><label for="ptCusto">Valor de compra (R$)</label><input id="ptCusto" inputmode="decimal" required></div><div><label for="ptVida">Vida útil</label><select id="ptVida">${[3,5,10,15,20].map(x=>`<option value="${x}" ${x===10?'selected':''}>${x} anos</option>`).join('')}</select></div></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn-p">Incluir</button><button type="button" class="btn-s" id="ptCanc">Cancelar</button></div></form>`;
+    document.getElementById('ptCanc').addEventListener('click',()=>{ a.innerHTML=''; });
+    document.getElementById('fPt').addEventListener('submit',ev=>{ ev.preventDefault();
+      const custo=r2(lerValor(document.getElementById('ptCusto').value)), d=document.getElementById('ptData').value;
+      if(!(custo>0)||!d){ avisar('Informe a data e o valor de compra.'); return; }
+      state.patrimonio=state.patrimonio||[]; state.patrimonio.push({id:uid(),nome:document.getElementById('ptNome').value.trim(),qtd:1,custo,dataCompra:d,vidaAnos:+document.getElementById('ptVida').value||10});
+      saveData(); render(); });
+  });
+}
+function bindFinanceiro2(){
+  bindLancarDespesa(); bindPatrimonio();
+  const ft=document.getElementById('fTaxas'); if(ft) ft.addEventListener('submit',ev=>{ ev.preventDefault(); salvarTaxas(ft); });
+  document.querySelectorAll('[data-vercompra2]').forEach(b=>b.addEventListener('click',()=>abrirCompra(b.getAttribute('data-vercompra2'))));
+  document.querySelectorAll('[data-pararrep]').forEach(b=>b.addEventListener('click',()=>{
+    const e=(state.fluxoFinanceiro||[]).find(x=>x.id===b.getAttribute('data-pararrep')); if(!e) return;
+    const futuros=state.fluxoFinanceiro.filter(x=>x.recorrenciaId===e.recorrenciaId && !x.confirmado && x.vencimento>e.vencimento);
+    customConfirm(`Parar de repetir "${e.label.replace(/ \(\d{2}\/\d{4}\)$/,'')}"? ${futuros.length} lançamento(s) futuro(s) não pagos serão apagados.`,()=>{
+      const ids=new Set(futuros.map(x=>x.id)); state.fluxoFinanceiro=state.fluxoFinanceiro.filter(x=>!ids.has(x.id)); saveData(); render(); },'Parar de repetir');
+  }));
 }
 function renderFinanceiro(p){
   const aprovados=(p.orcamentos||[]).filter(o=>o.status==='aprovado').slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
@@ -1936,7 +2199,8 @@ function renderFinanceiro(p){
     const comEntrada=pag.condicao==='parcelado_com';
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
     const parcelas=calcParcelas(o);
-    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
+    const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}</td><td>${pc.taxaValor!=null?`${fmtMoney(pc.valorBruto)} <span class="muted">pago pelo paciente</span><div style="font-size:12.5px">Taxa ${fmtPct(pc.taxaPct)}%: <span style="color:var(--warn)">−${fmtMoney(pc.taxaValor)}</span> · <strong>você recebe ${fmtMoney(pc.valor)}</strong></div>`:fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
+    const cartao=ehCartao(pag.forma), credito=pag.forma==='Cartão de Crédito';
     return `<div class="card">
     <h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))}</h3>
     <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(fmtDataBR(o.dataAprovacao||o.data))}</p>
@@ -1957,14 +2221,15 @@ function renderFinanceiro(p){
           <option value="Boleto" ${pag.forma==='Boleto'?'selected':''}>Boleto</option>
         </select></div>
       ${comEntrada?`<div><label>Valor da entrada (R$)</label><input type="number" step="0.01" min="0" data-finfield="valorEntrada" data-orcid="${o.id}" value="${esc(pag.valorEntrada||'')}"></div>`:''}
-      ${parcelado?`<div><label>${comEntrada?'Nº de parcelas (saldo restante)':'Número de parcelas'}</label><input type="number" min="1" data-finfield="numParcelas" data-orcid="${o.id}" value="${esc(pag.numParcelas||'')}"></div>`:''}
-      ${parcelado?`<div><label>Intervalo entre parcelas</label><select data-finfield="intervaloDias" data-orcid="${o.id}">
+      ${parcelado&&!(cartao&&!credito)?`<div><label>${credito?'Parcelas no cartão (1 a 12)':comEntrada?'Nº de parcelas (saldo restante)':'Número de parcelas'}</label><input type="number" min="1" ${credito?'max="12"':''} data-finfield="numParcelas" data-orcid="${o.id}" value="${esc(pag.numParcelas||'')}"></div>`:''}
+      ${parcelado&&!cartao?`<div><label>Intervalo entre parcelas</label><select data-finfield="intervaloDias" data-orcid="${o.id}">
         <option value="15" ${pag.intervaloDias==='15'?'selected':''}>A cada 15 dias</option>
         <option value="30" ${(!pag.intervaloDias||pag.intervaloDias==='30')?'selected':''}>A cada 30 dias</option>
       </select></div>`:''}
     </div>
     <label>Observações financeiras</label><input type="text" data-finfield="obs" data-orcid="${o.id}" value="${esc(pag.obs||'')}" placeholder="Ex: desconto combinado, forma de cobrança etc.">
-    <div class="overflow" style="margin-top:14px"><table><thead><tr><th>Parcela</th><th>Valor</th><th>Vencimento</th></tr></thead>
+    ${cartao?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">💳 No cartão você recebe de uma vez, ${prazoDoCartao(pag.forma)===0?'no mesmo dia':'em '+prazoDoCartao(pag.forma)+' dia(s)'}, com a taxa da operadora já descontada.${comEntrada?' A entrada é paga à parte (dinheiro ou Pix).':''} ${taxasCartao().configurado?'':'<strong>Taxas de exemplo:</strong> confira em Configurações → Taxas de cartão.'}</p>`:''}
+    <div class="overflow" style="margin-top:14px"><table><thead><tr><th>${cartao?'Recebimento':'Parcela'}</th><th>Valor</th><th>${cartao?'Você recebe em':'Vencimento'}</th></tr></thead>
     <tbody>${parcRows}</tbody></table></div>
     <div style="margin-top:14px">${o.fluxoGerado?`<span class="muted">Fluxo gerado em ${esc(o.fluxoGeradoEm)} — já está no Financeiro do consultório.</span> <button class="btn-s" data-genfluxo="${o.id}" style="margin-left:8px">Atualizar Fluxo</button>`:`<button class="btn-p" data-genfluxo="${o.id}">Gerar Fluxo</button>`}</div>
     </div>`;
@@ -2857,7 +3122,7 @@ async function aoMudarLogin(u){
     if(meu!==nuvemFluxo) return;
     if(await conferirVersaoBase()) return;   // a base deste cliente usa outra versão: abre a versão certa
     state=st;
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     state.meta=state.meta||{};
     if(Nuvem.emEspelho()) prepararEspelho(ac);
     if(!state.clinic){ try{ const ex=await Nuvem.lerClinicaServidor(); if(ex) state.clinic=ex; }catch(e){ console.warn(e); } }
@@ -2980,7 +3245,7 @@ async function restaurarBackupNuvem(header,imgs){
     await Nuvem.enviarImagensBackup(imgs,(i,n)=>prog(`Enviando radiografias: ${i} de ${n}`));
     prog('Enviando os dados…');
     state=novo; state.meta=state.meta||{};
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     session=eu.id;
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
     saveData();
@@ -6310,7 +6575,7 @@ function bindEvents(){
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para o financeiro.'); return; }
     const pagas=parcelasPagasDoOrc(o);
     if(pagas.length){
-      const totPago=pagas.reduce((s,e)=>s+(e.valor||0),0);
+      const totPago=pagas.reduce((s,e)=>s+valorQuitado(e),0);
       confirmarAcao(`Este orçamento já tem ${pagas.length} parcela(s) paga(s), somando ${fmtMoney(totPago)}. Elas serão mantidas e apenas o saldo de ${fmtMoney((o.total||0)-totPago)} será redistribuído nas parcelas pendentes. Continuar?`,'Atualizar Fluxo',()=>{ generateFluxo(p,o); render(); });
       return;
     }
@@ -6321,6 +6586,9 @@ function bindEvents(){
     const input=document.querySelector(`[data-pagdata="${id}"]`);
     if(!input || !input.value){ avisar('Informe a data de pagamento antes de confirmar.'); return; }
     const e=state.fluxoFinanceiro.find(x=>x.id===id);
+    if(e.estimado){ const vr=document.querySelector(`[data-valreal="${id}"]`), v=vr?lerValor(vr.value):NaN;
+      if(isNaN(v)||v<=0){ avisar('Esta conta está com valor estimado. Informe o valor real antes de confirmar.'); if(vr) vr.focus(); return; }
+      e.valorEstimado=e.valor; e.valor=r2(v); e.estimado=false; }
     e.dataPagamento=input.value; e.confirmado=true;
     saveData(); render();
   }));
@@ -6332,6 +6600,7 @@ function bindEvents(){
   document.querySelectorAll('[data-finsub]').forEach(b=>b.addEventListener('click',()=>{
     financeiroSubTab=b.getAttribute('data-finsub'); render();
   }));
+  bindFinanceiro2();
   const btnNewAgendamento=document.getElementById('btnNewAgendamento');
   if(btnNewAgendamento) btnNewAgendamento.addEventListener('click',()=>openAgendamentoForm(null));
   document.querySelectorAll('[data-agresp]').forEach(b=>b.addEventListener('click',()=>{
@@ -6421,15 +6690,6 @@ function bindEvents(){
       saveData(); render();
     });
   }));
-  const fDespesa=document.getElementById('fDespesa');
-  if(fDespesa) fDespesa.addEventListener('submit', ev=>{
-    ev.preventDefault();
-    const tipo=state.despesasCatalogo.find(d=>d.id===dpTipo.value);
-    state.fluxoFinanceiro=state.fluxoFinanceiro||[];
-    state.fluxoFinanceiro.push({id:uid(), tipo:'despesa', categoria:tipo?tipo.categoria:'', fornecedor:dpFornecedor.value.trim(), label:tipo?tipo.nome:'',
-      valor:parseFloat(dpValor.value)||0, vencimento:dpVencimento.value, confirmado:false, dataPagamento:''});
-    saveData(); financeiroSubTab='fluxo'; render();
-  });
   document.querySelectorAll('[data-delfluxo]').forEach(b=>b.addEventListener('click',()=>{
     customConfirm('Excluir esta despesa?', ()=>{
       state.fluxoFinanceiro=state.fluxoFinanceiro.filter(x=>x.id!==b.getAttribute('data-delfluxo'));

@@ -30,6 +30,8 @@ const COLS = {
   fluxoFinanceiro:  {nome:'fluxo',         baldes:8,  perm:'financeiro'},
   avisos:           {nome:'avisos',        baldes:4,  perm:null},
   despesasCatalogo: {nome:'despesas',      baldes:1,  perm:'financeiro'},
+  compras:          {nome:'compras',       baldes:2,  perm:'financeiro'},
+  patrimonio:       {nome:'patrimonio',    baldes:1,  perm:'financeiro'},
   procedimentos:    {nome:'procedimentos', baldes:2,  perm:null},
   grupos:           {nome:'grupos',        baldes:1,  perm:null},
 };
