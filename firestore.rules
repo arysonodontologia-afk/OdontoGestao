@@ -137,6 +137,7 @@ service cloud.firestore {
       match /despesas/{b}      { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /compras/{b}       { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /patrimonio/{b}    { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
+      match /aportes/{b}       { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
 

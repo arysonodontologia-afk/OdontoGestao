@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.19.0', data:'2026-10-29', itens:[
+    'Aportes (Financeiro → Aportes): entrada no caixa e devolução ao aportador sem juros ou com valor combinado, em parcelas, de uma vez ou quando houver caixa',
+    'Devoluções entram nas despesas a pagar e no alerta de saldo; aportes e devoluções ficam fora do resultado (faturamento e custos)',
+    'Painel: card "Devido a aportadores" e acompanhamento do saldo devedor de cada aporte',
+  ]},
   {v:'2.18.0', data:'2026-10-29', itens:[
     'Painel financeiro (semana, mês e trimestre): saldo em caixa, despesas a pagar, caixa depois de pagar e alerta de saldo negativo',
     'Gráficos de entradas x saídas, despesas por categoria, recebimentos por forma de pagamento e resultado dos últimos 6 meses',
