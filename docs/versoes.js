@@ -9,6 +9,14 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.18.0', data:'2026-10-29', itens:[
+    'Painel financeiro (semana, mês e trimestre): saldo em caixa, despesas a pagar, caixa depois de pagar e alerta de saldo negativo',
+    'Gráficos de entradas x saídas, despesas por categoria, recebimentos por forma de pagamento e resultado dos últimos 6 meses',
+    'Boleto parcelado: acréscimo de parcelamento sobre o valor integral, entrada mínima por Pix ou débito e tarifa do emissor descontada de cada boleto',
+  ]},
+  {v:'2.17.1', data:'2026-10-28', itens:[
+    'Personalização (só nas bases escolhidas): Master pode dar desconto de até 100% no orçamento, com motivo obrigatório',
+  ]},
   {v:'2.17.0', data:'2026-10-28', itens:[
     'Formas de pagamento (Configurações): dinheiro, Pix, boleto e outras com taxa e prazo; cartão com várias operadoras e bandeiras, cada uma com suas taxas',
     'Recebimento no cartão: taxa da operadora/bandeira por nº de parcelas descontada na hora, com o custo da taxa sempre à mostra',

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.17.0';
+const APP_VERSION='2.18.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
@@ -623,10 +623,11 @@ function descontoMaxPct(){ const v=state.clinic&&state.clinic.descontoMaxPct; re
 function lerValor(v){ v=String(v==null?'':v).trim(); if(!v) return NaN; v=v.replace(/[R$\s]/g,''); if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); return +v; }
 function abrirAjusteOrcamento(p,o){
   const u=currentUser(), master=u&&u.tipo==='master', lim=descontoMaxPct();
+  const motivoObrig=master && temPersonalizacaoChave('desconto-master-motivo');   // personalização da clínica
   const a=Object.assign({tipo:'',modo:'pct',valor:'',motivo:''},o.ajuste||{});
   const fmtIn=v=>(+v||0).toFixed(2).replace('.',',');
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Desconto ou acréscimo</h3>
-    <p class="muted" style="margin:0 0 10px">Ajuste os valores antes de aprovar. ${master?'Como Master, você não tem limite de desconto.':`Seu limite de desconto é de <strong>${fmtPct(lim)}%</strong> sobre a tabela; acima disso, só o Master.`}</p>
+    <p class="muted" style="margin:0 0 10px">Ajuste os valores antes de aprovar. ${master?(motivoObrig?'Como Master, você pode dar até 100% de desconto, informando o motivo.':'Como Master, você não tem limite de desconto.'):`Seu limite de desconto é de <strong>${fmtPct(lim)}%</strong> sobre a tabela; acima disso, só o Master.`}</p>
     <div class="overflow"><table class="orc-aj-tab"><thead><tr><th>Procedimento</th><th>Tabela</th><th>Valor no orçamento</th></tr></thead><tbody>
     ${(o.itens||[]).map((it,i)=>`<tr><td>${esc(it.nome)}<div class="muted" style="font-size:12px">${esc(it.ref||'')}</div></td><td style="white-space:nowrap">${fmtMoney(it.valorTabela!=null?it.valorTabela:it.valor)}</td><td><input data-ajit="${i}" inputmode="decimal" value="${fmtIn(it.valor)}" aria-label="Valor de ${esc(it.nome)}" style="max-width:130px"></td></tr>`).join('')}
     </tbody></table></div>
@@ -636,7 +637,7 @@ function abrirAjusteOrcamento(p,o){
       <div><label for="ajModo">Em</label><select id="ajModo"><option value="pct" ${a.modo!=='valor'?'selected':''}>Porcentagem (%)</option><option value="valor" ${a.modo==='valor'?'selected':''}>Valor (R$)</option></select></div>
       <div><label for="ajValor">Quanto</label><input id="ajValor" inputmode="decimal" value="${a.valor!==''&&a.valor!=null?String(a.valor).replace('.',','):''}" placeholder="Ex.: 10"></div>
     </div>
-    <label for="ajMotivo">Motivo (opcional)</label><input id="ajMotivo" value="${esc(a.motivo||'')}" placeholder="Ex.: pagamento à vista, cortesia, material especial">
+    <label for="ajMotivo">Motivo ${motivoObrig?'<strong>(obrigatório para desconto)</strong>':'(opcional)'}</label><input id="ajMotivo" value="${esc(a.motivo||'')}" placeholder="Ex.: pagamento à vista, cortesia, material especial">
     <div class="orc-resumo" data-aj="resumo"></div>
     <p class="erro-campo" data-aj="erro" role="alert"></p>
     <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn-s" data-aj="limpar">Voltar aos valores da tabela</button><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-aj="ok">Salvar valores</button></div>`);
@@ -654,6 +655,7 @@ function abrirAjusteOrcamento(p,o){
     else if(aj.tipo && !(aj.valor>0)) erro='Informe quanto de '+(aj.tipo==='desconto'?'desconto':'acréscimo')+'.';
     else if(aj.tipo==='desconto' && aj.modo==='pct' && aj.valor>100) erro='O desconto não pode passar de 100%.';
     else if(!master && descPct>lim+0.001) erro=`Desconto de ${fmtPct(descPct)}% sobre a tabela passa do seu limite (${fmtPct(lim)}%). Peça ao Master.`;
+    else if(motivoObrig && descPct>0.001 && aj.motivo.length<3) erro='Informe o motivo do desconto para salvar.';
     return {itens,sub,aj,ajv,total,tab,descPct,erro};
   };
   const desenhar=()=>{ const r=ler();
@@ -670,6 +672,7 @@ function abrirAjusteOrcamento(p,o){
     const r=ler(); if(r.erro){ desenhar(); return; }
     r.itens.forEach(({it,v})=>{ const tab=it.valorTabela!=null?+it.valorTabela:+it.valor; if(r2(v)!==r2(tab)) it.valorTabela=tab; else delete it.valorTabela; it.valor=r2(v); });
     if(r.aj.tipo && r.aj.valor>0) o.ajuste={tipo:r.aj.tipo,modo:r.aj.modo,valor:r.aj.valor,motivo:r.aj.motivo}; else delete o.ajuste;
+    if(r.aj.motivo) o.motivoAjuste=r.aj.motivo; else delete o.motivoAjuste;
     o.subtotal=r.sub; o.total=r.total;
     const mexeu=o.ajuste || (o.itens||[]).some(it=>it.valorTabela!=null);
     if(mexeu){ o.ajustadoPorNome=nomeExibicao(u); o.ajustadoPorId=u.id; o.ajustadoEm=hojeISO(); } else { delete o.ajustadoPorNome; delete o.ajustadoPorId; delete o.ajustadoEm; delete o.subtotal; }
@@ -696,7 +699,7 @@ function renderOrcamento(p){
     <tbody>${rows||'<tr><td colspan="4" class="muted">Nenhum item</td></tr>'}</tbody></table></div>
     ${aj?`<div class="orc-resumo"><div><span>Subtotal</span><span>${fmtMoney(sub)}</span></div><div class="${aj<0?'orc-desc':'orc-acr'}"><span>${aj<0?'Desconto':'Acréscimo'}${o.ajuste&&o.ajuste.modo==='pct'?' ('+fmtPct(o.ajuste.valor)+'%)':''}${o.ajuste&&o.ajuste.motivo?' · '+esc(o.ajuste.motivo):''}</span><span>${aj<0?'− ':'+ '}${fmtMoney(Math.abs(aj))}</span></div></div>`:''}
     <p style="margin-top:12px"><strong>Total do Orçamento:</strong> ${fmtMoney(o.total)}${orcTabela(o)>o.total+0.004?` <span class="muted">(${fmtPct((1-o.total/orcTabela(o))*100)}% abaixo da tabela)</span>`:''}</p>
-    ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}.</p>`:''}
+    ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}${o.motivoAjuste&&!(o.ajuste&&o.ajuste.motivo)?' · motivo: '+esc(o.motivoAjuste):''}.</p>`:''}
     ${aprovado?'<p class="muted">Este orçamento já está disponível na aba Financeiro.</p>':''}
     </div>`;
   }).join('');
@@ -1526,6 +1529,17 @@ function calcParcelas(o){
   } else {
     list.push({label:'Pagamento único', valor:total, vencimento:base});
   }
+  if(boletoParcelado(pag)){
+    // boleto parcelado: acréscimo sobre o valor integral, entrada mínima por Pix ou débito, tarifa do emissor descontada de cada boleto
+    const b=calcBoleto(o), intB=parseInt(pag.intervaloDias)||30;
+    let ent={label:'Entrada ('+(b.entForma==='Cartão de Débito'?'débito':'Pix')+')', valor:b.ent, vencimento:base};
+    if(b.entForma==='Cartão de Débito'){ const pg2={forma:'Cartão de Débito',operadoraId:pag.operadoraId,bandeiraId:pag.bandeiraId}, pct=taxaDoCartao(pg2,1), tx=r2(b.ent*pct/100), {op,b:bd}=cartaoEscolhido(pg2);
+      ent=Object.assign(ent,{valor:r2(b.ent-tx),valorBruto:b.ent,taxaPct:pct,taxaValor:tx,cartao:[op&&op.nome,bd&&bd.nome].filter(Boolean).join(' · '),vencimento:addDaysStr(base,prazoDoCartao(pg2))}); }
+    else ent=aplicarTaxaSimples(ent,'Pix');
+    list=[ent];
+    for(let i=0;i<b.n;i++){ const v=i===b.n-1?r2(b.saldo-b.parc*(b.n-1)):b.parc; list.push(aplicarTaxaSimples({label:'Boleto '+(i+1)+'/'+b.n, valor:v, vencimento:addDaysStr(base,(i+1)*intB)},'Boleto')); }
+    return list;
+  }
   if(ehCartao(pag.forma)){
     // cartão: a clínica recebe de uma vez, já com a taxa da operadora/bandeira descontada
     const ent=pag.condicao==='parcelado_com'?Math.min(parseFloat(pag.valorEntrada)||0,total):0;
@@ -1544,7 +1558,7 @@ function generateFluxo(p,o){
   const totalPago=Math.round(pagas.reduce((s,e)=>s+valorQuitado(e),0)*100)/100;
   state.fluxoFinanceiro=(state.fluxoFinanceiro||[]).filter(e=>e.orcamentoId!==o.id || e.confirmado);
   let novas=calcParcelas(o).filter(pc=>!pagas.some(e=>e.label===pc.label));
-  const saldo=Math.round(((o.total||0)-totalPago)*100)/100;
+  const saldo=Math.round((totalCobrado(o)-totalPago)*100)/100;
   if(saldo<=0) novas=[];
   else if(pagas.length && novas.length){
     const vp=Math.round((saldo/novas.length)*100)/100;
@@ -1558,7 +1572,7 @@ function generateFluxo(p,o){
   o.fluxoGerado=true; o.fluxoGeradoEm=hojeISO();
   saveData();
 }
-let financeiroSubTab='fluxo';
+let financeiroSubTab='painel';
 let fluxoViewMode='dia';
 let fluxoViewDate=hojeISO();
 let fluxoPeriodoInicio=hojeISO();
@@ -1608,11 +1622,124 @@ function seedDespesasCatalogo(){
   ];
 }
 function ensureDespesasCatalogo(){ if(NUVEM && !(currentUser() && permsDe(currentUser()).financeiro)) return; if(!state.despesasCatalogo || !state.despesasCatalogo.length){ state.despesasCatalogo=seedDespesasCatalogo(); saveData(); } }
+// =====================================================================
+// Painel financeiro: saldo em caixa, despesas a pagar e saúde do período
+// =====================================================================
+let pfModo='mes', pfRef=hojeISO();
+function pfPeriodo(){
+  const d=new Date(pfRef+'T00:00:00');
+  if(pfModo==='semana'){ const ini=new Date(d); ini.setDate(d.getDate()-((d.getDay()+6)%7)); const fim=new Date(ini); fim.setDate(ini.getDate()+6);
+    return {ini:isoLocal(ini),fim:isoLocal(fim),titulo:'Semana de '+fmtDataBR(isoLocal(ini))+' a '+fmtDataBR(isoLocal(fim))}; }
+  if(pfModo==='trimestre'){ const q=Math.floor(d.getMonth()/3), ini=new Date(d.getFullYear(),q*3,1), fim=new Date(d.getFullYear(),q*3+3,0);
+    return {ini:isoLocal(ini),fim:isoLocal(fim),titulo:(q+1)+'º trimestre de '+d.getFullYear()}; }
+  const ini=new Date(d.getFullYear(),d.getMonth(),1), fim=new Date(d.getFullYear(),d.getMonth()+1,0);
+  const t=ini.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); return {ini:isoLocal(ini),fim:isoLocal(fim),titulo:t.charAt(0).toUpperCase()+t.slice(1)};
+}
+function pfMover(dir){
+  const d=new Date(pfRef+'T00:00:00');
+  if(pfModo==='semana') d.setDate(d.getDate()+7*dir); else if(pfModo==='trimestre') d.setMonth(d.getMonth()+3*dir); else d.setMonth(d.getMonth()+dir);
+  pfRef=isoLocal(d);
+}
+function caixaInicial(){ const c=state.meta&&state.meta.caixaInicial; return c&&c.data?{valor:+c.valor||0,data:c.data}:null; }
+function saldoEmCaixa(ate){
+  const ci=caixaInicial(), base=ci?ci.valor:0, desde=ci?ci.data:'0000-00-00', lim=ate||hojeISO();
+  return r2((state.fluxoFinanceiro||[]).filter(e=>e.confirmado && (e.dataPagamento||e.vencimento)>=desde && (e.dataPagamento||e.vencimento)<=lim)
+    .reduce((s,e)=>s+(e.tipo==='despesa'?-1:1)*(+e.valor||0),base));
+}
+function pfBarras(lista,fmt){
+  const max=Math.max(1,...lista.map(x=>Math.abs(x.v)));
+  return `<div class="pf-hbarras">${lista.map(x=>`<div class="pf-hb"><span class="pf-hb-rot" title="${esc(x.r)}">${esc(x.r)}</span><span class="pf-hb-trilho"><i style="width:${Math.max(1,Math.round(Math.abs(x.v)/max*100))}%;${x.cor?'background:'+x.cor:''}"></i></span><span class="pf-hb-val">${fmt?fmt(x.v):fmtMoney(x.v)}</span></div>`).join('')}</div>`;
+}
+function renderPainelFinanceiro(){
+  ensureFluxoTipos();
+  const per=pfPeriodo(), hoje=hojeISO(), fl=state.fluxoFinanceiro||[];
+  const data=e=>e.confirmado?(e.dataPagamento||e.vencimento):e.vencimento;
+  const noPer=fl.filter(e=>{ const d=data(e); return d>=per.ini && d<=per.fim; });
+  const soma=l=>r2(l.reduce((s,e)=>s+(+e.valor||0),0));
+  const entReal=soma(noPer.filter(e=>e.tipo==='receita'&&e.confirmado)), entPrev=soma(noPer.filter(e=>e.tipo==='receita'&&!e.confirmado));
+  const saiPaga=soma(noPer.filter(e=>e.tipo==='despesa'&&e.confirmado)), saiPagar=soma(noPer.filter(e=>e.tipo==='despesa'&&!e.confirmado));
+  const vencidasDesp=fl.filter(e=>e.tipo==='despesa'&&!e.confirmado&&e.vencimento<hoje&&e.vencimento<per.ini), vencDesp=soma(vencidasDesp);
+  const atrasoRec=soma(fl.filter(e=>e.tipo==='receita'&&!e.confirmado&&e.vencimento<hoje));
+  const taxas=r2(noPer.filter(e=>e.tipo==='receita'&&e.taxaValor).reduce((s,e)=>s+(+e.taxaValor||0),0));
+  const ci=caixaInicial(), caixa=saldoEmCaixa(hoje);
+  const pagarAte=r2(saiPagar+vencDesp);   // o que ainda falta pagar no período (e o que já venceu antes)
+  const aposPagar=r2(caixa-pagarAte), projetado=r2(aposPagar+entPrev);
+  const resultado=r2(entReal-saiPaga), margem=entReal>0?Math.round(resultado/entReal*100):0;
+  // entradas x saídas ao longo do período
+  const fatias=[]; const ini=new Date(per.ini+'T00:00:00'), fim=new Date(per.fim+'T00:00:00');
+  if(pfModo==='semana'){ for(let d=new Date(ini);d<=fim;d.setDate(d.getDate()+1)){ const i=isoLocal(d); fatias.push({r:d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.',''),a:i,b:i}); } }
+  else if(pfModo==='trimestre'){ for(let m=0;m<3;m++){ const a=new Date(ini.getFullYear(),ini.getMonth()+m,1), b=new Date(ini.getFullYear(),ini.getMonth()+m+1,0); fatias.push({r:a.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),a:isoLocal(a),b:isoLocal(b)}); } }
+  else { let a=new Date(ini), n=1; while(a<=fim){ const b=new Date(a); b.setDate(a.getDate()+6); if(b>fim) b.setTime(fim.getTime()); fatias.push({r:'Sem '+n,a:isoLocal(a),b:isoLocal(b)}); a=new Date(b); a.setDate(b.getDate()+1); n++; } }
+  fatias.forEach(f=>{ const l=fl.filter(e=>{ const d=data(e); return d>=f.a&&d<=f.b; }); f.ent=soma(l.filter(e=>e.tipo==='receita')); f.sai=soma(l.filter(e=>e.tipo==='despesa')); });
+  const maxF=Math.max(1,...fatias.map(f=>Math.max(f.ent,f.sai)));
+  const cat={}; noPer.filter(e=>e.tipo==='despesa').forEach(e=>{ const k=e.categoria||'Outros'; cat[k]=(cat[k]||0)+(+e.valor||0); });
+  const catL=Object.entries(cat).map(([r,v])=>({r,v:r2(v)})).sort((a,b)=>b.v-a.v);
+  const fp={}; noPer.filter(e=>e.tipo==='receita').forEach(e=>{ const k=e.forma||(e.importado?'Sistema anterior':'Não informada'); fp[k]=(fp[k]||0)+valorQuitado(e); });
+  const fpL=Object.entries(fp).map(([r,v])=>({r,v:r2(v)})).sort((a,b)=>b.v-a.v);
+  // resultado dos últimos 6 meses
+  const meses=[]; const m0=new Date(new Date(per.fim+'T00:00:00').getFullYear(),new Date(per.fim+'T00:00:00').getMonth()-5,1);
+  for(let i=0;i<6;i++){ const a=new Date(m0.getFullYear(),m0.getMonth()+i,1), b=new Date(m0.getFullYear(),m0.getMonth()+i+1,0), ai=isoLocal(a), bi=isoLocal(b);
+    const l=fl.filter(e=>e.confirmado&&(e.dataPagamento||e.vencimento)>=ai&&(e.dataPagamento||e.vencimento)<=bi);
+    meses.push({r:a.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')+'/'+String(a.getFullYear()).slice(2),v:r2(soma(l.filter(e=>e.tipo==='receita'))-soma(l.filter(e=>e.tipo==='despesa')))}); }
+  const maxM=Math.max(1,...meses.map(x=>Math.abs(x.v)));
+  const kpi=(rot,v,sub,cls)=>`<div class="pf-kpi${cls?' '+cls:''}"><span class="pf-kpi-rot">${rot}</span><strong>${v}</strong>${sub?`<span class="pf-kpi-sub">${sub}</span>`:''}</div>`;
+  const podeEditar=permsDe(currentUser()).financeiro;
+  return `<div class="card pf-topo">
+    <div class="seg" role="group" aria-label="Visão">${[['semana','Semana'],['mes','Mês'],['trimestre','Trimestre']].map(([k,t])=>`<button data-pfmodo="${k}" class="${pfModo===k?'active':''}">${t}</button>`).join('')}</div>
+    <div class="pf-nav"><button class="btn-icone" data-pfmover="-1" aria-label="Anterior">‹</button><strong>${esc(per.titulo)}</strong><button class="btn-icone" data-pfmover="1" aria-label="Próximo">›</button><button class="btn-s" data-pfhoje>Hoje</button></div>
+  </div>
+  <div class="card">
+    <div class="pf-caixa">
+      ${kpi('Saldo em caixa hoje',fmtMoney(caixa),ci?`desde ${fmtDataBR(ci.data)}, saldo inicial ${fmtMoney(ci.valor)}`:'informe o saldo inicial para ficar exato',caixa<0?'ruim':'')}
+      ${kpi('Despesas a pagar',fmtMoney(pagarAte),vencDesp?`${fmtMoney(saiPagar)} no período + <strong>${fmtMoney(vencDesp)} vencidas</strong>`:'no período','')}
+      ${kpi('Caixa depois de pagar',fmtMoney(aposPagar),aposPagar<0?'<strong>saldo negativo</strong>':'saldo em caixa − despesas a pagar',aposPagar<0?'ruim':'bom')}
+      ${kpi('Projeção com o que vai receber',fmtMoney(projetado),`+ ${fmtMoney(entPrev)} a receber no período`,projetado<0?'ruim':'')}
+    </div>
+    ${aposPagar<0?`<div class="pf-alerta">⚠️ O saldo em caixa não cobre as despesas a pagar ${pfModo==='semana'?'nesta semana':pfModo==='trimestre'?'neste trimestre':'neste mês'}: faltam <strong>${fmtMoney(-aposPagar)}</strong>${projetado>=0?', mas os recebimentos previstos cobrem a diferença se forem pagos em dia.':'. Mesmo com os recebimentos previstos, o período fecha negativo.'}</div>`:''}
+    ${podeEditar?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">${ci?'':'O saldo em caixa soma tudo o que foi recebido e pago no sistema. '}<button class="lnk-forte" data-pfcaixa>${ci?'Ajustar o saldo inicial do caixa':'Informar o saldo inicial do caixa'}</button></p><div id="pfCaixaForm"></div>`:''}
+  </div>
+  <div class="pf-grade">
+    <div class="card"><h3 style="margin:0 0 10px">Resultado do período</h3>
+      <div class="pf-linhas"><div><span>Entradas recebidas</span><strong style="color:var(--ok)">${fmtMoney(entReal)}</strong></div>
+      <div><span>Saídas pagas</span><strong style="color:var(--danger)">${fmtMoney(saiPaga)}</strong></div>
+      <div class="pf-tot"><span>Resultado (caixa)</span><strong style="color:${resultado<0?'var(--danger)':'var(--ok)'}">${fmtMoney(resultado)}</strong></div>
+      <div><span>Margem</span><strong>${entReal>0?margem+'%':'—'}</strong></div>
+      <div><span>Custo com taxas (cartão, boleto, Pix)</span><strong style="color:var(--warn)">${fmtMoney(taxas)}</strong></div>
+      <div><span>Recebimentos em atraso (total)</span><strong style="color:${atrasoRec?'var(--danger)':'inherit'}">${fmtMoney(atrasoRec)}</strong></div></div></div>
+    <div class="card"><h3 style="margin:0 0 10px">Entradas x saídas</h3>
+      <div class="pf-colunas">${fatias.map(f=>`<div class="pf-col" title="${esc(f.r)}: entradas ${fmtMoney(f.ent)} · saídas ${fmtMoney(f.sai)}"><div class="pf-col-barras"><i class="ent" style="height:${Math.round(f.ent/maxF*130)}px"></i><i class="sai" style="height:${Math.round(f.sai/maxF*130)}px"></i></div><span>${esc(f.r)}</span></div>`).join('')}</div>
+      <p class="pf-leg"><span class="ent"></span> Entradas <span class="sai"></span> Saídas <span class="muted">(recebidas/pagas e previstas)</span></p></div>
+    <div class="card"><h3 style="margin:0 0 10px">Despesas por categoria</h3>${catL.length?pfBarras(catL.map(x=>Object.assign(x,{cor:'var(--danger)'}))):'<p class="muted">Nenhuma despesa no período.</p>'}</div>
+    <div class="card"><h3 style="margin:0 0 10px">Recebimentos por forma de pagamento</h3>${fpL.length?pfBarras(fpL.map(x=>Object.assign(x,{cor:'var(--ok)'}))):'<p class="muted">Nenhum recebimento no período.</p>'}</div>
+    <div class="card pf-largo"><h3 style="margin:0 0 10px">Resultado dos últimos 6 meses</h3>
+      <div class="pf-colunas pf-res">${meses.map(m=>`<div class="pf-col" title="${esc(m.r)}: ${fmtMoney(m.v)}"><span class="pf-v">${fmtMoney(m.v).replace(',00','').replace('R$ ','')}</span><div class="pf-col-barras"><i class="${m.v<0?'sai':'ent'}" style="height:${Math.max(2,Math.round(Math.abs(m.v)/maxM*110))}px"></i></div><span>${esc(m.r)}</span></div>`).join('')}</div></div>
+    <div class="card pf-largo"><h3 style="margin:0 0 10px">Próximas despesas a pagar</h3>${(()=>{ const l=fl.filter(e=>e.tipo==='despesa'&&!e.confirmado&&e.vencimento<=per.fim).sort((a,b)=>a.vencimento.localeCompare(b.vencimento)).slice(0,12);
+      return l.length?`<div class="overflow"><table><thead><tr><th>Vencimento</th><th>Despesa</th><th>Fornecedor</th><th>Valor</th></tr></thead><tbody>${l.map(e=>`<tr${e.vencimento<hoje?' class="pf-venc"':''}><td>${fmtDataBR(e.vencimento)}${e.vencimento<hoje?' <span class="sit sit-faltou">vencida</span>':''}</td><td>${esc(e.label)}${e.estimado?' <span class="sit sit-agendado">estimado</span>':''}</td><td>${esc(e.fornecedor||'-')}</td><td>${fmtMoney(e.valor)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nada a pagar até o fim do período.</p>'; })()}</div>
+  </div>`;
+}
+function bindPainelFinanceiro(){
+  document.querySelectorAll('[data-pfmodo]').forEach(b=>b.addEventListener('click',()=>{ pfModo=b.getAttribute('data-pfmodo'); render(); }));
+  document.querySelectorAll('[data-pfmover]').forEach(b=>b.addEventListener('click',()=>{ pfMover(+b.getAttribute('data-pfmover')); render(); }));
+  const h=document.querySelector('[data-pfhoje]'); if(h) h.addEventListener('click',()=>{ pfRef=hojeISO(); render(); });
+  const c=document.querySelector('[data-pfcaixa]'); if(!c) return;
+  c.addEventListener('click',()=>{
+    const ci=caixaInicial()||{valor:'',data:hojeISO()}, a=document.getElementById('pfCaixaForm');
+    a.innerHTML=`<form id="fPfCaixa" class="ag-novo-pac"><p class="muted" style="margin:0 0 8px;font-size:12.5px">Some o que a clínica tem em conta e no caixa físico em uma data. A partir dela o sistema soma o que foi recebido e pago.</p>
+      <div class="row"><div><label for="pfCxData">Data</label><input id="pfCxData" type="date" value="${esc(ci.data)}" required></div><div><label for="pfCxValor">Saldo nessa data (R$)</label><input id="pfCxValor" inputmode="decimal" value="${ci.valor!==''?String(ci.valor).replace('.',','):''}" required></div></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn-p">Salvar</button><button type="button" class="btn-s" id="pfCxCanc">Cancelar</button></div></form>`;
+    document.getElementById('pfCxCanc').addEventListener('click',()=>{ a.innerHTML=''; });
+    document.getElementById('fPfCaixa').addEventListener('submit',ev=>{ ev.preventDefault();
+      const v=lerValor(document.getElementById('pfCxValor').value), d=document.getElementById('pfCxData').value;
+      if(isNaN(v)||!d){ avisar('Informe a data e o saldo.'); return; }
+      state.meta=state.meta||{}; state.meta.caixaInicial={valor:r2(v),data:d}; saveData(); render(); });
+  });
+}
 function renderFinanceiroPrincipal(){
-  const subTabs=[{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'},{id:'patrimonio', label:'🏷️ Patrimônio'}];
+  const subTabs=[{id:'painel', label:'📊 Painel'},{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'},{id:'patrimonio', label:'🏷️ Patrimônio'}];
   const bar=subTabs.map(t=>`<button data-finsub="${t.id}" class="${financeiroSubTab===t.id?'active':''}">${t.label}</button>`).join('');
   let body='';
-  if(financeiroSubTab==='lancardespesa') body=renderLancarDespesa();
+  if(financeiroSubTab==='painel') body=renderPainelFinanceiro();
+  else if(financeiroSubTab==='lancardespesa') body=renderLancarDespesa();
   else if(financeiroSubTab==='patrimonio') body=renderPatrimonio();
   else body=renderFluxoFinanceiro();
   return `<h2 style="margin:0 0 10px 0">Financeiro</h2><div class="tabs">${bar}</div>${body}`;
@@ -1942,6 +2069,14 @@ function cartaoEscolhido(pag){
 }
 function taxaDoCartao(pag,n){ const {b}=cartaoEscolhido(pag); if(!b) return 0; return pag.forma==='Cartão de Débito'?(+b.debito||0):(+(b.credito||[])[Math.min(Math.max(n,1),12)-1]||0); }
 function prazoDoCartao(pag){ const {op}=cartaoEscolhido(pag); if(!op) return 1; return pag.forma==='Cartão de Débito'?(+op.prazoDebito||0):(+op.prazoCredito||0); }
+function regraBoleto(){ const b=formasPag().boleto||{}; return {acr:b.acrescimoPct!=null?+b.acrescimoPct:4, min:b.entradaMinPct!=null?+b.entradaMinPct:30}; }
+function boletoParcelado(pag){ return pag && pag.forma==='Boleto' && (pag.condicao==='parcelado_com'||pag.condicao==='parcelado_sem'); }
+function totalCobrado(o){ const pag=o.pagamento||{}; return boletoParcelado(pag)?r2((o.total||0)*(1+regraBoleto().acr/100)):(o.total||0); }
+function calcBoleto(o){
+  const pag=o.pagamento||{}, rb=regraBoleto(), tot=totalCobrado(o), minEnt=r2(tot*rb.min/100);
+  const inf=parseFloat(pag.valorEntrada)||0, ent=r2(Math.min(Math.max(inf,minEnt),tot)), n=Math.max(1,parseInt(pag.numParcelas)||1);
+  return {tot,acr:rb.acr,minPct:rb.min,minEnt,ent,abaixo:inf>0&&inf<minEnt,n,saldo:r2(tot-ent),parc:r2((tot-ent)/n),entForma:pag.entradaForma==='Cartão de Débito'?'Cartão de Débito':'Pix'};
+}
 function formaSimples(nome){ return formasPag().simples.find(s=>s.nome===nome); }
 function valorQuitado(e){ return e && e.valorBruto!=null ? +e.valorBruto : (+e.valor||0); }   // o que o paciente pagou (antes da taxa)
 function linhaTaxaHtml(e){ return e.taxaValor?`<div class="muted" style="font-size:12px">pago ${fmtMoney(e.valorBruto)} · taxa ${e.taxaPct?fmtPct(e.taxaPct)+'%':''}${e.taxaFixa?(e.taxaPct?' + ':'')+fmtMoney(e.taxaFixa):''} (−${fmtMoney(e.taxaValor)})${e.cartao?' · '+esc(e.cartao):''}</div>`:''; }
@@ -1956,6 +2091,7 @@ function aplicarTaxaSimples(pc,forma){
 let fpRasc=null;   // rascunho da tela de formas de pagamento
 function renderFormasPagamento(){
   const pode=permsDe(currentUser()).financeiro, dis=pode?'':' disabled';
+  const aberto=document.getElementById('fFormas'); if(aberto && pode){ fpRasc=lerFormas(aberto); const sv=formasPag(); if(JSON.stringify(Object.assign({},fpRasc,{configurado:sv.configurado}))===JSON.stringify(sv)) fpRasc=null; }   // redesenho inesperado não perde o que foi digitado
   const fp=fpRasc||JSON.parse(JSON.stringify(formasPag()));
   const n=v=>String(v==null?'':v).replace('.',',');
   return `<div class="card"><h3 style="margin:0 0 4px">Formas de pagamento</h3>
@@ -1971,6 +2107,10 @@ function renderFormasPagamento(){
     <td>${pode&&!['dinheiro','pix'].includes(s.id)?`<button type="button" class="btn-icone peq btn-perigo" data-fpsdel="${i}" aria-label="Remover">${ICONES.lixo}</button>`:''}</td></tr>`).join('')}
   </tbody></table></div>
   ${pode?'<button type="button" class="btn-s" id="fpAddSimples" style="margin-top:6px">+ Outra forma</button>':''}
+  <div class="fp-op" style="margin-top:14px"><h4 style="margin:0 0 6px">Boleto parcelado</h4>
+    <p class="cl-dica" style="margin:0 0 8px">O acréscimo de parcelamento é somado ao valor integral do tratamento (ex.: R$ 100 à vista = R$ 104 parcelado, com 4%). A entrada mínima é calculada sobre o valor já com o acréscimo e é paga por Pix ou débito. A tarifa da empresa emissora fica na linha "Boleto" acima (taxa por boleto) e é descontada de cada parcela.</p>
+    <div class="row"><div><label for="fpBolAcr">Acréscimo de parcelamento (%)</label><input id="fpBolAcr" inputmode="decimal" value="${n((fp.boleto&&fp.boleto.acrescimoPct!=null)?fp.boleto.acrescimoPct:4)}"${dis}><div class="cl-dica">Comum no mercado: 3% a 5%.</div></div>
+      <div><label for="fpBolMin">Entrada mínima (%)</label><input id="fpBolMin" inputmode="decimal" value="${n((fp.boleto&&fp.boleto.entradaMinPct!=null)?fp.boleto.entradaMinPct:30)}"${dis}></div></div></div>
   <h4 style="margin:18px 0 6px">Cartão: operadoras (maquininhas) e bandeiras</h4>
   ${fp.operadoras.map((op,oi)=>`<div class="fp-op">
     <div class="row" style="align-items:flex-end">
@@ -1995,6 +2135,7 @@ function lerFormas(form){
   const fp=JSON.parse(JSON.stringify(fpRasc||formasPag())), num=v=>{ const x=lerValor(v); return isNaN(x)?0:x; };
   form.querySelectorAll('[data-fps]').forEach(el=>{ const s=fp.simples[+el.getAttribute('data-fps')], k=el.getAttribute('data-k'); if(!s) return;
     s[k]=k==='ativo'?el.checked:k==='nome'?el.value.trim():k==='prazo'?(parseInt(el.value,10)||0):num(el.value); });
+  const ba=form.querySelector('#fpBolAcr'), bm=form.querySelector('#fpBolMin'); if(ba&&bm) fp.boleto={acrescimoPct:num(ba.value),entradaMinPct:num(bm.value)};
   form.querySelectorAll('[data-fpo]').forEach(el=>{ const o=fp.operadoras[+el.getAttribute('data-fpo')], k=el.getAttribute('data-k'); if(!o) return;
     o[k]=k==='nome'?el.value.trim():(parseInt(el.value,10)||0); });
   form.querySelectorAll('[data-fpb]').forEach(el=>{ const [oi,bi]=el.getAttribute('data-fpb').split('.').map(Number), b=fp.operadoras[oi]&&fp.operadoras[oi].bandeiras[bi], k=el.getAttribute('data-k'); if(!b) return;
@@ -2018,6 +2159,8 @@ function bindFormasPagamento(){
     if(fp.operadoras.some(o=>o.bandeiras.some(b=>!b.nome))) return avisar('Informe o nome de cada bandeira.');
     const taxas=fp.simples.map(s=>s.taxaPct).concat(...fp.operadoras.map(o=>o.bandeiras.map(b=>[b.debito].concat(b.credito||[]))).flat());
     if(taxas.some(v=>v<0||v>40)) return avisar('Confira as taxas: use porcentagens entre 0 e 40 (ex.: 3,49).');
+    if(fp.boleto && (fp.boleto.acrescimoPct<0||fp.boleto.acrescimoPct>10)) return avisar('O acréscimo do boleto parcelado deve ficar entre 0% e 10% (comum: 3% a 5%).');
+    if(fp.boleto && (fp.boleto.entradaMinPct<0||fp.boleto.entradaMinPct>90)) return avisar('A entrada mínima deve ficar entre 0% e 90%.');
     fp.configurado=true; state.meta=state.meta||{}; state.meta.formasPagamento=fp; fpRasc=null;
     saveData(); avisar('Formas de pagamento salvas.'); render();
   });
@@ -2269,7 +2412,7 @@ function renderFinanceiro(p){
     const parcelado=comEntrada||pag.condicao==='parcelado_sem';
     const parcelas=calcParcelas(o);
     const parcRows=parcelas.map(pc=>`<tr><td>${pc.label}${pc.cartao?`<div class="muted" style="font-size:12px">${esc(pc.cartao)}</div>`:''}</td><td>${pc.taxaValor!=null?`${fmtMoney(pc.valorBruto)} <span class="muted">pago pelo paciente</span><div style="font-size:12.5px">Taxa ${pc.taxaPct?fmtPct(pc.taxaPct)+'%':''}${pc.taxaFixa?(pc.taxaPct?' + ':'')+fmtMoney(pc.taxaFixa):''}: <span style="color:var(--warn)">−${fmtMoney(pc.taxaValor)}</span> · <strong>você recebe ${fmtMoney(pc.valor)}</strong></div>`:fmtMoney(pc.valor)}</td><td>${esc(fmtDataBR(pc.vencimento))}</td></tr>`).join('');
-    const cartao=ehCartao(pag.forma), credito=pag.forma==='Cartão de Crédito';
+    const cartao=ehCartao(pag.forma), credito=pag.forma==='Cartão de Crédito', bol=boletoParcelado(pag), bc=bol?calcBoleto(o):null;
     return `<div class="card">
     <h3>Orçamento aprovado — ${esc(fmtDataBR(o.data))}</h3>
     <p><strong>Valor total:</strong> ${fmtMoney(o.total)} &nbsp;·&nbsp; <strong>Aprovado em:</strong> ${esc(fmtDataBR(o.dataAprovacao||o.data))}</p>
@@ -2289,14 +2432,21 @@ function renderFinanceiro(p){
         </select></div>
       ${cartao?(()=>{ const fp=formasPag(), {op,b}=cartaoEscolhido(pag); return `<div><label>Operadora</label><select data-finfield="operadoraId" data-orcid="${o.id}">${fp.operadoras.map(x=>`<option value="${esc(x.id)}" ${op&&op.id===x.id?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>
         <div><label>Bandeira</label><select data-finfield="bandeiraId" data-orcid="${o.id}">${(op?op.bandeiras:[]).map(x=>`<option value="${esc(x.id)}" ${b&&b.id===x.id?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>`; })():''}
-      ${comEntrada?`<div><label>Valor da entrada (R$)</label><input type="number" step="0.01" min="0" data-finfield="valorEntrada" data-orcid="${o.id}" value="${esc(pag.valorEntrada||'')}"></div>`:''}
-      ${parcelado&&!(cartao&&!credito)?`<div><label>${credito?'Parcelas no cartão (1 a 12)':comEntrada?'Nº de parcelas (saldo restante)':'Número de parcelas'}</label><input type="number" min="1" ${credito?'max="12"':''} data-finfield="numParcelas" data-orcid="${o.id}" value="${esc(pag.numParcelas||'')}"></div>`:''}
+      ${comEntrada||bol?`<div><label>Valor da entrada (R$)</label><input type="number" step="0.01" min="0" data-finfield="valorEntrada" data-orcid="${o.id}" value="${esc(pag.valorEntrada||'')}" ${bol?`placeholder="mínimo ${fmtMoney(bc.minEnt)}"`:''}></div>`:''}
+      ${bol?`<div><label>Entrada paga com</label><select data-finfield="entradaForma" data-orcid="${o.id}"><option value="Pix" ${bc.entForma==='Pix'?'selected':''}>Pix</option><option value="Cartão de Débito" ${bc.entForma==='Cartão de Débito'?'selected':''}>Cartão de débito</option></select></div>`:''}
+      ${parcelado&&!(cartao&&!credito)?`<div><label>${credito?'Parcelas no cartão (1 a 12)':bol?'Nº de boletos':comEntrada?'Nº de parcelas (saldo restante)':'Número de parcelas'}</label><input type="number" min="1" ${credito?'max="12"':''} data-finfield="numParcelas" data-orcid="${o.id}" value="${esc(pag.numParcelas||'')}"></div>`:''}
       ${parcelado&&!cartao?`<div><label>Intervalo entre parcelas</label><select data-finfield="intervaloDias" data-orcid="${o.id}">
         <option value="15" ${pag.intervaloDias==='15'?'selected':''}>A cada 15 dias</option>
         <option value="30" ${(!pag.intervaloDias||pag.intervaloDias==='30')?'selected':''}>A cada 30 dias</option>
       </select></div>`:''}
     </div>
     <label>Observações financeiras</label><input type="text" data-finfield="obs" data-orcid="${o.id}" value="${esc(pag.obs||'')}" placeholder="Ex: desconto combinado, forma de cobrança etc.">
+    ${bol?`<div class="orc-resumo bol-resumo"><div><span>Valor à vista</span><span>${fmtMoney(o.total)}</span></div>
+      <div class="orc-acr"><span>Parcelado no boleto (+${fmtPct(bc.acr)}% de parcelamento)</span><span>${fmtMoney(bc.tot)}</span></div>
+      <div><span>Entrada (${bc.entForma==='Cartão de Débito'?'débito':'Pix'}) · mínimo ${fmtPct(bc.minPct)}% = ${fmtMoney(bc.minEnt)}</span><span>${fmtMoney(bc.ent)}</span></div>
+      <div class="orc-total"><span>${bc.n} boleto(s) de</span><span>${fmtMoney(bc.parc)}</span></div></div>
+      ${bc.abaixo?`<p class="erro-campo" style="margin:6px 0 0">A entrada informada é menor que o mínimo de ${fmtPct(bc.minPct)}%: o sistema usa ${fmtMoney(bc.minEnt)}.</p>`:''}
+      <p class="muted" style="margin:6px 0 0;font-size:12.5px">Cada boleto entra no Financeiro já descontada a tarifa da empresa emissora (Configurações → Formas de pagamento).</p>`:''}
     ${cartao?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">💳 No cartão você recebe de uma vez, ${prazoDoCartao(pag)===0?'no mesmo dia':'em '+prazoDoCartao(pag)+' dia(s)'}, com a taxa da operadora já descontada.${comEntrada?' A entrada é paga à parte (dinheiro ou Pix).':''} ${formasPag().configurado?'':'<strong>Taxas de exemplo:</strong> confira em Configurações → Formas de pagamento.'}</p>`:''}
     <div class="overflow" style="margin-top:14px"><table><thead><tr><th>${cartao?'Recebimento':'Parcela'}</th><th>Valor</th><th>${cartao?'Você recebe em':'Vencimento'}</th></tr></thead>
     <tbody>${parcRows}</tbody></table></div>
@@ -4723,6 +4873,8 @@ const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','V
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
 // melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
 const RM_PREPARADAS=[
+  {chave:'desconto-master-motivo',titulo:'Master: desconto de até 100% com motivo obrigatório',categoria:'Financeiro',prioridade:'media',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
+   descricao:'Personalização: na base em que estiver ligada, o Master pode dar desconto de até 100% no orçamento, mas só salva informando o motivo do desconto.'},
   {chave:'agenda-diaria-dentista',titulo:'Agenda do dia para o dentista às 07:30',categoria:'Comunicação',prioridade:'alta',status:'pronta',tipo:'geral',alvo:'Todos os planos',
    descricao:'Todo dia às 07:30 (fuso da clínica), cada dentista recebe a sua agenda: paciente, tratamento, horário e se está confirmado. Canal 1: notificação do app OdontoGestão no celular (grátis). Canal 2: WhatsApp do dentista pela API oficial do WhatsApp Business (cerca de R$ 1 por dentista/mês). Código pronto em functions/agenda-diaria (ver LEIAME). PARA INSTALAR: 1) Firebase: ativar o plano Blaze nos dois projetos (teste e produção). 2) Notificação: gerar a chave Web Push (Cloud Messaging) e informar. 3) WhatsApp (opcional): conta Meta Business verificada, número do OdontoGestão e modelo "agenda_do_dia" aprovado. 4) Publicar a função no teste, validar, aprovar para produção.',publico:false},
 ];
@@ -5192,6 +5344,11 @@ function cmpVer(a,b){ const x=String(a||'0').split('.').map(Number), y=String(b|
 function personalizacoesDe(f){ return [...new Set(((f&&f.personalizacoes)||[]).map(Number).filter(Boolean))].sort((a,b)=>a-b); }
 // para usar no código de uma personalização: if(temPersonalizacao(184)){ ... }
 function temPersonalizacao(n){ return personalizacoesDe(fichaClinica()).includes(+n); }
+function temPersonalizacaoChave(ch){
+  const f=fichaClinica(); if(!f) return false; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
+  const prep=RM_PREPARADAS.find(p=>p.chave===ch);
+  return ativos.some(n=>ch2[n]===ch || (prep && info[n]===prep.titulo));
+}
 function rotuloVersao(f){ const p=personalizacoesDe(f===undefined?fichaClinica():f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 function rotuloVersaoDe(f,v){ const p=personalizacoesDe(f); return 'Ver '+vCurta(v||APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 
@@ -5644,7 +5801,8 @@ function abrirPersonalizacoesCliente(cidProd){
       novas.filter(n=>!atuais.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'ativada',em,versao:APP_VERSION,ambiente:'producao'}));
       atuais.filter(n=>!novas.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'desativada',em,versao:APP_VERSION,ambiente:'producao'}));
       const info=Object.assign({},f.personalizacoesInfo||{}); novas.forEach(n=>{ info[n]=tit(n); });
-      const mud={personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info};
+      const chaves=Object.assign({},f.personalizacoesChaves||{}); novas.forEach(n=>{ const it=itens.find(i=>i.numero===n); if(it&&it.chave) chaves[n]=it.chave; });
+      const mud={personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info,personalizacoesChaves:chaves};
       try{
         await Nuvem.atualizarClinicaOutro(f.id,mud); Object.assign(f,mud);
         const e=espelhoDe(f.id); if(e){ await Nuvem.sincronizarEspelho(e.id,f); Object.assign(e,mud); }
@@ -6670,7 +6828,7 @@ function bindEvents(){
   document.querySelectorAll('[data-finsub]').forEach(b=>b.addEventListener('click',()=>{
     financeiroSubTab=b.getAttribute('data-finsub'); render();
   }));
-  bindFinanceiro2();
+  bindFinanceiro2(); bindPainelFinanceiro();
   const btnNewAgendamento=document.getElementById('btnNewAgendamento');
   if(btnNewAgendamento) btnNewAgendamento.addEventListener('click',()=>openAgendamentoForm(null));
   document.querySelectorAll('[data-agresp]').forEach(b=>b.addEventListener('click',()=>{
