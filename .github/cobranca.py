@@ -112,18 +112,20 @@ def garantir_planos():
         corpo = {'reason': descricao(plano, mods, ex) if c not in links else f'OdontoGestão · assinatura de R$ {int(c)/100:.2f}'.replace('.', ','),
                  'auto_recurring': {'frequency': 1, 'frequency_type': 'months', 'transaction_amount': int(c) / 100, 'currency_id': 'BRL'},
                  'back_url': SITE + '/?assinatura=mp'}
-        r = MP.post(f'{API}/preapproval_plan', json=corpo)
+        r = MP.post(f'{API}/preapproval_plan', json=corpo, headers={'X-Idempotency-Key': f'odontogestao-{PROJ}-plano-{c}-{SITE}'})
         if r.status_code >= 300:
             print('::warning::não foi possível criar o plano de', c, r.status_code, r.text[:300]); continue
         j = r.json()
         links[c] = {'id': j.get('id', ''), 'link': j.get('init_point', ''), 'site': SITE}
         novos += 1
+        if novos % 10 == 0: gravar('plataforma/precosMP', {'links': links, 'atualizadoEm': agora()})   # não recria se a rotina parar no meio
     if novos or not tab:
         gravar('plataforma/precosMP', {'links': links, 'atualizadoEm': agora()})
     print('planos no Mercado Pago:', len(links), f'({novos} novos)')
     return links
 
 # ---------- assinaturas ----------
+DONOS = {}   # código da assinatura -> clínica que já usa (uma assinatura paga uma clínica só)
 def conferir(cid, ficha, links):
     ped = ler(f'clinicas/{cid}/cobranca/pedido')
     ass = dict(ficha.get('assinatura') or {})
@@ -140,6 +142,15 @@ def conferir(cid, ficha, links):
         return
     r.raise_for_status(); mp = r.json()
     st = mp.get('status', '')
+    def recusar(msg):
+        print(f'::warning::{cid}: assinatura {pid}: {msg}')
+        if ped and ped.get('preapprovalId') == pid:
+            gravar(f'clinicas/{cid}/cobranca/pedido', {'status': 'erro', 'erro': msg + ' Fale com o suporte.'})
+    planos_nossos = {v.get('id') for v in links.values()}
+    if mp.get('preapproval_plan_id') not in planos_nossos:
+        return recusar('Esta assinatura não é de um plano do OdontoGestão.')
+    if DONOS.get(pid, cid) != cid:
+        return recusar('Esta assinatura já está ligada a outra clínica.')
     valor = round(float((mp.get('auto_recurring') or {}).get('transaction_amount') or 0) * 100)
     sem = ((mp.get('summarized') or {}).get('semaphore') or '').lower()
     # o que foi pago define o plano; se veio de um pedido, o valor tem que bater com ele
@@ -158,6 +169,7 @@ def conferir(cid, ficha, links):
             'problemaDesde': ass.get('problemaDesde') or 0}
     em_dia = st == 'authorized' and sem != 'red'
     mud = {}
+    DONOS.setdefault(pid, cid)
     if em_dia:
         nova['problemaDesde'] = 0
         mud = {'status': 'ativa', 'plano': plano, 'modulos': mods, 'dentistasExtras': ex}
@@ -174,7 +186,11 @@ def conferir(cid, ficha, links):
 
 links = garantir_planos()
 erros = 0
-for cid, ficha in clinicas():
+todas = clinicas()
+for cid, ficha in todas:   # quem já tem assinatura confirmada fica com ela
+    a = ficha.get('assinatura') or {}
+    if a.get('origem') == 'mp' and a.get('id'): DONOS.setdefault(a['id'], cid)
+for cid, ficha in todas:
     if ficha.get('espelho'): continue
     try: conferir(cid, ficha, links)
     except Exception as e:
