@@ -1,0 +1,44 @@
+# Cobrança automática da assinatura (Mercado Pago), sem Cloud Functions.
+# Confere as assinaturas e libera ou coloca em modo de consulta as clínicas.
+# Só funciona depois que o segredo MERCADOPAGO_ACCESS_TOKEN (produção) ou
+# MERCADOPAGO_ACCESS_TOKEN_TESTE (credenciais de teste do Mercado Pago, para o
+# ambiente de teste) for cadastrado em Settings → Secrets and variables → Actions.
+name: Cobrança das assinaturas
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: cobranca
+  cancel-in-progress: false
+
+jobs:
+  producao:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Conferir assinaturas (produção)
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          MP_TOKEN: ${{ secrets.MERCADOPAGO_ACCESS_TOKEN }}
+          PROJETO: odontogestao-c8218
+          SITE: https://odontogestao-c8218.web.app
+        run: |
+          if [ -z "$MP_TOKEN" ]; then echo "Sem MERCADOPAGO_ACCESS_TOKEN: cobrança desligada na produção."; exit 0; fi
+          pip install --quiet google-auth requests
+          python3 .github/cobranca.py
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Conferir assinaturas (ambiente de teste)
+        env:
+          CHAVE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TESTE }}
+          MP_TOKEN: ${{ secrets.MERCADOPAGO_ACCESS_TOKEN_TESTE }}
+          PROJETO: odontogestao-teste
+          SITE: https://odontogestao-teste.web.app
+        run: |
+          if [ -z "$MP_TOKEN" ]; then echo "Sem MERCADOPAGO_ACCESS_TOKEN_TESTE: cobrança desligada no teste."; exit 0; fi
+          pip install --quiet google-auth requests
+          python3 .github/cobranca.py

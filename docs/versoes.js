@@ -9,6 +9,12 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.20.0', data:'2026-10-30', itens:[
+    'Teste grátis sem falar com ninguém: o dono cadastra a própria clínica (e-mail e senha ou Google) e usa o plano Completo por 14 dias',
+    'Demonstração em um clique (?demo=1): o sistema abre com pacientes, agenda e financeiro fictícios, sem gravar nada',
+    'Página de vendas (conheca.html) com planos, demonstração e teste grátis',
+    'Assinatura pelo Mercado Pago (Master → "Assinar agora"): escolhe o plano, paga no cartão e a liberação é automática; cobrança recusada avisa e, depois de 5 dias, deixa em modo de consulta',
+  ]},
   {v:'2.19.0', data:'2026-10-29', itens:[
     'Aportes (Financeiro → Aportes): entrada no caixa e devolução ao aportador sem juros ou com valor combinado, em parcelas, de uma vez ou quando houver caixa',
     'Devoluções entram nas despesas a pagar e no alerta de saldo; aportes e devoluções ficam fora do resultado (faturamento e custos)',

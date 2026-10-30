@@ -48,6 +48,11 @@ service cloud.firestore {
         || (podeEm(request.resource.data.cid, 'usuarios')
             && (resource == null || resource.data.cid == request.resource.data.cid));
       allow delete: if admin() || podeEm(resource.data.cid, 'usuarios');
+      // cadastro feito pelo próprio dono: o índice nasce junto com a ficha da clínica nova
+      allow create: if logado() && email == meuEmail()
+        && request.resource.data.keys().hasOnly(['cid'])
+        && !exists(/databases/$(database)/documents/clinicas/$(request.resource.data.cid))
+        && getAfter(/databases/$(database)/documents/clinicas/$(request.resource.data.cid)).data.donoEmail == meuEmail();
     }
 
     // Quadro de implementação e melhorias: só o administrador da plataforma.
@@ -61,6 +66,24 @@ service cloud.firestore {
       allow get: if admin() || membro();
       allow list: if admin();
       allow write: if admin();
+      // Cadastro feito pelo próprio dono: teste grátis de até 14 dias no plano Completo,
+      // um e-mail por clínica (o índice membros/{e-mail} é criado no mesmo lote).
+      allow create: if logado() && meuEmail() != emailDoDono().lower()
+        && request.resource.data.keys().hasOnly(['nome', 'donoEmail', 'plano', 'modulos', 'dentistasExtras', 'status', 'testeAte', 'criadaEm', 'obs', 'contato', 'origem'])
+        && request.resource.data.donoEmail == meuEmail()
+        && request.resource.data.origem == 'autocadastro'
+        && request.resource.data.status == 'teste'
+        && request.resource.data.plano == 'completo'
+        && request.resource.data.modulos == {}
+        && request.resource.data.dentistasExtras == 0
+        && request.resource.data.obs == ''
+        && request.resource.data.criadaEm == request.time
+        && request.resource.data.testeAte is timestamp
+        && request.resource.data.testeAte <= request.time + duration.value(15, 'd')
+        && request.resource.data.nome is string && request.resource.data.nome.size() >= 3 && request.resource.data.nome.size() <= 80
+        && request.resource.data.contato is string && request.resource.data.contato.size() <= 30
+        && !exists(/databases/$(database)/documents/membros/$(meuEmail()))
+        && getAfter(/databases/$(database)/documents/membros/$(meuEmail())).data.cid == cid;
 
       // Clínica liberada para gravar: assinatura ativa ou teste dentro do prazo.
       // Sem ficha (a clínica original, "principal") = liberada.
@@ -140,6 +163,20 @@ service cloud.firestore {
       match /aportes/{b}       { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
+
+      // Assinatura pelo Mercado Pago: o Master registra o plano escolhido e, na volta
+      // do pagamento, o código da assinatura. Quem confirma e libera a clínica é a
+      // rotina do GitHub (conta de serviço), que confere o valor no Mercado Pago.
+      // Vale também com a clínica em modo de consulta (é assim que ela volta a funcionar).
+      match /cobranca/{doc} {
+        allow read: if master() || admin();
+        allow create, update: if master() && doc == 'pedido'
+          && request.resource.data.keys().hasOnly(['plano', 'modulos', 'dentistasExtras', 'valor', 'email', 'criadoEm', 'por', 'status', 'preapprovalId', 'voltouEm', 'link', 'erro', 'conferidoEm'])
+          && request.resource.data.status in ['novo', 'enviado']
+          && request.resource.data.get('plano', 'completo') in ['essencial', 'clinico', 'completo']
+          && request.resource.data.get('preapprovalId', '') is string
+          && request.resource.data.get('preapprovalId', '').size() <= 80;
+      }
 
       // Sugestões de melhoria enviadas pela equipe da clínica.
       // Ficam na base da clínica; o administrador da plataforma lê e responde.

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OdontoGestão · sistema para clínica odontológica</title>
+<meta name="description" content="Agenda, prontuário, orçamento e financeiro da clínica odontológica no computador e no celular. Teste grátis por 14 dias, sem cartão.">
+<meta name="theme-color" content="#0B2F2D">
+<meta property="og:title" content="OdontoGestão · sistema para clínica odontológica">
+<meta property="og:description" content="Agenda, prontuário, orçamento e financeiro no computador e no celular. Teste grátis por 14 dias, sem cartão.">
+<meta property="og:image" content="vitrine/painel.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icones/icone-192.png">
+<link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --font:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+  --bg:#F5F6F8; --surface:#FFFFFF; --text:#0F1A24; --text-2:#2B3742; --muted:#5F6B76; --border:#E3E7EB;
+  --primary:#0B6B66; --primary-d:#08524E; --primary-ink:#FFFFFF; --primary-soft:#E3F1EF; --primary-tint:#F2F8F7;
+  --deep:#0B2F2D; --deep-ink:#E8F3F1; --deep-muted:#A9C6C1; --deep-line:#2C5B57; --accent:#C9861A;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1216; --surface:#121A20; --text:#E6EDF2; --text-2:#C3CED7; --muted:#8796A3; --border:#22303A;
+    --primary:#4FB3A9; --primary-d:#6FCFC3; --primary-ink:#04211E; --primary-soft:#14302D; --primary-tint:#11272A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1216; --surface:#121A20; --text:#E6EDF2; --text-2:#C3CED7; --muted:#8796A3; --border:#22303A;
+  --primary:#4FB3A9; --primary-d:#6FCFC3; --primary-ink:#04211E; --primary-soft:#14302D; --primary-tint:#11272A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.55;font-size:16px;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:10px;font-weight:600;font-size:15.5px;text-decoration:none;border:1px solid transparent;transition:background .15s,border-color .15s,transform .15s}
+.btn:active{transform:translateY(1px)}
+.btn-p{background:var(--primary);color:var(--primary-ink)}
+.btn-p:hover{background:var(--primary-d)}
+.btn-s{background:transparent;color:inherit;border-color:currentColor}
+.btn-s:hover{background:rgba(127,127,127,.12)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* topo */
+.topo{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.topo .wrap{display:flex;align-items:center;gap:16px;height:64px}
+.marca{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none}
+.marca img{width:32px;height:32px;border-radius:8px}
+.topo nav{margin-left:auto;display:flex;gap:6px;align-items:center}
+.topo nav a.lnk{padding:8px 10px;text-decoration:none;color:var(--text-2);font-size:14.5px;border-radius:8px}
+.topo nav a.lnk:hover{background:var(--primary-tint)}
+.topo .btn{padding:9px 16px;font-size:14.5px}
+@media (max-width:760px){ .topo nav a.lnk{display:none} }
+
+/* abertura */
+.hero{background:var(--deep);color:var(--deep-ink);overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:center;padding-top:72px;padding-bottom:72px}
+.hero .selo{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--deep-muted);margin-bottom:14px}
+.hero h1{font-size:clamp(32px,4.6vw,50px);line-height:1.08;margin:0 0 18px;letter-spacing:-.015em}
+.hero h1 em{font-style:normal;color:#7FD3C8}
+.hero p.sub{font-size:18px;color:var(--deep-muted);margin:0 0 28px;max-width:34em}
+.hero .acoes{display:flex;gap:12px;flex-wrap:wrap}
+.hero .btn-p{background:#4FB3A9;color:#04211E}
+.hero .btn-p:hover{background:#6FCFC3}
+.hero .garantias{display:flex;gap:18px;flex-wrap:wrap;margin-top:22px;font-size:14px;color:var(--deep-muted)}
+.hero .garantias span::before{content:"✓ ";color:#7FD3C8;font-weight:700}
+.tela{position:relative}
+.tela img{display:block;width:100%;border-radius:12px;border:1px solid var(--deep-line);box-shadow:0 30px 60px rgba(0,0,0,.35)}
+.tela img.cel{position:absolute;width:30%;right:-4%;bottom:-10%;border-radius:22px;border:6px solid #0F1A24}
+@media (max-width:900px){ .hero .wrap{grid-template-columns:1fr;padding-top:48px;padding-bottom:64px} .tela img.cel{right:2%} }
+
+/* seções */
+section{padding:80px 0}
+.titulo-sec{max-width:720px;margin:0 0 40px}
+.titulo-sec .selo{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--primary)}
+.titulo-sec h2{font-size:clamp(26px,3.2vw,36px);line-height:1.15;margin:8px 0 12px;letter-spacing:-.01em}
+.titulo-sec p{color:var(--muted);margin:0;font-size:17px}
+
+/* jornada */
+.jornada{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;counter-reset:passo}
+.passo{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;position:relative}
+.passo::before{counter-increment:passo;content:counter(passo);display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--primary-soft);color:var(--primary);font-weight:700;font-size:14px;margin-bottom:12px}
+.passo h3{margin:0 0 6px;font-size:18px}
+.passo p{margin:0;color:var(--muted);font-size:15px}
+@media (max-width:900px){ .jornada{grid-template-columns:1fr 1fr} }
+@media (max-width:560px){ .jornada{grid-template-columns:1fr} }
+
+/* recursos */
+.recursos{display:grid;grid-template-columns:repeat(3,1fr);gap:28px 32px}
+.recurso h3{font-size:16.5px;margin:0 0 4px}
+.recurso p{margin:0;color:var(--muted);font-size:15px}
+.recurso .ic{width:38px;height:38px;border-radius:10px;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;margin-bottom:10px}
+.recurso .ic svg{width:20px;height:20px}
+@media (max-width:900px){ .recursos{grid-template-columns:1fr 1fr} }
+@media (max-width:560px){ .recursos{grid-template-columns:1fr} }
+
+/* planos */
+.faixa{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.planos{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+.plano{border:1px solid var(--border);border-radius:14px;padding:26px;display:flex;flex-direction:column;background:var(--bg)}
+.plano.destaque{border:2px solid var(--primary);background:var(--primary-tint);position:relative}
+.plano.destaque .tag{position:absolute;top:-12px;left:24px;background:var(--primary);color:var(--primary-ink);font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.03em}
+.plano h3{margin:0;font-size:20px}
+.plano .para{color:var(--muted);font-size:14.5px;margin:4px 0 16px;min-height:2.6em}
+.plano .preco{font-size:38px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.plano .preco small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0}
+.plano ul{list-style:none;padding:0;margin:20px 0 24px;display:grid;gap:9px;font-size:15px}
+.plano li{padding-left:24px;position:relative}
+.plano li::before{content:"";position:absolute;left:2px;top:.45em;width:12px;height:7px;border-left:2px solid var(--primary);border-bottom:2px solid var(--primary);transform:rotate(-45deg)}
+.plano li.inclui{font-weight:600}
+.plano li.inclui::before{display:none}
+.plano .btn{margin-top:auto}
+.avulsos{margin-top:22px;color:var(--muted);font-size:14.5px;text-align:center}
+@media (max-width:900px){ .planos{grid-template-columns:1fr} .plano .para{min-height:0} }
+
+/* vantagens */
+.vantagens{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.vant{padding:20px;border-radius:12px;background:var(--surface);border:1px solid var(--border)}
+.vant strong{display:block;margin-bottom:4px;font-size:16px}
+.vant span{color:var(--muted);font-size:14.5px}
+@media (max-width:900px){ .vantagens{grid-template-columns:1fr 1fr} }
+@media (max-width:560px){ .vantagens{grid-template-columns:1fr} }
+
+/* perguntas */
+.faq{max-width:780px}
+.faq details{border-bottom:1px solid var(--border);padding:18px 0}
+.faq summary{cursor:pointer;font-weight:600;font-size:17px;list-style:none;display:flex;justify-content:space-between;gap:12px}
+.faq summary::after{content:"+";color:var(--primary);font-size:22px;line-height:1}
+.faq details[open] summary::after{content:"–"}
+.faq summary::-webkit-details-marker{display:none}
+.faq p{color:var(--muted);margin:10px 0 0}
+
+/* fim */
+.fim{background:var(--deep);color:var(--deep-ink);text-align:center}
+.fim h2{font-size:clamp(26px,3.4vw,38px);margin:0 0 12px}
+.fim p{color:var(--deep-muted);margin:0 auto 28px;max-width:36em;font-size:17px}
+.fim .acoes{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.fim .btn-p{background:#4FB3A9;color:#04211E}
+.rodape{padding:28px 0;color:var(--muted);font-size:14px}
+.rodape .wrap{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+</style>
+</head>
+<body>
+<header class="topo"><div class="wrap">
+  <a class="marca" href="#"><img src="icones/icone-192.png" alt="">OdontoGestão</a>
+  <nav><a class="lnk" href="#como">Como funciona</a><a class="lnk" href="#planos">Planos</a><a class="lnk" href="#perguntas">Dúvidas</a><a class="lnk" href="./">Entrar</a>
+  <a class="btn btn-p" href="./?cadastro=1">Testar grátis</a></nav>
+</div></header>
+
+<main>
+<div class="hero"><div class="wrap">
+  <div>
+    <span class="selo">Sistema para clínica odontológica</span>
+    <h1>A agenda, o prontuário e o financeiro da clínica <em>no mesmo lugar</em>.</h1>
+    <p class="sub">O que a recepção marca aparece no consultório e no celular do dentista na mesma hora. Do agendamento ao recebimento, sem papel e sem planilha.</p>
+    <div class="acoes"><a class="btn btn-p" href="./?cadastro=1">Testar grátis por 14 dias</a><a class="btn btn-s" href="./?demo=1">Ver demonstração</a></div>
+    <div class="garantias"><span>Sem cartão de crédito</span><span>Sem fidelidade</span><span>Dados guardados no Brasil</span></div>
+  </div>
+  <div class="tela"><img src="vitrine/painel.png" alt="Tela inicial do OdontoGestão com a agenda do dia e os números da clínica" width="1280" height="800"><img class="cel" src="vitrine/celular.png" alt="Agenda do dentista no celular" width="390" height="844"></div>
+</div></div>
+
+<section id="como"><div class="wrap">
+  <div class="titulo-sec"><span class="selo">Como funciona</span><h2>O paciente percorre a clínica, o sistema acompanha</h2><p>Cada etapa aproveita o que foi feito na anterior. Ninguém digita a mesma coisa duas vezes.</p></div>
+  <div class="jornada">
+    <div class="passo"><h3>Agenda</h3><p>Consultas por cadeira e por dentista, busca rápida de paciente e lembrete pelo WhatsApp da própria clínica.</p></div>
+    <div class="passo"><h3>Prontuário</h3><p>Odontograma, anamnese, exame clínico, plano de tratamento e evolução, inclusive tratamentos em várias sessões.</p></div>
+    <div class="passo"><h3>Orçamento</h3><p>Montado com a tabela de procedimentos da clínica, com desconto ou acréscimo e as condições de pagamento.</p></div>
+    <div class="passo"><h3>Financeiro</h3><p>Parcelas, boleto, cartão com a taxa de cada maquininha, despesas e o painel com o resultado do mês.</p></div>
+  </div>
+</div></section>
+
+<section class="faixa"><div class="wrap">
+  <div class="titulo-sec"><span class="selo">Recursos</span><h2>Feito para a rotina de quem atende</h2></div>
+  <div class="recursos">
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></div><h3>No computador e no celular</h3><p>A recepção usa no computador; o dentista vê a agenda e os pacientes no celular, instalado como aplicativo.</p></div>
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-4-7.5L21 3v5h-5"/></svg></div><h3>Lembretes pelo WhatsApp</h3><p>A mensagem sai do WhatsApp da própria clínica, sem custo por envio.</p></div>
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13 7l4 4"/></svg></div><h3>Anamnese e termo assinados</h3><p>O paciente recebe o link, preenche e assina com o dedo no próprio celular. Sem papel para arquivar.</p></div>
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.4 3.4-5.5 6.5-5.5s5.7 2.1 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.6c1.8.8 3 2.6 3.5 5.4"/></svg></div><h3>Equipe com permissões</h3><p>Master, administrativo, dentista e recepção, cada um vendo só o que precisa.</p></div>
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></div><h3>Painel financeiro</h3><p>Saldo em caixa, contas a pagar e a receber, inadimplência e resultado do período.</p></div>
+    <div class="recurso"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></svg></div><h3>Traga seus dados</h3><p>Usava outra versão? Importe o backup e continue de onde parou, com pacientes, agenda e radiografias.</p></div>
+  </div>
+</div></section>
+
+<section id="planos"><div class="wrap">
+  <div class="titulo-sec"><span class="selo">Planos</span><h2>Comece pelo que a clínica precisa hoje</h2><p>Todos os planos incluem as atualizações. Mude de plano quando quiser.</p></div>
+  <div class="planos">
+    <div class="plano"><h3>Essencial</h3><p class="para">Para quem está começando a organizar a agenda.</p>
+      <div class="preco">R$ 49,90 <small>/mês</small></div>
+      <ul><li>Agenda no computador e no celular</li><li>Cadastro de pacientes</li><li>Lembretes de consulta pelo WhatsApp</li><li>Anamnese odontológica e de harmonização</li><li>1 dentista e 2 usuários</li></ul>
+      <a class="btn btn-s" href="./?cadastro=1">Testar grátis</a></div>
+    <div class="plano"><h3>Clínico</h3><p class="para">Para o consultório que quer o prontuário completo.</p>
+      <div class="preco">R$ 79,90 <small>/mês</small></div>
+      <ul><li class="inclui">Tudo do Essencial, mais:</li><li>Odontograma, exame clínico e plano de tratamento</li><li>Orçamento e evolução</li><li>Radiografias, atestado e declaração</li><li>Anamnese e termo assinados pelo celular</li><li>Várias cadeiras</li></ul>
+      <a class="btn btn-s" href="./?cadastro=1">Testar grátis</a></div>
+    <div class="plano destaque"><span class="tag">MAIS COMPLETO</span><h3>Completo</h3><p class="para">Para a clínica que quer controlar o dinheiro também.</p>
+      <div class="preco">R$ 119,90 <small>/mês</small></div>
+      <ul><li class="inclui">Tudo do Clínico, mais:</li><li>Financeiro: parcelas, despesas e inadimplência</li><li>Formas de pagamento com as taxas do cartão</li><li>Painel financeiro e relatórios</li><li>Permissões por usuário</li><li>Até 3 dentistas</li></ul>
+      <a class="btn btn-p" href="./?cadastro=1">Testar grátis por 14 dias</a></div>
+  </div>
+  <p class="avulsos">Módulos avulsos: prontuário R$ 39,90 · financeiro R$ 49,90 · formulários assinados R$ 19,90 · dentista extra R$ 19,90 por mês.</p>
+</div></section>
+
+<section class="faixa"><div class="wrap">
+  <div class="titulo-sec"><span class="selo">Sem letras miúdas</span><h2>Por que testar agora</h2></div>
+  <div class="vantagens">
+    <div class="vant"><strong>14 dias grátis</strong><span>Use o plano Completo, sem cartão. No fim, escolha o plano.</span></div>
+    <div class="vant"><strong>Seus dados são seus</strong><span>Terminou o teste? Nada é apagado: você continua vendo tudo e pode baixar o backup.</span></div>
+    <div class="vant"><strong>Sem fidelidade</strong><span>Sem taxa de implantação. Cancele quando quiser.</span></div>
+    <div class="vant"><strong>Início de carreira</strong><span>Dentistas com até 2 anos de CRO têm 30% de desconto no primeiro ano.</span></div>
+  </div>
+</div></section>
+
+<section id="perguntas"><div class="wrap">
+  <div class="titulo-sec"><span class="selo">Dúvidas</span><h2>Perguntas frequentes</h2></div>
+  <div class="faq">
+    <details><summary>Preciso instalar alguma coisa?</summary><p>Não. O OdontoGestão abre no navegador do computador e do celular. No celular dá para adicionar à tela inicial e usar como aplicativo.</p></details>
+    <details><summary>O que acontece quando o teste termina?</summary><p>Nada é apagado. O sistema fica em modo de consulta: você vê todas as informações e pode baixar o backup. Ao assinar, tudo volta a funcionar do jeito que estava.</p></details>
+    <details><summary>Onde ficam os dados dos meus pacientes?</summary><p>Na nuvem do Google (Firebase), em servidores em São Paulo. Cada clínica tem os seus dados separados, e só quem a clínica cadastra consegue entrar.</p></details>
+    <details><summary>Já uso outro sistema. Perco o que tenho?</summary><p>Quem usava a versão anterior do OdontoGestão importa o backup no primeiro acesso. Vindo de outro sistema, fale com a gente pelo WhatsApp para combinarmos a importação.</p></details>
+    <details><summary>Posso testar sem cadastrar nada?</summary><p>Sim. A demonstração abre o sistema com pacientes, agenda e financeiro fictícios. Mexa à vontade: nada do que você fizer lá é salvo.</p></details>
+  </div>
+</div></section>
+
+<section class="fim"><div class="wrap">
+  <h2>Organize a clínica ainda esta semana</h2>
+  <p>Crie a conta em dois minutos, cadastre a equipe e comece a marcar consultas hoje mesmo.</p>
+  <div class="acoes"><a class="btn btn-p" href="./?cadastro=1">Testar grátis por 14 dias</a><a class="btn btn-s" href="https://wa.me/5592985081590?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20OdontoGest%C3%A3o." target="_blank" rel="noopener">Falar no WhatsApp</a></div>
+</div></section>
+</main>
+
+<footer class="rodape"><div class="wrap"><span>OdontoGestão · sistema para clínicas odontológicas</span><span><a href="./">Entrar</a> · <a href="./?demo=1">Demonstração</a></span></div></footer>
+<script>(function(){var t='auto';try{t=localStorage.getItem('odonto-tema')||'auto'}catch(e){}if(t!=='auto')document.documentElement.setAttribute('data-theme',t);})();</script>
+</body>
+</html>
