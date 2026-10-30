@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.18.0';
+const APP_VERSION='2.19.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DB_NAME='odontoGestaoDB';
@@ -1656,8 +1656,9 @@ function renderPainelFinanceiro(){
   const data=e=>e.confirmado?(e.dataPagamento||e.vencimento):e.vencimento;
   const noPer=fl.filter(e=>{ const d=data(e); return d>=per.ini && d<=per.fim; });
   const soma=l=>r2(l.reduce((s,e)=>s+(+e.valor||0),0));
-  const entReal=soma(noPer.filter(e=>e.tipo==='receita'&&e.confirmado)), entPrev=soma(noPer.filter(e=>e.tipo==='receita'&&!e.confirmado));
-  const saiPaga=soma(noPer.filter(e=>e.tipo==='despesa'&&e.confirmado)), saiPagar=soma(noPer.filter(e=>e.tipo==='despesa'&&!e.confirmado));
+  const entReal=soma(noPer.filter(e=>e.tipo==='receita'&&e.confirmado&&!e.aporte)), entPrev=soma(noPer.filter(e=>e.tipo==='receita'&&!e.confirmado));
+  const apEnt=soma(noPer.filter(e=>e.aporte&&e.tipo==='receita'&&e.confirmado)), apDev=soma(noPer.filter(e=>e.aporte&&e.tipo==='despesa'&&e.confirmado));
+  const saiPaga=soma(noPer.filter(e=>e.tipo==='despesa'&&e.confirmado&&!e.aporte)), saiPagar=soma(noPer.filter(e=>e.tipo==='despesa'&&!e.confirmado));
   const vencidasDesp=fl.filter(e=>e.tipo==='despesa'&&!e.confirmado&&e.vencimento<hoje&&e.vencimento<per.ini), vencDesp=soma(vencidasDesp);
   const atrasoRec=soma(fl.filter(e=>e.tipo==='receita'&&!e.confirmado&&e.vencimento<hoje));
   const taxas=r2(noPer.filter(e=>e.tipo==='receita'&&e.taxaValor).reduce((s,e)=>s+(+e.taxaValor||0),0));
@@ -1672,14 +1673,14 @@ function renderPainelFinanceiro(){
   else { let a=new Date(ini), n=1; while(a<=fim){ const b=new Date(a); b.setDate(a.getDate()+6); if(b>fim) b.setTime(fim.getTime()); fatias.push({r:'Sem '+n,a:isoLocal(a),b:isoLocal(b)}); a=new Date(b); a.setDate(b.getDate()+1); n++; } }
   fatias.forEach(f=>{ const l=fl.filter(e=>{ const d=data(e); return d>=f.a&&d<=f.b; }); f.ent=soma(l.filter(e=>e.tipo==='receita')); f.sai=soma(l.filter(e=>e.tipo==='despesa')); });
   const maxF=Math.max(1,...fatias.map(f=>Math.max(f.ent,f.sai)));
-  const cat={}; noPer.filter(e=>e.tipo==='despesa').forEach(e=>{ const k=e.categoria||'Outros'; cat[k]=(cat[k]||0)+(+e.valor||0); });
+  const cat={}; noPer.filter(e=>e.tipo==='despesa'&&!e.aporte).forEach(e=>{ const k=e.categoria||'Outros'; cat[k]=(cat[k]||0)+(+e.valor||0); });
   const catL=Object.entries(cat).map(([r,v])=>({r,v:r2(v)})).sort((a,b)=>b.v-a.v);
-  const fp={}; noPer.filter(e=>e.tipo==='receita').forEach(e=>{ const k=e.forma||(e.importado?'Sistema anterior':'Não informada'); fp[k]=(fp[k]||0)+valorQuitado(e); });
+  const fp={}; noPer.filter(e=>e.tipo==='receita'&&!e.aporte).forEach(e=>{ const k=e.forma||(e.importado?'Sistema anterior':'Não informada'); fp[k]=(fp[k]||0)+valorQuitado(e); });
   const fpL=Object.entries(fp).map(([r,v])=>({r,v:r2(v)})).sort((a,b)=>b.v-a.v);
   // resultado dos últimos 6 meses
   const meses=[]; const m0=new Date(new Date(per.fim+'T00:00:00').getFullYear(),new Date(per.fim+'T00:00:00').getMonth()-5,1);
   for(let i=0;i<6;i++){ const a=new Date(m0.getFullYear(),m0.getMonth()+i,1), b=new Date(m0.getFullYear(),m0.getMonth()+i+1,0), ai=isoLocal(a), bi=isoLocal(b);
-    const l=fl.filter(e=>e.confirmado&&(e.dataPagamento||e.vencimento)>=ai&&(e.dataPagamento||e.vencimento)<=bi);
+    const l=fl.filter(e=>e.confirmado&&!e.aporte&&(e.dataPagamento||e.vencimento)>=ai&&(e.dataPagamento||e.vencimento)<=bi);
     meses.push({r:a.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')+'/'+String(a.getFullYear()).slice(2),v:r2(soma(l.filter(e=>e.tipo==='receita'))-soma(l.filter(e=>e.tipo==='despesa')))}); }
   const maxM=Math.max(1,...meses.map(x=>Math.abs(x.v)));
   const kpi=(rot,v,sub,cls)=>`<div class="pf-kpi${cls?' '+cls:''}"><span class="pf-kpi-rot">${rot}</span><strong>${v}</strong>${sub?`<span class="pf-kpi-sub">${sub}</span>`:''}</div>`;
@@ -1694,6 +1695,7 @@ function renderPainelFinanceiro(){
       ${kpi('Despesas a pagar',fmtMoney(pagarAte),vencDesp?`${fmtMoney(saiPagar)} no período + <strong>${fmtMoney(vencDesp)} vencidas</strong>`:'no período','')}
       ${kpi('Caixa depois de pagar',fmtMoney(aposPagar),aposPagar<0?'<strong>saldo negativo</strong>':'saldo em caixa − despesas a pagar',aposPagar<0?'ruim':'bom')}
       ${kpi('Projeção com o que vai receber',fmtMoney(projetado),`+ ${fmtMoney(entPrev)} a receber no período`,projetado<0?'ruim':'')}
+      ${devidoAportadores()?kpi('Devido a aportadores',fmtMoney(devidoAportadores()),'falta devolver no total',''):''}
     </div>
     ${aposPagar<0?`<div class="pf-alerta">⚠️ O saldo em caixa não cobre as despesas a pagar ${pfModo==='semana'?'nesta semana':pfModo==='trimestre'?'neste trimestre':'neste mês'}: faltam <strong>${fmtMoney(-aposPagar)}</strong>${projetado>=0?', mas os recebimentos previstos cobrem a diferença se forem pagos em dia.':'. Mesmo com os recebimentos previstos, o período fecha negativo.'}</div>`:''}
     ${podeEditar?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">${ci?'':'O saldo em caixa soma tudo o que foi recebido e pago no sistema. '}<button class="lnk-forte" data-pfcaixa>${ci?'Ajustar o saldo inicial do caixa':'Informar o saldo inicial do caixa'}</button></p><div id="pfCaixaForm"></div>`:''}
@@ -1705,7 +1707,8 @@ function renderPainelFinanceiro(){
       <div class="pf-tot"><span>Resultado (caixa)</span><strong style="color:${resultado<0?'var(--danger)':'var(--ok)'}">${fmtMoney(resultado)}</strong></div>
       <div><span>Margem</span><strong>${entReal>0?margem+'%':'—'}</strong></div>
       <div><span>Custo com taxas (cartão, boleto, Pix)</span><strong style="color:var(--warn)">${fmtMoney(taxas)}</strong></div>
-      <div><span>Recebimentos em atraso (total)</span><strong style="color:${atrasoRec?'var(--danger)':'inherit'}">${fmtMoney(atrasoRec)}</strong></div></div></div>
+      <div><span>Recebimentos em atraso (total)</span><strong style="color:${atrasoRec?'var(--danger)':'inherit'}">${fmtMoney(atrasoRec)}</strong></div>
+      ${apEnt||apDev?`<div><span>Aportes e devoluções <span class="muted">(fora do resultado)</span></span><strong>+${fmtMoney(apEnt)} / −${fmtMoney(apDev)}</strong></div>`:''}</div></div>
     <div class="card"><h3 style="margin:0 0 10px">Entradas x saídas</h3>
       <div class="pf-colunas">${fatias.map(f=>`<div class="pf-col" title="${esc(f.r)}: entradas ${fmtMoney(f.ent)} · saídas ${fmtMoney(f.sai)}"><div class="pf-col-barras"><i class="ent" style="height:${Math.round(f.ent/maxF*130)}px"></i><i class="sai" style="height:${Math.round(f.sai/maxF*130)}px"></i></div><span>${esc(f.r)}</span></div>`).join('')}</div>
       <p class="pf-leg"><span class="ent"></span> Entradas <span class="sai"></span> Saídas <span class="muted">(recebidas/pagas e previstas)</span></p></div>
@@ -1734,13 +1737,137 @@ function bindPainelFinanceiro(){
       state.meta=state.meta||{}; state.meta.caixaInicial={valor:r2(v),data:d}; saveData(); render(); });
   });
 }
+// =====================================================================
+// Aportes: dinheiro que entra no caixa e é devolvido ao aportador
+// (sem juros ou com valor combinado). Não conta como faturamento nem como despesa.
+// =====================================================================
+const APORTE_FORMAS=['Pix','Transferência','Dinheiro'];
+function aporteFluxo(id){ return (state.fluxoFinanceiro||[]).filter(e=>e.aporteId===id); }
+function aporteResumo(a){
+  const dev=aporteFluxo(a.id).filter(e=>e.tipo==='despesa');
+  const pago=r2(dev.filter(e=>e.confirmado).reduce((s,e)=>s+(+e.valor||0),0));
+  const prox=dev.filter(e=>!e.confirmado).sort((x,y)=>x.vencimento.localeCompare(y.vencimento))[0]||null;
+  return {pago, saldo:r2(Math.max(0,a.totalDevolver-pago)), prox, quitado:pago>=a.totalDevolver-0.004};
+}
+function devidoAportadores(){ return r2((state.aportes||[]).reduce((s,a)=>s+aporteResumo(a).saldo,0)); }
+// redistribui o que falta devolver nas parcelas ainda não pagas
+function recalcAporte(a){
+  const r=aporteResumo(a), abertas=aporteFluxo(a.id).filter(e=>e.tipo==='despesa'&&!e.confirmado).sort((x,y)=>x.vencimento.localeCompare(y.vencimento));
+  if(r.saldo<=0){ const ids=new Set(abertas.map(e=>e.id)); state.fluxoFinanceiro=state.fluxoFinanceiro.filter(e=>!ids.has(e.id)); return; }
+  if(!abertas.length) return;
+  const vp=r2(r.saldo/abertas.length); abertas.forEach((e,i)=>{ e.valor=i===abertas.length-1?r2(r.saldo-vp*(abertas.length-1)):vp; });
+}
+function renderAportes(){
+  const l=(state.aportes||[]).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const devido=devidoAportadores();
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div><h3 style="margin:0 0 4px">Aportes</h3>
+    <p class="muted" style="margin:0">Dinheiro colocado na clínica por você, sócios ou terceiros, com a devolução combinada. O aporte entra no saldo em caixa e cada devolução entra nas despesas a pagar, mas nenhum dos dois conta como faturamento ou custo da clínica.</p></div>
+    <button class="btn-p" id="apNovo">+ Novo aporte</button></div>
+    <div id="apForm"></div>
+    ${l.length?`<div class="kpis-mini"><div><span>Total aportado</span><strong>${fmtMoney(r2(l.reduce((s,a)=>s+a.valor,0)))}</strong></div><div><span>Já devolvido</span><strong>${fmtMoney(r2(l.reduce((s,a)=>s+aporteResumo(a).pago,0)))}</strong></div><div><span>Devido a aportadores</span><strong style="color:${devido?'var(--warn)':'inherit'}">${fmtMoney(devido)}</strong></div></div>
+    <div class="overflow"><table><thead><tr><th>Aportador</th><th>Aporte</th><th>A devolver</th><th>Devolvido</th><th>Saldo devedor</th><th>Próxima devolução</th><th></th></tr></thead><tbody>
+    ${l.map(a=>{ const r=aporteResumo(a); return `<tr><td><strong>${esc(a.aportador)}</strong>${a.obs?`<div class="muted" style="font-size:12px">${esc(a.obs)}</div>`:''}</td>
+      <td>${fmtMoney(a.valor)}<div class="muted" style="font-size:12px">${fmtDataBR(a.data)} · ${esc(a.forma||'')}</div></td>
+      <td>${fmtMoney(a.totalDevolver)}${a.totalDevolver!==a.valor?`<div class="muted" style="font-size:12px">valor combinado</div>`:''}</td>
+      <td>${fmtMoney(r.pago)}</td><td>${r.quitado?'<span class="sit sit-chegou">Quitado</span>':`<strong>${fmtMoney(r.saldo)}</strong>`}</td>
+      <td>${r.prox?`${fmtDataBR(r.prox.vencimento)} · ${fmtMoney(r.prox.valor)}`:(r.quitado?'—':'<span class="muted">quando houver caixa</span>')}</td>
+      <td class="actions"><button class="btn-s" data-apver="${a.id}">Ver</button>${r.quitado?'':`<button class="btn-p" data-apdev="${a.id}">Registrar devolução</button>`}</td></tr>`; }).join('')}
+    </tbody></table></div>`:'<p class="muted" style="margin:12px 0 0">Nenhum aporte registrado.</p>'}
+  </div>`;
+}
+function aporteFormHtml(){
+  const fo=APORTE_FORMAS.map(f=>`<option>${f}</option>`).join('');
+  return `<form id="fAporte" class="ag-novo-pac">
+    <div class="row"><div style="flex:2 1 220px"><label for="apNome">Quem aportou</label><input id="apNome" required placeholder="Ex.: Aryson Aquino (sócio)"></div>
+      <div><label for="apValor">Valor (R$)</label><input id="apValor" inputmode="decimal" required></div></div>
+    <div class="row"><div><label for="apData">Data</label><input id="apData" type="date" value="${hojeISO()}" required></div>
+      <div><label for="apForma">Entrou por</label><select id="apForma">${fo}</select></div>
+      <div style="flex:2 1 220px"><label for="apObs">Observação</label><input id="apObs" placeholder="Ex.: compra da autoclave"></div></div>
+    <h4 style="margin:12px 0 6px">Devolução</h4>
+    <div class="row"><div><label for="apTotal">Valor a devolver (R$)</label><input id="apTotal" inputmode="decimal" placeholder="igual ao aporte"><div class="cl-dica">Sem juros: deixe em branco. Valor combinado: informe o total.</div></div>
+      <div><label for="apModo">Como devolver</label><select id="apModo"><option value="parcelas">Em parcelas mensais</option><option value="unico">De uma vez, numa data</option><option value="livre">Quando houver caixa (sem data)</option></select></div>
+      <div><label for="apFormaDev">Devolver por</label><select id="apFormaDev">${fo}</select></div></div>
+    <div class="row" id="apParcWrap"><div><label for="apN">Nº de parcelas</label><input id="apN" type="number" min="1" max="120" value="10"></div>
+      <div><label for="apIni" id="apIniRot">1ª devolução em</label><input id="apIni" type="date" value="${addDaysStr(hojeISO(),30)}"></div></div>
+    <div class="orc-resumo" id="apResumo"></div>
+    <div style="margin-top:10px;display:flex;gap:8px"><button class="btn-p">Salvar aporte</button><button type="button" class="btn-s" id="apCanc">Cancelar</button></div></form>`;
+}
+function bindAportes(){
+  const nv=document.getElementById('apNovo');
+  if(nv) nv.addEventListener('click',()=>{
+    const area=document.getElementById('apForm'); if(area.innerHTML){ area.innerHTML=''; return; }
+    area.innerHTML=aporteFormHtml();
+    const q=id=>document.getElementById(id), f=q('fAporte');
+    const ler=()=>{ const valor=r2(lerValor(q('apValor').value)), tot=q('apTotal').value.trim()?r2(lerValor(q('apTotal').value)):valor, modo=q('apModo').value, n=modo==='parcelas'?Math.max(1,parseInt(q('apN').value,10)||1):1; return {valor,tot,modo,n}; };
+    const atual=()=>{ const r=ler(); q('apParcWrap').style.display=r.modo==='livre'?'none':'flex'; q('apN').parentNode.style.display=r.modo==='parcelas'?'block':'none'; q('apIniRot').textContent=r.modo==='unico'?'Devolver em':'1ª devolução em';
+      q('apResumo').innerHTML=isNaN(r.valor)||!(r.valor>0)?'':`<div><span>Entra no caixa</span><span>${fmtMoney(r.valor)}</span></div><div><span>A devolver${r.tot!==r.valor?' (valor combinado)':' (sem juros)'}</span><span>${fmtMoney(r.tot)}</span></div>${r.modo==='parcelas'?`<div class="orc-total"><span>${r.n} parcela(s) de</span><span>${fmtMoney(r2(r.tot/r.n))}</span></div>`:r.modo==='livre'?'<div class="muted"><span>Sem datas: registre cada devolução quando pagar</span><span></span></div>':''}`; };
+    f.querySelectorAll('input,select').forEach(el=>{ el.addEventListener('input',atual); el.addEventListener('change',atual); }); atual();
+    q('apCanc').addEventListener('click',()=>{ area.innerHTML=''; });
+    f.addEventListener('submit',ev=>{
+      ev.preventDefault();
+      const r=ler(), nome=q('apNome').value.trim(), data=q('apData').value;
+      if(!nome) return avisar('Informe quem fez o aporte.');
+      if(isNaN(r.valor)||r.valor<=0) return avisar('Informe o valor do aporte.');
+      if(isNaN(r.tot)||r.tot<r.valor) return avisar('O valor a devolver não pode ser menor que o aporte (sem juros, deixe em branco).');
+      if(!data) return avisar('Informe a data do aporte.');
+      const ini=q('apIni').value; if(r.modo!=='livre' && !ini) return avisar('Informe a data da devolução.');
+      const a={id:uid(),aportador:nome,valor:r.valor,data,forma:q('apForma').value,obs:q('apObs').value.trim(),totalDevolver:r.tot,modo:r.modo,parcelas:r.n,formaDevolucao:q('apFormaDev').value,criadoEm:new Date().toISOString()};
+      state.aportes=state.aportes||[]; state.aportes.push(a); state.fluxoFinanceiro=state.fluxoFinanceiro||[];
+      state.fluxoFinanceiro.push({id:uid(),tipo:'receita',aporte:true,aporteId:a.id,categoria:'Aporte',label:'Aporte · '+nome,pacienteNome:nome,valor:r.valor,vencimento:data,confirmado:true,dataPagamento:data,forma:a.forma});
+      if(r.modo!=='livre'){ const vp=r2(r.tot/r.n), d0=new Date(ini+'T00:00:00'), dia=d0.getDate();
+        for(let i=0;i<r.n;i++){ const d=new Date(d0); d.setDate(1); d.setMonth(d.getMonth()+i); const ult=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(dia,ult));
+          state.fluxoFinanceiro.push({id:uid(),tipo:'despesa',aporte:true,aporteId:a.id,categoria:'Devolução de aporte',label:'Devolução de aporte'+(r.n>1?' · '+(i+1)+'/'+r.n:''),fornecedor:nome,valor:i===r.n-1?r2(r.tot-vp*(r.n-1)):vp,vencimento:isoLocal(d),confirmado:false,dataPagamento:'',forma:a.formaDevolucao}); } }
+      saveData(); render(); avisar(`Aporte de ${fmtMoney(r.valor)} registrado${r.modo==='livre'?'':' com '+r.n+' devolução(ões) prevista(s)'}.`);
+    });
+  });
+  document.querySelectorAll('[data-apver]').forEach(b=>b.addEventListener('click',()=>abrirAporte(b.getAttribute('data-apver'))));
+  document.querySelectorAll('[data-apdev]').forEach(b=>b.addEventListener('click',()=>registrarDevolucao(b.getAttribute('data-apdev'))));
+}
+function registrarDevolucao(id){
+  const a=(state.aportes||[]).find(x=>x.id===id); if(!a) return; const r=aporteResumo(a);
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Registrar devolução · ${esc(a.aportador)}</h3>
+    <p class="muted" style="margin:0 0 10px">Saldo devedor: <strong>${fmtMoney(r.saldo)}</strong>. ${r.prox?'Se o valor for diferente da parcela prevista, as próximas são recalculadas.':''}</p>
+    <div class="row"><div><label for="dvValor">Valor devolvido (R$)</label><input id="dvValor" inputmode="decimal" value="${String((r.prox?r.prox.valor:r.saldo).toFixed(2)).replace('.',',')}"></div>
+      <div><label for="dvData">Data</label><input id="dvData" type="date" value="${hojeISO()}"></div>
+      <div><label for="dvForma">Forma</label><select id="dvForma">${APORTE_FORMAS.map(f=>`<option ${f===a.formaDevolucao?'selected':''}>${f}</option>`).join('')}</select></div></div>
+    <p class="erro-campo" data-dv="erro"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-dv="ok">Registrar</button></div>`);
+  bg.querySelector('[data-dv="ok"]').addEventListener('click',()=>{
+    const v=r2(lerValor(bg.querySelector('#dvValor').value)), d=bg.querySelector('#dvData').value;
+    const err=t=>{ bg.querySelector('[data-dv="erro"]').textContent=t; };
+    if(isNaN(v)||v<=0) return err('Informe o valor devolvido.');
+    if(v>r.saldo+0.004) return err('O valor passa do saldo devedor ('+fmtMoney(r.saldo)+').');
+    if(!d) return err('Informe a data.');
+    const prox=r.prox;
+    if(prox && Math.abs(prox.valor-v)<0.005){ prox.confirmado=true; prox.dataPagamento=d; prox.forma=bg.querySelector('#dvForma').value; }
+    else state.fluxoFinanceiro.push({id:uid(),tipo:'despesa',aporte:true,aporteId:a.id,categoria:'Devolução de aporte',label:'Devolução de aporte',fornecedor:a.aportador,valor:v,vencimento:d,confirmado:true,dataPagamento:d,forma:bg.querySelector('#dvForma').value});
+    recalcAporte(a); saveData(); bg.remove(); render();
+    avisar(aporteResumo(a).quitado?'Aporte quitado.':'Devolução registrada. Falta devolver '+fmtMoney(aporteResumo(a).saldo)+'.');
+  });
+}
+function abrirAporte(id){
+  const a=(state.aportes||[]).find(x=>x.id===id); if(!a) return; const r=aporteResumo(a);
+  const l=aporteFluxo(id).sort((x,y)=>(x.vencimento||'').localeCompare(y.vencimento||''));
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Aporte · ${esc(a.aportador)}</h3>
+    <p class="muted" style="margin:0 0 10px">${fmtDataBR(a.data)} · ${esc(a.forma||'')}${a.obs?' · '+esc(a.obs):''}</p>
+    <div class="orc-resumo"><div><span>Aportado</span><span>${fmtMoney(a.valor)}</span></div><div><span>A devolver${a.totalDevolver!==a.valor?' (valor combinado)':''}</span><span>${fmtMoney(a.totalDevolver)}</span></div><div class="orc-desc"><span>Já devolvido</span><span>${fmtMoney(r.pago)}</span></div><div class="orc-total"><span>Saldo devedor</span><span>${fmtMoney(r.saldo)}</span></div></div>
+    <div class="overflow" style="max-height:260px;margin-top:10px"><table><tbody>${l.map(e=>`<tr><td>${e.tipo==='receita'?'Entrada do aporte':esc(e.label)}</td><td>${fmtDataBR(e.confirmado?e.dataPagamento:e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td>${e.tipo==='receita'?'<span class="sit sit-chegou">Recebido</span>':e.confirmado?'<span class="sit sit-chegou">Devolvido</span>':'<span class="sit sit-agendado">Previsto</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn-d" data-apexc>Excluir aporte</button><button class="btn-p" data-fechar>Fechar</button></div>`);
+  bg.querySelector('[data-apexc]').addEventListener('click',()=>{
+    const pagas=l.filter(e=>e.tipo==='despesa'&&e.confirmado).length;
+    if(pagas){ avisar('Este aporte já tem devoluções registradas. Para manter o histórico do caixa, ele não pode ser excluído.'); return; }
+    customConfirm(`Excluir o aporte de ${a.aportador}? A entrada e as devoluções previstas saem do Financeiro.`,()=>{
+      state.fluxoFinanceiro=state.fluxoFinanceiro.filter(e=>e.aporteId!==id); state.aportes=state.aportes.filter(x=>x.id!==id); saveData(); bg.remove(); render(); });
+  });
+}
 function renderFinanceiroPrincipal(){
-  const subTabs=[{id:'painel', label:'📊 Painel'},{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'},{id:'patrimonio', label:'🏷️ Patrimônio'}];
+  const subTabs=[{id:'painel', label:'📊 Painel'},{id:'fluxo', label:'💵 Fluxo Financeiro'},{id:'lancardespesa', label:'➕ Lançar Despesa'},{id:'patrimonio', label:'🏷️ Patrimônio'},{id:'aportes', label:'🤝 Aportes'}];
   const bar=subTabs.map(t=>`<button data-finsub="${t.id}" class="${financeiroSubTab===t.id?'active':''}">${t.label}</button>`).join('');
   let body='';
   if(financeiroSubTab==='painel') body=renderPainelFinanceiro();
   else if(financeiroSubTab==='lancardespesa') body=renderLancarDespesa();
   else if(financeiroSubTab==='patrimonio') body=renderPatrimonio();
+  else if(financeiroSubTab==='aportes') body=renderAportes();
   else body=renderFluxoFinanceiro();
   return `<h2 style="margin:0 0 10px 0">Financeiro</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -2026,7 +2153,7 @@ function renderFluxoFinanceiro(){
     return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
     <td>${esc(despesa?(e.fornecedor||'-'):e.pacienteNome)}</td>
-    <td>${esc(e.label)}${e.forma?`<div class="muted" style="font-size:12px">${esc(e.forma)}</div>`:''}${e.compraId?` <button class="lnk-forte" data-vercompra2="${e.compraId}" style="font-size:12.5px">Ver compra</button>`:''}${e.recorrenciaId&&!e.confirmado?` <button class="lnk-forte" data-pararrep="${e.id}" style="font-size:12.5px">Parar de repetir</button>`:''}</td>
+    <td>${esc(e.label)}${e.forma?`<div class="muted" style="font-size:12px">${esc(e.forma)}</div>`:''}${e.compraId?` <button class="lnk-forte" data-vercompra2="${e.compraId}" style="font-size:12.5px">Ver compra</button>`:''}${e.aporteId?` <button class="lnk-forte" data-veraporte="${e.aporteId}" style="font-size:12.5px">Ver aporte</button>`:''}${e.recorrenciaId&&!e.confirmado?` <button class="lnk-forte" data-pararrep="${e.id}" style="font-size:12.5px">Parar de repetir</button>`:''}</td>
     <td style="white-space:nowrap">${e.estimado?'<span class="sit sit-agendado" title="Valor estimado: informe o valor real ao dar baixa">estimado</span> ≈ ':''}${fmtMoney(e.valor)}${linhaTaxaHtml(e)}</td>
     <td><span class="badge ${situacaoClass}">${situacao}</span></td>
     <td>${pagCell}</td>
@@ -3341,7 +3468,7 @@ async function aoMudarLogin(u){
     if(meu!==nuvemFluxo) return;
     if(await conferirVersaoBase()) return;   // a base deste cliente usa outra versão: abre a versão certa
     state=st;
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     state.meta=state.meta||{};
     if(Nuvem.emEspelho()) prepararEspelho(ac);
     if(!state.clinic){ try{ const ex=await Nuvem.lerClinicaServidor(); if(ex) state.clinic=ex; }catch(e){ console.warn(e); } }
@@ -3464,7 +3591,7 @@ async function restaurarBackupNuvem(header,imgs){
     await Nuvem.enviarImagensBackup(imgs,(i,n)=>prog(`Enviando radiografias: ${i} de ${n}`));
     prog('Enviando os dados…');
     state=novo; state.meta=state.meta||{};
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     session=eu.id;
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
     saveData();
@@ -3916,7 +4043,7 @@ function renderDashboard(){
   if(perms.financeiro){
     ensureFluxoTipos();
     const mes=hoje.slice(0,7), fl=state.fluxoFinanceiro||[];
-    const rec=fl.filter(e=>e.tipo==='receita' && e.confirmado && (e.dataPagamento||e.vencimento||'').slice(0,7)===mes).reduce((s,e)=>s+(e.valor||0),0);
+    const rec=fl.filter(e=>e.tipo==='receita' && e.confirmado && !e.aporte && (e.dataPagamento||e.vencimento||'').slice(0,7)===mes).reduce((s,e)=>s+(e.valor||0),0);
     const prev=fl.filter(e=>e.tipo==='receita' && !e.confirmado && (e.vencimento||'').slice(0,7)===mes && e.vencimento>=hoje).reduce((s,e)=>s+(e.valor||0),0);
     venc=fl.filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje);
     const nomeMes=new Date().toLocaleDateString('pt-BR',{month:'long'});
@@ -6828,7 +6955,8 @@ function bindEvents(){
   document.querySelectorAll('[data-finsub]').forEach(b=>b.addEventListener('click',()=>{
     financeiroSubTab=b.getAttribute('data-finsub'); render();
   }));
-  bindFinanceiro2(); bindPainelFinanceiro();
+  bindFinanceiro2(); bindPainelFinanceiro(); bindAportes();
+  document.querySelectorAll('[data-veraporte]').forEach(b=>b.addEventListener('click',()=>abrirAporte(b.getAttribute('data-veraporte'))));
   const btnNewAgendamento=document.getElementById('btnNewAgendamento');
   if(btnNewAgendamento) btnNewAgendamento.addEventListener('click',()=>openAgendamentoForm(null));
   document.querySelectorAll('[data-agresp]').forEach(b=>b.addEventListener('click',()=>{
