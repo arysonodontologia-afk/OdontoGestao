@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.21.0', data:'2026-10-31', itens:[
+    'Configurações → Minha assinatura (Master): plano, valor, forma de pagamento, situação (teste, pago e ativo, pendente) e quantos dias faltam para o fim do teste ou para a próxima cobrança',
+    'Sem avisos no Painel: os avisos do plano só aparecem nos 3 dias antes do fim do teste ou da renovação (cobrança recusada continua avisando)',
+    'O quadro de planos não abre sozinho para quem já tem o plano pago',
+  ]},
   {v:'2.20.1', data:'2026-10-31', itens:[
     'Assinatura: quando o Mercado Pago volta ao sistema sem o código da assinatura, a confirmação é feita pela busca da assinatura do plano escolhido',
   ]},
