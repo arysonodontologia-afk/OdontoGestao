@@ -15,7 +15,7 @@
 (function(){
 'use strict';
 const CFG = window.FIREBASE_CONFIG || {};
-const ATIVA = !!(CFG.apiKey && CFG.projectId);
+const ATIVA = !!(CFG.apiKey && CFG.projectId) && !window.ODONTO_DEMO;   // demonstração: sem nuvem
 const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
 let CLINICA = 'principal';                 // clínica original (sem ficha de plano)
 // administrador da plataforma: o mesmo e-mail das regras do Firestore (só muda o que aparece na tela;
@@ -353,6 +353,30 @@ async function criarContaInicial(email,senha,noOutro){
   }catch(e){ if(e && e.code==='auth/email-already-in-use') return 'existe'; throw e; }
   finally{ try{ await A.signOut(a3); }catch(e){} try{ if(mApp.deleteApp) await mApp.deleteApp(app3); }catch(e){} }
 }
+// cadastro feito pelo próprio dono da clínica: teste grátis no plano Completo (as regras conferem tudo)
+const DIAS_TESTE_AUTO=14;
+async function autoCadastrarClinica(d){
+  if(!usuario || !usuario.emailVerified) throw new Error('Confirme seu e-mail antes de criar a clínica.');
+  const eu=meuEmail();
+  if(eu===ADMIN_EMAIL){ const e=new Error('Este é o e-mail do administrador da plataforma. Use outro e-mail para a nova clínica.'); e.code='email-em-uso'; throw e; }
+  let ex=null; try{ ex=await F.getDocFromServer(F.doc(db,'membros',eu)); }catch(e){ ex=await F.getDoc(F.doc(db,'membros',eu)); }
+  if(ex.exists()){ const e=new Error('Este e-mail já está ligado a uma clínica. Entre com ele normalmente ou use outro e-mail.'); e.code='email-em-uso'; throw e; }
+  const slug=String(d.slug||'clinica').replace(/[^a-z0-9-]/g,'').slice(0,30)||'clinica';
+  const cid=slug+'-'+novoId().slice(-6);
+  const wb=F.writeBatch(db);
+  wb.set(F.doc(db,'clinicas',cid),{nome:String(d.nome).slice(0,80),donoEmail:eu,plano:'completo',modulos:{},dentistasExtras:0,status:'teste',
+    testeAte:F.Timestamp.fromMillis(Date.now()+DIAS_TESTE_AUTO*86400000),criadaEm:F.serverTimestamp(),obs:'',contato:String(d.contato||'').slice(0,30),origem:'autocadastro'});
+  wb.set(F.doc(db,'membros',eu),{cid});
+  await wb.commit();
+  CLINICA=cid;
+  return cid;
+}
+// ---------- assinatura (Mercado Pago): o pedido fica na base da clínica; a rotina do GitHub confere e libera ----------
+function salvarPedidoCobranca(d){ return F.setDoc(ref('cobranca','pedido'),d,{merge:true}); }
+function ouvirCobranca(cb){
+  const un=F.onSnapshot(ref('cobranca','pedido'),s=>cb(s.exists()?s.data():null),e=>console.warn(e));
+  unsubs.push(un); return un;
+}
 async function trocarSenha(nova){ if(!auth.currentUser) throw new Error('Entre de novo.'); await A.updatePassword(auth.currentUser,nova); }
 async function atualizarClinica(cid,mud){
   const d=Object.assign({},mud);
@@ -679,7 +703,7 @@ async function apagarImagensExceto(manter){
 }
 
 window.Nuvem={
-  ativa:ATIVA, iniciar, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
+  ativa:ATIVA, iniciar, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
   redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
