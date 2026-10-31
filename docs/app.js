@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.20.0';
+const APP_VERSION='2.20.1';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -5050,9 +5050,9 @@ function faixaPlanoHtml(){
   const s=situacaoFicha(f), u=currentUser();
   const master=!!(u && u.tipo==='master'), pode=master&&cobrancaLigada;
   const cp=cobrancaPedido||{};
-  const emConfirmacao=pode && (cp.status==='enviado'||cp.status==='aguardando') && cp.preapprovalId;
+  const emConfirmacao=pode && (cp.status==='enviado'||cp.status==='aguardando') && (cp.preapprovalId||cp.voltouEm);
   const avisoPedido=!pode?'':emConfirmacao?'<div class="faixa-plano"><div><strong>Pagamento em confirmação.</strong> Recebemos o retorno do Mercado Pago; a liberação é automática e pode levar algumas horas.</div></div>'
-    :cp.status==='novo'&&cp.link&&!cp.preapprovalId?`<div class="faixa-plano"><div><strong>O link de pagamento está pronto.</strong> Plano ${esc((PLANOS[cp.plano]||{}).nome||'')}, ${fmtBRL((+cp.valor||0)/100)}/mês.</div><a class="btn-p" href="${esc(cp.link)}">Pagar no Mercado Pago</a></div>`
+    :cp.status==='novo'&&cp.link&&!cp.preapprovalId&&!cp.voltouEm?`<div class="faixa-plano"><div><strong>O link de pagamento está pronto.</strong> Plano ${esc((PLANOS[cp.plano]||{}).nome||'')}, ${fmtBRL((+cp.valor||0)/100)}/mês.</div><a class="btn-p" href="${esc(cp.link)}">Pagar no Mercado Pago</a></div>`
     :cp.status==='erro'&&cp.erro?`<div class="faixa-plano bloqueada" role="alert"><div><strong>Assinatura:</strong> ${esc(cp.erro)}</div><a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar com o suporte</a></div>`:'';
   if(s.cod==='suspensa'||s.cod==='vencido')
     return avisoPedido+`<div class="faixa-plano bloqueada" role="alert"><div><strong>${s.cod==='vencido'?'O período de teste terminou.':f.motivo==='pagamento'?'A assinatura está com o pagamento pendente.':'O acesso desta clínica está suspenso.'}</strong> O sistema está em modo de consulta: você vê todas as informações e pode fazer backup, mas não pode cadastrar nem alterar nada. Nenhum dado foi apagado.</div>${pode&&!emConfirmacao?(f.motivo==='pagamento'?'<a class="btn-p" href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener">Atualizar pagamento</a>':'<button class="btn-p" data-assinar>Assinar agora</button>'):''}<a class="${pode?'lnk-forte':'btn-p'}" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">${pode?'Falar com o suporte':'Quero continuar'}</a></div>`;
@@ -5080,6 +5080,13 @@ async function prepararCobranca(){
   if(cobrancaLigada && !cobrancaOuvindo){ cobrancaOuvindo=true; Nuvem.ouvirCobranca(p=>{ const mud=JSON.stringify(p)!==JSON.stringify(cobrancaPedido); cobrancaPedido=p; if(mud && view==='home' && podeAtualizarSozinho()) render(); }); }
   // volta do Mercado Pago: guarda o código da assinatura para a confirmação automática
   const qs=new URLSearchParams(location.search), pid=qs.get('preapproval_id');
+  if(!pid && qs.get('assinatura')==='mp' && cobrancaLigada){
+    // o Mercado Pago voltou sem o código: a rotina encontra a assinatura pelo plano
+    try{ history.replaceState(null,'',location.pathname+location.hash); }catch(e){}
+    try{ await Nuvem.salvarPedidoCobranca({voltouEm:Date.now(),status:'enviado'});
+      mostrarMensagem('Pagamento enviado','Recebemos o retorno do Mercado Pago. A confirmação é automática e pode levar algumas horas; quando ela chegar, a assinatura aparece como ativa e nada do que você fez se perde.'); }
+    catch(e){ console.warn(e); }
+  }
   if(pid && /^[\w-]{6,80}$/.test(pid)){
     try{ history.replaceState(null,'',location.pathname+location.hash); }catch(e){}
     try{ await Nuvem.salvarPedidoCobranca({preapprovalId:pid,voltouEm:Date.now(),status:'enviado'});
