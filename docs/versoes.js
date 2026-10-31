@@ -9,6 +9,14 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.21.0', data:'2026-10-31', itens:[
+    'Configurações → Minha assinatura (Master): plano, valor, forma de pagamento, situação (teste, pago e ativo, pendente) e quantos dias faltam para o fim do teste ou para a próxima cobrança',
+    'Sem avisos no Painel: os avisos do plano só aparecem nos 3 dias antes do fim do teste ou da renovação (cobrança recusada continua avisando)',
+    'O quadro de planos não abre sozinho para quem já tem o plano pago',
+  ]},
+  {v:'2.20.1', data:'2026-10-31', itens:[
+    'Assinatura: quando o Mercado Pago volta ao sistema sem o código da assinatura, a confirmação é feita pela busca da assinatura do plano escolhido',
+  ]},
   {v:'2.20.0', data:'2026-10-30', itens:[
     'Teste grátis sem falar com ninguém: o dono cadastra a própria clínica (e-mail e senha ou Google) e usa o plano Completo por 14 dias',
     'Demonstração em um clique (?demo=1): o sistema abre com pacientes, agenda e financeiro fictícios, sem gravar nada',

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.20.0';
+const APP_VERSION='2.21.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -2076,6 +2076,7 @@ function renderConfiguracoesPrincipal(){
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
   if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Formas de pagamento'});
   if(perms.usuarios) subTabs.push({id:'backup', label:'💾 Backup'});
+  if(u && u.tipo==='master' && fichaClinica()) subTabs.push({id:'assinatura', label:'📄 Minha assinatura'});
   if(!subTabs.find(t=>t.id===configSubTab)) configSubTab='clinica';
   const bar=subTabs.map(t=>`<button data-consub="${t.id}" class="${configSubTab===t.id?'active':''}">${t.label}</button>`).join('');
   let body='';
@@ -2084,6 +2085,7 @@ function renderConfiguracoesPrincipal(){
   else if(configSubTab==='tipodespesas') body=renderTiposDespesa();
   else if(configSubTab==='taxas') body=renderFormasPagamento();
   else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
+  else if(configSubTab==='assinatura') body=renderMinhaAssinatura();
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -5050,9 +5052,9 @@ function faixaPlanoHtml(){
   const s=situacaoFicha(f), u=currentUser();
   const master=!!(u && u.tipo==='master'), pode=master&&cobrancaLigada;
   const cp=cobrancaPedido||{};
-  const emConfirmacao=pode && (cp.status==='enviado'||cp.status==='aguardando') && cp.preapprovalId;
+  const emConfirmacao=pode && (cp.status==='enviado'||cp.status==='aguardando') && (cp.preapprovalId||cp.voltouEm);
   const avisoPedido=!pode?'':emConfirmacao?'<div class="faixa-plano"><div><strong>Pagamento em confirmação.</strong> Recebemos o retorno do Mercado Pago; a liberação é automática e pode levar algumas horas.</div></div>'
-    :cp.status==='novo'&&cp.link&&!cp.preapprovalId?`<div class="faixa-plano"><div><strong>O link de pagamento está pronto.</strong> Plano ${esc((PLANOS[cp.plano]||{}).nome||'')}, ${fmtBRL((+cp.valor||0)/100)}/mês.</div><a class="btn-p" href="${esc(cp.link)}">Pagar no Mercado Pago</a></div>`
+    :cp.status==='novo'&&cp.link&&!cp.preapprovalId&&!cp.voltouEm?`<div class="faixa-plano"><div><strong>O link de pagamento está pronto.</strong> Plano ${esc((PLANOS[cp.plano]||{}).nome||'')}, ${fmtBRL((+cp.valor||0)/100)}/mês.</div><a class="btn-p" href="${esc(cp.link)}">Pagar no Mercado Pago</a></div>`
     :cp.status==='erro'&&cp.erro?`<div class="faixa-plano bloqueada" role="alert"><div><strong>Assinatura:</strong> ${esc(cp.erro)}</div><a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar com o suporte</a></div>`:'';
   if(s.cod==='suspensa'||s.cod==='vencido')
     return avisoPedido+`<div class="faixa-plano bloqueada" role="alert"><div><strong>${s.cod==='vencido'?'O período de teste terminou.':f.motivo==='pagamento'?'A assinatura está com o pagamento pendente.':'O acesso desta clínica está suspenso.'}</strong> O sistema está em modo de consulta: você vê todas as informações e pode fazer backup, mas não pode cadastrar nem alterar nada. Nenhum dado foi apagado.</div>${pode&&!emConfirmacao?(f.motivo==='pagamento'?'<a class="btn-p" href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener">Atualizar pagamento</a>':'<button class="btn-p" data-assinar>Assinar agora</button>'):''}<a class="${pode?'lnk-forte':'btn-p'}" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">${pode?'Falar com o suporte':'Quero continuar'}</a></div>`;
@@ -5061,9 +5063,56 @@ function faixaPlanoHtml(){
     const resta=Math.max(0,5-Math.floor((Date.now()-a.problemaDesde)/86400000));
     return `<div class="faixa-plano bloqueada" role="alert"><div><strong>Não conseguimos cobrar a assinatura no Mercado Pago.</strong> Atualize o cartão ${resta?'em até '+resta+' dia'+(resta>1?'s':''):'hoje'} para o sistema não entrar em modo de consulta. Nenhum dado é apagado.</div><a class="btn-p" href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener">Atualizar pagamento</a></div>`;
   }
+  if(s.cod==='ativa'){
+    // plano pago: sem avisos; só nos 3 dias antes da próxima cobrança
+    const dr=diasAteRenovacao(f);
+    if(master && dr!==null && dr<=3) return `<div class="faixa-plano"><div><strong>Sua assinatura renova ${dr<=0?'hoje':dr===1?'amanhã':'em '+dr+' dias'}</strong> (${fmtDataBR(a.proxima.slice(0,10))}), no cartão cadastrado no Mercado Pago. Não precisa fazer nada.</div><button class="lnk-forte" data-minhaass>Minha assinatura</button></div>`;
+    return cp.status==='erro'&&cp.erro?avisoPedido:'';
+  }
+  if(s.cod==='teste' && s.dias>3) return emConfirmacao||cp.status==='erro'?avisoPedido:'';   // teste: aviso só nos 3 últimos dias
   if(s.cod==='teste' && u && (u.tipo==='master'||permsDe(u).usuarios))
-    return avisoPedido+`<div class="faixa-plano"><div><strong>Período de teste do plano ${esc(planoDe(f).nome)}:</strong> ${s.dias===1?'último dia':'faltam '+s.dias+' dias'} (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}). Ao final, seus dados continuam guardados.</div><button class="lnk-forte" data-bvplanos>Ver planos</button>${pode&&!emConfirmacao?'<button class="lnk-forte" data-assinar>Assinar agora</button>':''}<a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar sobre assinatura</a></div>`;
+    return avisoPedido+`<div class="faixa-plano"><div><strong>Período de teste do plano ${esc(planoDe(f).nome)}:</strong> ${s.dias===1?'último dia':'faltam '+s.dias+' dias'} (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}). Ao final, seus dados continuam guardados.</div>${master?'<button class="lnk-forte" data-minhaass>Minha assinatura</button>':'<button class="lnk-forte" data-bvplanos>Ver planos</button>'}${pode&&!emConfirmacao?'<button class="lnk-forte" data-assinar>Assinar agora</button>':''}<a class="lnk-forte" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">Falar sobre assinatura</a></div>`;
   return avisoPedido;
+}
+function diasAteRenovacao(f){
+  const a=(f&&f.assinatura)||{}; if(a.origem!=='mp' || !a.proxima) return null;
+  const t=Date.parse(a.proxima); if(!t) return null;
+  return Math.ceil((t-Date.now())/86400000);
+}
+function renderMinhaAssinatura(){
+  const f=fichaClinica(); if(!f) return '<div class="card"><p class="muted">Esta clínica não tem plano: acesso completo.</p></div>';
+  const s=situacaoFicha(f), a=f.assinatura||{}, cp=cobrancaPedido||{};
+  const mp=a.origem==='mp';
+  const valor=mp&&a.valor?a.valor/100:mensalidadeDe(f);
+  const mods=Object.keys(f.modulos||{}).filter(k=>f.modulos[k]&&MODULOS[k]&&!planoDe(f).recursos.includes(k)).map(k=>MODULOS[k].nome);
+  const selo={teste:['Teste grátis','sit-agendado'],ativa:[a.problemaDesde?'Pagamento pendente':'Plano pago e ativo',a.problemaDesde?'sit-faltou':'sit-chegou'],suspensa:['Suspensa','sit-faltou'],vencido:['Teste encerrado','sit-faltou']}[s.cod]||['—',''];
+  let prazo='', barra=null;
+  if(s.cod==='teste'){ const ini=f.criadaEm||(f.testeAte-14*86400000), tot=Math.max(1,f.testeAte-ini);
+    prazo=`<strong>${s.dias===1?'Último dia':'Faltam '+s.dias+' dias'}</strong> do teste grátis (até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}).`; barra=Math.min(1,Math.max(0,(Date.now()-ini)/tot)); }
+  else if(s.cod==='ativa' && mp && a.proxima){ const d=diasAteRenovacao(f);
+    prazo=`<strong>${d<=0?'Renova hoje':d===1?'Renova amanhã':'Faltam '+d+' dias'}</strong> para a próxima cobrança (${fmtDataBR(a.proxima.slice(0,10))}). A renovação é automática no cartão.`; barra=Math.min(1,Math.max(0,1-d/30)); }
+  else if(s.cod==='ativa') prazo='Assinatura mensal combinada com o OdontoGestão.';
+  else if(s.cod==='vencido') prazo='O teste terminou. O sistema está em modo de consulta até a assinatura.';
+  else prazo=f.motivo==='pagamento'?'A cobrança no cartão não foi aprovada. Atualize o pagamento no Mercado Pago para voltar a usar.':'O acesso está suspenso. Fale com o suporte.';
+  const emConf=(cp.status==='enviado'||cp.status==='aguardando')&&(cp.preapprovalId||cp.voltouEm);
+  const acoes=[];
+  if((s.cod==='teste'||s.cod==='vencido') && cobrancaLigada && !emConf) acoes.push('<button class="btn-p" data-assinar>Assinar agora</button>');
+  if(mp) acoes.push('<a class="btn-s" href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener">Cartão e recibos no Mercado Pago</a>');
+  acoes.push('<button class="btn-s" data-bvplanos>Ver planos</button>');
+  acoes.push(`<a class="btn-s" href="${msgContatoPlataforma()}" target="_blank" rel="noopener">${s.cod==='ativa'?'Mudar de plano ou cancelar':'Falar com o suporte'}</a>`);
+  return `<div class="card as-resumo">
+    <div class="as-topo"><div><div class="muted">Seu plano</div><h3 style="margin:2px 0 0">${esc(planoDe(f).nome)}</h3></div><span class="sit ${selo[1]}">${selo[0]}</span></div>
+    <div class="as-grade">
+      <div><span class="muted">Valor</span><strong>${fmtBRL(valor)}/mês</strong></div>
+      <div><span class="muted">Dentistas</span><strong>${limiteDentistas()}</strong></div>
+      <div><span class="muted">Pagamento</span><strong>${mp?'Cartão · Mercado Pago':s.cod==='ativa'?'Combinado com o suporte':'—'}</strong></div>
+      <div><span class="muted">${mp?'Assinante desde':'Clínica criada em'}</span><strong>${mp&&a.desde?new Date(a.desde).toLocaleDateString('pt-BR'):f.criadaEm?new Date(f.criadaEm).toLocaleDateString('pt-BR'):'—'}</strong></div>
+    </div>
+    ${mods.length?`<p class="muted" style="margin:10px 0 0">Módulos: ${esc(mods.join(', '))}</p>`:''}
+    <div class="as-prazo">${emConf?'<strong>Pagamento em confirmação.</strong> A liberação é automática e pode levar algumas horas.':prazo}${barra!==null&&!emConf?`<div class="as-barra"><span style="width:${Math.round(barra*100)}%"></span></div>`:''}</div>
+    <div class="as-acoes">${acoes.join('')}</div>
+  </div>
+  <p class="muted" style="font-size:13px">Avisos sobre o plano só aparecem no Painel nos 3 dias antes do fim do teste ou da próxima cobrança. Seus dados nunca são apagados.</p>`;
 }
 // ---- assinatura pelo Mercado Pago (Master): escolhe o plano, paga no Mercado Pago e a rotina confirma ----
 let cobrancaLigada=false, cobrancaPedido=null, cobrancaOuvindo=false;
@@ -5080,6 +5129,13 @@ async function prepararCobranca(){
   if(cobrancaLigada && !cobrancaOuvindo){ cobrancaOuvindo=true; Nuvem.ouvirCobranca(p=>{ const mud=JSON.stringify(p)!==JSON.stringify(cobrancaPedido); cobrancaPedido=p; if(mud && view==='home' && podeAtualizarSozinho()) render(); }); }
   // volta do Mercado Pago: guarda o código da assinatura para a confirmação automática
   const qs=new URLSearchParams(location.search), pid=qs.get('preapproval_id');
+  if(!pid && qs.get('assinatura')==='mp' && cobrancaLigada){
+    // o Mercado Pago voltou sem o código: a rotina encontra a assinatura pelo plano
+    try{ history.replaceState(null,'',location.pathname+location.hash); }catch(e){}
+    try{ await Nuvem.salvarPedidoCobranca({voltouEm:Date.now(),status:'enviado'});
+      mostrarMensagem('Pagamento enviado','Recebemos o retorno do Mercado Pago. A confirmação é automática e pode levar algumas horas; quando ela chegar, a assinatura aparece como ativa e nada do que você fez se perde.'); }
+    catch(e){ console.warn(e); }
+  }
   if(pid && /^[\w-]{6,80}$/.test(pid)){
     try{ history.replaceState(null,'',location.pathname+location.hash); }catch(e){}
     try{ await Nuvem.salvarPedidoCobranca({preapprovalId:pid,voltouEm:Date.now(),status:'enviado'});
@@ -5434,7 +5490,7 @@ function abrirBoasVindas(primeiraVez){
   const bg=document.createElement('div'); bg.className='modal-bg';
   bg.innerHTML=`<div class="modal bv" role="dialog" aria-label="Planos e novidades" style="text-align:left">
     <h2 style="margin:0 0 4px">${primeiraVez?'Bem-vindo ao OdontoGestão!':'Planos e novidades'}</h2>
-    <p class="muted" style="margin:0 0 14px">${f&&s.cod==='teste'?`Sua clínica está no <strong>teste grátis do plano ${esc(planoDe(f).nome)}</strong> até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}. `:''}Conheça os planos, o que você ganha e o que vem por aí.</p>
+    <p class="muted" style="margin:0 0 14px">${f&&s.cod==='teste'?`Sua clínica está no <strong>teste grátis do plano ${esc(planoDe(f).nome)}</strong> até ${new Date(f.testeAte).toLocaleDateString('pt-BR')}. `:f&&s.cod==='ativa'?`Sua clínica está no <strong>plano ${esc(planoDe(f).nome)}</strong>, pago e ativo. `:''}Conheça os planos, o que você ganha e o que vem por aí.</p>
     <div class="bv-planos">${Object.keys(PLANOS).map(card).join('')}</div>
     <p class="muted" style="margin:8px 0 0;font-size:12.5px">Módulos avulsos para o Essencial: ${Object.keys(MODULOS).map(k=>esc(MODULOS[k].nome)+' (+'+fmtBRL(MODULOS[k].preco)+')').join(' · ')}. Dentista a mais: +${fmtBRL(PRECO_DENTISTA_EXTRA)}.</p>
     <h3 class="bv-tit">Vantagens</h3>
@@ -5453,7 +5509,7 @@ function abrirBoasVindas(primeiraVez){
 // mostra uma vez para o Master de uma clínica cliente, depois do cadastro
 function conferirBoasVindas(){
   const u=currentUser(), f=fichaClinica();
-  if(!f || !u || u.tipo!=='master' || (state.meta&&state.meta.boasVindasVistas) || document.querySelector('.modal-bg')) return;
+  if(!f || !u || u.tipo!=='master' || f.status==='ativa' || (state.meta&&state.meta.boasVindasVistas) || document.querySelector('.modal-bg')) return;
   setTimeout(()=>{ if(view==='home' && !document.querySelector('.modal-bg')) abrirBoasVindas(true); },400);
 }
 // vitrine pública: o administrador publica as melhorias marcadas para os clientes
@@ -5508,6 +5564,7 @@ function bindSugestoes(){
   const b=document.querySelector('[data-bvabrir]'); if(b) b.addEventListener('click',()=>abrirBoasVindas(false));
   document.querySelectorAll('[data-bvplanos]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirBoasVindas(false); }));
   document.querySelectorAll('[data-assinar]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirAssinar(); }));
+  document.querySelectorAll('[data-minhaass]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); currentTab='configuracoes'; configSubTab='assinatura'; patientDetailId=null; render(); }));
 }
 
 // ---------- administrador: sugestões de todas as clínicas (produção + ambiente de teste) ----------

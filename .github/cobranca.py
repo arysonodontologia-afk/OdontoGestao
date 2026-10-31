@@ -184,12 +184,47 @@ def conferir(cid, ficha, links):
         gravar(f'clinicas/{cid}/cobranca/pedido', {'status': 'confirmada' if em_dia else ('aguardando' if st == 'pending' else 'problema'), 'erro': '', 'conferidoEm': agora()})
     print(f'{cid}: {st} {sem or "-"} -> {mud.get("status", "sem mudança")}')
 
+def ms_de(iso):
+    from datetime import datetime
+    try: return int(datetime.fromisoformat(str(iso).replace('Z', '+00:00')).timestamp() * 1000)
+    except Exception: return 0
+
+def vincular_sem_retorno(todas, links):
+    """Quem pagou mas não voltou ao sistema com o código (o Mercado Pago nem sempre devolve):
+    procura as assinaturas novas de cada plano e liga à clínica que pediu aquele plano.
+    Só liga quando há um único pedido possível para a assinatura; senão avisa para conferir à mão."""
+    usados = set(DONOS)
+    pend = {}   # id do plano -> [(criadoEm, cid)]
+    for cid, ficha in todas:
+        if ficha.get('espelho'): continue
+        ped = ler(f'clinicas/{cid}/cobranca/pedido') or {}
+        if ped.get('preapprovalId'): usados.add(ped['preapprovalId']); continue
+        if ped.get('status') not in ('novo', 'enviado') or agora() - int(ped.get('criadoEm') or 0) > 7 * 86400000: continue
+        c = str(preco(ped.get('plano', 'completo'), [k for k, v in (ped.get('modulos') or {}).items() if v], ped.get('dentistasExtras') or 0))
+        if c in links: pend.setdefault(links[c]['id'], []).append((int(ped.get('criadoEm') or 0), cid))
+    for plano_id, pedidos in pend.items():
+        r = MP.get(f'{API}/preapproval/search', params={'preapproval_plan_id': plano_id, 'limit': 50})
+        if r.status_code >= 300: print('::warning::busca de assinaturas falhou', r.status_code, r.text[:200]); continue
+        for a in sorted(r.json().get('results') or [], key=lambda x: x.get('date_created') or ''):
+            if a.get('id') in usados or a.get('status') not in ('authorized', 'pending'): continue
+            criada = ms_de(a.get('date_created'))
+            cand = [cid for (t, cid) in pedidos if t - 10 * 60000 <= criada and criada - t < 2 * 86400000]
+            if len(cand) != 1:
+                if cand: print(f'::warning::assinatura {a.get("id")} pode ser de {cand}: confira à mão')
+                continue
+            cid = cand[0]
+            gravar(f'clinicas/{cid}/cobranca/pedido', {'preapprovalId': a['id'], 'status': 'enviado', 'voltouEm': agora()})
+            usados.add(a['id']); pedidos[:] = [p for p in pedidos if p[1] != cid]
+            print(f'{cid}: assinatura {a["id"]} encontrada pela busca (a clínica não voltou com o código)')
+
 links = garantir_planos()
 erros = 0
 todas = clinicas()
 for cid, ficha in todas:   # quem já tem assinatura confirmada fica com ela
     a = ficha.get('assinatura') or {}
     if a.get('origem') == 'mp' and a.get('id'): DONOS.setdefault(a['id'], cid)
+try: vincular_sem_retorno(todas, links)
+except Exception as e: print('::warning::busca de assinaturas sem retorno:', e)
 for cid, ficha in todas:
     if ficha.get('espelho'): continue
     try: conferir(cid, ficha, links)
