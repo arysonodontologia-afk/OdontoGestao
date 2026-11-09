@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.21.0';
+const APP_VERSION='2.22.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -996,8 +996,8 @@ function agendaCardsList(list){
     return `<div class="ag-card${st==='cancelado'?' ag-cancelado':''}${agendaSelId===a.id?' ag-card-sel':''}">
       <div class="ag-time">${esc(a.horario)}<div class="ag-ate">até ${minParaHHMM(hhmmParaMin(a.horario)+duracaoDe(a))}</div></div>
       <div class="ag-info">
-        <div class="ag-pac">${esc(a.pacienteNome)} ${agBadge(a)}</div>
-        <div class="ag-proc">${esc(a.procedimentoNome)}</div>
+        <div class="ag-pac">${pacLinkAg(a)} ${agBadge(a)}</div>
+        <div class="ag-proc">${esc(motivoAg(a))}</div>
         ${extra?`<div class="ag-extra muted">${extra}</div>`:''}
       </div>
       <span class="ag-dentista">${avatarHtml(a.dentistaNome,a.dentistaId,'av-peq')}${esc(a.dentistaNome)}${nCadeiras()>1?`<span class="ag-cad">${esc(nomeCadeira(cadeiraDe(a)))}</span>`:''}</span>
@@ -1019,7 +1019,7 @@ function renderAgendaLembretes(){
   const enviados=lista.filter(a=>a.lembreteEnviadoEm).length;
   const rows=lista.map(a=>{
     const pc=pacPorId(a.pacienteId);
-    return `<tr><td>${esc(a.horario)}</td><td>${esc(a.pacienteNome)}</td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
+    return `<tr><td>${esc(a.horario)}</td><td>${pacLinkAg(a)}<div class="muted" style="font-size:12.5px">${esc(motivoAg(a))}</div></td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
     <td>${statusAg(a)==='agendado'?`<button class="btn-s" data-agresp="${a.id}|sim">Sim</button> <button class="btn-s" data-agresp="${a.id}|nao">Não</button>`:(statusAg(a)==='confirmado'?'<span class="sit sit-confirmado">Respondeu sim</span>':'<span class="sit sit-nao_vem">Respondeu não</span>')}</td>
     <td>${a.lembreteEnviadoEm?'<span class="muted">Enviado '+esc(fmtDataHoraBR(a.lembreteEnviadoEm))+'</span> ':''}<button class="btn-${a.lembreteEnviadoEm?'s':'p'}" data-agwpp="${a.id}">${a.lembreteEnviadoEm?'Reenviar':'Enviar'}</button></td></tr>`;
   }).join('');
@@ -1116,9 +1116,10 @@ function renderAgendaDia(){
         const blocos=meus.map(i=>{
           const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
           const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64;
-          return `<button class="gr-bloco gb-${st}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+AG_STATUS[st][0])}">
-            ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${esc(a.pacienteNome)}</strong></span>`
-            :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
+          return `<button class="gr-bloco gb-${st}${curto?' gr-curto':''}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+motivoAg(a)+', '+AG_STATUS[st][0])}" title="${esc(a.horario+' · '+a.pacienteNome+' · '+motivoAg(a))}">
+            ${curto?(h>=34?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong></span><span class="gb-proc gb-motivo">${esc(motivoAg(a))}</span>`
+              :`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong><span class="gb-motivo gb-motivo-l">${esc(motivoAg(a))}</span></span>`)
+            :`<span class="gb-linha"><strong>${pacNomeBloco(a)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc gb-motivo">${esc(motivoAg(a))}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
           </button>`;
         }).join('');
         const iv=(state.clinic&&state.clinic.intervalo)||{}; let pausa='';
@@ -1214,8 +1215,8 @@ function renderAgendaCelular(){
     return `${linha}<div class="cel-item${passado?' passado':''}">
       <div class="cel-hora${destaque?' destaque':''}">${esc(a.horario)}</div>
       <div class="cel-card${destaque?' destaque':''}${st==='agendado'?' tracejado':''}">
-        <div class="cel-card-l1"><strong>${esc(a.pacienteNome)}</strong>${agBadge(a)}</div>
-        <div class="cel-card-l2">${esc(a.procedimentoNome||'')}</div>
+        <div class="cel-card-l1"><strong>${pacLinkAg(a)}</strong>${agBadge(a)}</div>
+        <div class="cel-card-l2">${esc(motivoAg(a))}</div>
         <div class="cel-card-l3">${esc(a.dentistaNome||'')}, até ${minParaHHMM(fimM)}</div>
         ${!passado && st!=='nao_vem' ? `<div class="cel-card-acoes">
           <button class="btn-s" data-agwpp="${a.id}">WhatsApp</button>
@@ -2851,15 +2852,15 @@ function renderExames(p){
       <h4 style="margin:0 0 8px 0">${m.label}</h4>
       ${existing?`<img ${imgAttr(existing)} class="zoom-img" data-viewpano="${existing.id}" style="max-width:100%;border-radius:8px;border:1px solid var(--border)">
       <p class="muted" style="font-size:12px;margin:6px 0">Enviada em ${esc(existing.dataUpload)}</p>
-      <button class="btn-d" data-delpano="${existing.id}">Remover</button>`
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${window.iaBotoes?window.iaBotoes(existing):''}<button class="btn-d" data-delpano="${existing.id}">Remover</button></div>`
       :`<input type="file" accept="image/*" data-panoupload="${m.id}">`}
     </div>`;
   }).join('');
   const periList=p.exames.periapicais.slice().sort((a,b)=>(b.dataUpload||'').localeCompare(a.dataUpload||''));
   const periRows=periList.map(x=>`<div class="card" style="display:flex;gap:12px;align-items:center">
     <img ${imgAttr(x)} class="zoom-img" data-viewperi="${x.id}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
-    <div style="flex:1"><strong>Dente ${esc(x.dente)}</strong><p class="muted" style="margin:4px 0">Enviada em ${esc(x.dataUpload)}</p></div>
-    <button class="btn-d" data-delperi="${x.id}">Remover</button>
+    <div style="flex:1"><strong>Dente ${esc(x.dente)}</strong><p class="muted" style="margin:4px 0">Enviada em ${esc(x.dataUpload)}${x.analiseIA?' · análise IA'+(x.analiseIA.editado?' (traçado corrigido)':''):''}</p></div>
+    ${window.iaBotoes?window.iaBotoes(x):''}<button class="btn-d" data-delperi="${x.id}">Remover</button>
   </div>`).join('');
   return `<div class="card"><h3>Radiografias Panorâmicas</h3>
   <p class="muted">Até 3 panorâmicas por paciente — início, meio e fim do tratamento.</p>
@@ -3567,7 +3568,7 @@ async function aoMudarLogin(u){
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
         setTimeout(()=>{ try{ iniciarPlaylistAuto(); }catch(e){ console.warn(e); } },800);
-        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); },300);
+        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); try{ window.iaPreparar&&window.iaPreparar(); }catch(e){} },300);
       }
     }
     render();
@@ -3993,6 +3994,35 @@ function buscarPacientes(q){
     return false;
   }).sort((a,b)=>{ const ia=normTxt(a.nome).indexOf(t), ib=normTxt(b.nome).indexOf(t); return (ia===0?0:1)-(ib===0?0:1) || (a.nome||'').localeCompare(b.nome||''); }).slice(0,8);
 }
+// agenda → prontuário: o nome do paciente agendado abre a ficha dele; "Voltar" retorna à agenda
+let voltarParaAgenda=false;
+function pacLinkAg(a){
+  const nome=esc(a.pacienteNome||'');
+  if(!a.pacienteId || !pacPorId(a.pacienteId)) return nome;
+  return `<button type="button" class="lnk-pac" data-agpront="${esc(a.pacienteId)}" title="Abrir o prontuário de ${nome}">${nome}</button>`;
+}
+// motivo do agendamento: avaliação, procedimento do plano ou retorno de um tratamento em andamento
+function motivoAg(a){
+  const n=String(a.procedimentoNome||'').trim();
+  if(a.tipo==='avaliacao' || !n || n==='Avaliação') return 'Avaliação';
+  const ret=/Retorno sess[ãa]o/i.test(n);
+  return (ret?'Retorno · ':'')+n.replace(/ · Retorno sess[ãa]o \d+/gi,'');
+}
+// dentro do bloco da grade (que já é um botão): o nome vira um atalho clicável para o prontuário
+function pacNomeBloco(a){
+  const nome=esc(a.pacienteNome||'');
+  return a.pacienteId && pacPorId(a.pacienteId)?`<span class="lnk-pac" data-agpront="${esc(a.pacienteId)}" title="Abrir o prontuário de ${nome}">${nome}</span>`:nome;
+}
+function abrirProntuarioDaAgenda(pid){
+  const u=currentUser();
+  if(!pacPorId(pid)){ avisar('Paciente não encontrado no cadastro.'); return; }
+  if(!u || !permsDe(u).pacientes){ avisar('Seu usuário não tem acesso a Pacientes. Peça ao Master para liberar.'); return; }
+  voltarParaAgenda=true; abrirPaciente(pid);
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest && e.target.closest('[data-agpront]'); if(!b) return;
+  e.preventDefault(); e.stopPropagation(); abrirProntuarioDaAgenda(b.getAttribute('data-agpront'));
+},true);
 function abrirPaciente(id){
   currentTab='pacientes'; patientDetailId=id; patientDetailTab='dados';
   anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null; odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null;
@@ -4142,7 +4172,7 @@ function renderDashboard(){
   const linhas=agHoje.filter(a=>!dashDentista||(a.dentistaId||'?')===dashDentista).map(a=>{
     const st=statusAgExib(a), fimM=hhmmParaMin(a.horario)+duracaoDe(a);
     const passado=fimM<=agoraM || st==='atendido' || st==='faltou', ehProx=prox&&prox.id===a.id;
-    return `<tr class="${ehProx?'proximo':passado?'passado':''}" data-agabrir="${a.id}"><td class="ta-hora">${esc(a.horario)}</td><td><div class="ta-pac">${esc(a.pacienteNome)}</div><div class="ta-sub">${esc(a.procedimentoNome||'')}</div></td><td>${esc(a.dentistaNome||'')}</td><td>${agBadge(a)}${ehProx?'<span class="tag-prox">Próximo</span>':''}</td></tr>`;
+    return `<tr class="${ehProx?'proximo':passado?'passado':''}" data-agabrir="${a.id}"><td class="ta-hora">${esc(a.horario)}</td><td><div class="ta-pac">${esc(a.pacienteNome)}</div><div class="ta-sub">${esc(motivoAg(a))}</div></td><td>${esc(a.dentistaNome||'')}</td><td>${agBadge(a)}${ehProx?'<span class="tag-prox">Próximo</span>':''}</td></tr>`;
   }).join('');
   const agendaBloco=`<section class="bloco"><div class="bloco-cab"><h2>Agenda de hoje</h2>${filtro}<button class="lnk-forte"${filtro?'':' style="margin-left:auto"'} data-dashgo="agenda">Abrir agenda</button></div>
     ${linhas?`<div class="overflow"><table class="t-agenda"><thead><tr><th style="width:70px">Horário</th><th>Paciente</th><th>Dentista</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum atendimento agendado para hoje.</p></div>'}</section>`;
@@ -4467,7 +4497,7 @@ function renderPatientDetail(id){
   else body=renderStub(tabs.find(t=>t.id===patientDetailTab)?.label||'');
   const age=calcAge(p.nascimento);
   return `<div class="card" style="display:flex;justify-content:space-between;align-items:center">
-    <div><button id="btnBackPatients" class="btn-s">← Voltar</button></div>
+    <div><button id="btnBackPatients" class="btn-s">${voltarParaAgenda?'← Voltar à agenda':'← Voltar'}</button></div>
     <div style="text-align:right"><strong>Prontuário Odontológico — ${esc(p.nome)}</strong><div class="muted">${age!==null?age+' anos':''}</div></div>
   </div>
   ${bannerAtencao(p)}
@@ -5207,6 +5237,8 @@ const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','V
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
 // melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
 const RM_PREPARADAS=[
+  {chave:'analise-radiografia',titulo:'Análise de radiografia com IA (apoio ao diagnóstico)',categoria:'Clínico',prioridade:'alta',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
+   descricao:'Personalização: em Prontuário → Exames, cada radiografia ganha "Analisar com IA". A IA (Claude, via Cloudflare) sugere achados com a região marcada, o número de raízes e condutos e o traçado aproximado (raiz em linha contínua, conduto tracejado). O dentista confere, corrige o traçado e salva junto com a radiografia. Apoio ao diagnóstico: a decisão é do profissional. Precisa dos segredos CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID e ANTHROPIC_API_KEY no GitHub.'},
   {chave:'desconto-master-motivo',titulo:'Master: desconto de até 100% com motivo obrigatório',categoria:'Financeiro',prioridade:'media',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
    descricao:'Personalização: na base em que estiver ligada, o Master pode dar desconto de até 100% no orçamento, mas só salva informando o motivo do desconto.'},
   {chave:'agenda-diaria-dentista',titulo:'Agenda do dia para o dentista às 07:30',categoria:'Comunicação',prioridade:'alta',status:'pronta',tipo:'geral',alvo:'Todos os planos',
@@ -5370,7 +5402,8 @@ function abrirGerirClinica(id){
       novas.filter(n=>!antes.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'ativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
       antes.filter(n=>!novas.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'desativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
       const info=Object.assign({},f.personalizacoesInfo||{}); novas.forEach(n=>{ info[n]=tit(n)||info[n]||''; });
-      Object.assign(mud,{personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info});
+      const chaves=Object.assign({},f.personalizacoesChaves||{}); novas.forEach(n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===n); if(it&&it.chave) chaves[n]=it.chave; });
+      Object.assign(mud,{personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info,personalizacoesChaves:chaves});
     }
     gravar(mud,'Plano e personalizações atualizados. A clínica vê a mudança na hora.');
   });
@@ -5782,13 +5815,13 @@ function renderPlatVersoes(){
   ${teste?publicacaoHtml():''}
   ${teste?`<section class="bloco"><div class="bloco-cab"><h2>Aguardando aprovação</h2></div><div class="bloco-corpo">${pend.length?historicoVersoesHtml(0,()=>true,pend):'<p class="muted" style="margin:0">Nada pendente: o teste está igual à produção.</p>'}</div></section>`:''}
   <section class="bloco"><div class="bloco-cab"><h2>Versão de cada clínica</h2></div>
-    ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th></tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
-      return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(rotuloVersaoDe(f))}</td><td>${p.length?p.map(n=>`<div><span class="nv-num">#${n}</span> ${esc(tituloN(n)||(f.personalizacoesInfo||{})[n]||'')}</div>`).join(''):'<span class="muted">Nenhuma (só a versão comum)</span>'}</td></tr>`; }).join('')}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada.</p></div>'}
+    ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th>${Nuvem.ambienteTeste()?'<th></th>':''}</tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
+      return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(rotuloVersaoDe(f))}</td><td>${p.length?p.map(n=>`<div><span class="nv-num">#${n}</span> ${esc(tituloN(n)||(f.personalizacoesInfo||{})[n]||'')}</div>`).join(''):'<span class="muted">Nenhuma (só a versão comum)</span>'}</td>${Nuvem.ambienteTeste()?`<td class="actions"><button class="btn-s" data-platgerir="${esc(f.id)}">Gerenciar</button></td>`:''}</tr>`; }).join('')}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada.</p></div>'}
     <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">A Plataforma mostra só a versão e as personalizações de cada clínica. Os dados delas (pacientes, financeiro) não aparecem aqui.</p></div></section>
   <section class="bloco"><div class="bloco-cab"><h2>Como fazer uma personalização</h2></div><div class="bloco-corpo"><ol class="nv-passos">
     <li>No quadro <strong>Implementação</strong>, crie o item com tipo <strong>Personalização</strong> e marque a clínica que pediu. Ele recebe um número (#N).</li>
     <li>Eu programo a personalização no código comum, desligada por padrão, e publico no <strong>ambiente de teste</strong>.</li>
-    <li>No teste, crie (ou use) uma clínica de teste com os <strong>dados fictícios</strong>, ligue a personalização #N nela (Clínicas → Gerenciar) e valide.</li>
+    <li>No teste, crie (ou use) uma clínica de teste com os <strong>dados fictícios</strong>, ligue a personalização #N nela (Versões → Versão de cada clínica → Gerenciar) e valide.</li>
     <li>Aprovado: publico na produção (a versão vai para todos, mas a personalização fica desligada) e você liga a #N <strong>só na clínica do cliente</strong>. Ela passa a mostrar "${esc('Ver '+vCurta(APP_VERSION))} (N)".</li>
     <li>Ligar e desligar fica registrado no histórico da clínica.</li></ol>
     ${pers.length?`<p class="muted" style="margin:8px 0 0">Personalizações no quadro: ${pers.map(i=>'#'+(i.numero||'?')+' '+esc(i.titulo)).join(' · ')}</p>`:''}
@@ -6673,7 +6706,7 @@ function bindEvents(){
   });
 
   document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
-    currentTab=b.getAttribute('data-tab'); patientDetailId=null; render();
+    currentTab=b.getAttribute('data-tab'); patientDetailId=null; voltarParaAgenda=false; render();
   }));
 
   const btnNewUser=document.getElementById('btnNewUser');
@@ -6853,6 +6886,7 @@ function bindEvents(){
       saveData(); render();
     }catch(e){ console.error(e); avisar('Não foi possível guardar a imagem (armazenamento cheio ou bloqueado). Exporte um backup e libere espaço no computador.'); }
   });
+  if(window.iaLigar){ const pIA=state.patients.find(x=>x.id===patientDetailId); if(pIA && pIA.exames) window.iaLigar(pIA); }
   document.querySelectorAll('[data-delperi]').forEach(b=>b.addEventListener('click',()=>{
     customConfirm('Remover esta radiografia periapical?', ()=>{
       const p=state.patients.find(x=>x.id===patientDetailId);
@@ -7306,7 +7340,7 @@ function bindEvents(){
     saveData(); render();
   }));
   const btnBackPatients=document.getElementById('btnBackPatients');
-  if(btnBackPatients) btnBackPatients.addEventListener('click',()=>{ patientDetailId=null; anamneseOpenId=null; render(); });
+  if(btnBackPatients) btnBackPatients.addEventListener('click',()=>{ patientDetailId=null; anamneseOpenId=null; if(voltarParaAgenda){ voltarParaAgenda=false; currentTab='agenda'; } render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-opentab]').forEach(b=>b.addEventListener('click',()=>{
     patientDetailTab=b.getAttribute('data-opentab'); anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null;
     odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null; render();

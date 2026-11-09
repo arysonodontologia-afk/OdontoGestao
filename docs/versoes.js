@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.22.0', data:'2026-11-09', itens:[
+    'Agenda: o motivo do agendamento (avaliação, procedimento ou retorno) aparece logo abaixo do nome do paciente, também nos horários curtos da grade',
+    'Agenda: clicar no nome do paciente agendado abre o prontuário dele; "Voltar à agenda" retorna para a agenda',
+    'Personalização "Análise de radiografia com IA" (só nas clínicas escolhidas): achados sugeridos, número de raízes e condutos e traçado (raiz contínua, conduto tracejado) que o dentista corrige e salva. Apoio ao diagnóstico.',
+  ]},
   {v:'2.21.0', data:'2026-10-31', itens:[
     'Configurações → Minha assinatura (Master): plano, valor, forma de pagamento, situação (teste, pago e ativo, pendente) e quantos dias faltam para o fim do teste ou para a próxima cobrança',
     'Sem avisos no Painel: os avisos do plano só aparecem nos 3 dias antes do fim do teste ou da renovação (cobrança recusada continua avisando)',

@@ -377,6 +377,7 @@ function ouvirCobranca(cb){
   const un=F.onSnapshot(ref('cobranca','pedido'),s=>cb(s.exists()?s.data():null),e=>console.warn(e));
   unsubs.push(un); return un;
 }
+async function tokenId(){ if(!usuario) throw new Error('Sessão encerrada. Entre de novo.'); return usuario.getIdToken(); }
 async function trocarSenha(nova){ if(!auth.currentUser) throw new Error('Entre de novo.'); await A.updatePassword(auth.currentUser,nova); }
 async function atualizarClinica(cid,mud){
   const d=Object.assign({},mud);
@@ -703,7 +704,7 @@ async function apagarImagensExceto(manter){
 }
 
 window.Nuvem={
-  ativa:ATIVA, iniciar, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
+  ativa:ATIVA, iniciar, tokenId, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
   redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,

@@ -1,0 +1,45 @@
+# Publica o Worker da análise de radiografia (Cloudflare) e grava o endereço no Firebase.
+# branch teste -> odontogestao-ia-teste (projeto de teste); main -> odontogestao-ia (produção).
+# Segredos: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, ANTHROPIC_API_KEY (e os do Firebase).
+name: Worker da análise de radiografia
+on:
+  push:
+    branches: [main, teste]
+    paths: ['ia/**', '.github/workflows/ia-worker.yml', '.github/gravar_ia.py']
+  workflow_dispatch:
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Conferir segredos
+        id: seg
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "Faltam os segredos do Cloudflare: Worker não publicado."; echo "ok=nao" >> $GITHUB_OUTPUT; else echo "ok=sim" >> $GITHUB_OUTPUT; fi
+      - name: Publicar o Worker
+        if: steps.seg.outputs.ok == 'sim'
+        id: pub
+        working-directory: ia
+        run: |
+          AMB=""; [ "${GITHUB_REF_NAME}" = "teste" ] && AMB="--env teste"
+          npx --yes wrangler@3.99.0 deploy $AMB 2>&1 | tee ../deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' ../deploy.log | head -1)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          if [ -n "$ANTHROPIC_API_KEY" ]; then printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@3.99.0 secret put ANTHROPIC_API_KEY $AMB; else echo "Sem ANTHROPIC_API_KEY: o Worker responde que a análise não foi configurada."; fi
+      - name: Gravar o endereço no Firebase
+        if: steps.seg.outputs.ok == 'sim'
+        env:
+          URL_IA: ${{ steps.pub.outputs.url }}
+          CHAVE: ${{ github.ref_name == 'teste' && secrets.FIREBASE_SERVICE_ACCOUNT_TESTE || secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJETO: ${{ github.ref_name == 'teste' && 'odontogestao-teste' || 'odontogestao-c8218' }}
+        run: |
+          pip install --quiet google-auth requests
+          python3 .github/gravar_ia.py
