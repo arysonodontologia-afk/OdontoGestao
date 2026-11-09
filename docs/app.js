@@ -5372,7 +5372,8 @@ function abrirGerirClinica(id){
       novas.filter(n=>!antes.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'ativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
       antes.filter(n=>!novas.includes(n)).forEach(n=>hist.push({n,titulo:tit(n),acao:'desativada',em:Date.now(),versao:APP_VERSION,ambiente:Nuvem.ambienteTeste()?'teste':'producao'}));
       const info=Object.assign({},f.personalizacoesInfo||{}); novas.forEach(n=>{ info[n]=tit(n)||info[n]||''; });
-      Object.assign(mud,{personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info});
+      const chaves=Object.assign({},f.personalizacoesChaves||{}); novas.forEach(n=>{ const it=(platRoadmap||[]).find(i=>+i.numero===n); if(it&&it.chave) chaves[n]=it.chave; });
+      Object.assign(mud,{personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info,personalizacoesChaves:chaves});
     }
     gravar(mud,'Plano e personalizações atualizados. A clínica vê a mudança na hora.');
   });
@@ -5784,13 +5785,13 @@ function renderPlatVersoes(){
   ${teste?publicacaoHtml():''}
   ${teste?`<section class="bloco"><div class="bloco-cab"><h2>Aguardando aprovação</h2></div><div class="bloco-corpo">${pend.length?historicoVersoesHtml(0,()=>true,pend):'<p class="muted" style="margin:0">Nada pendente: o teste está igual à produção.</p>'}</div></section>`:''}
   <section class="bloco"><div class="bloco-cab"><h2>Versão de cada clínica</h2></div>
-    ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th></tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
-      return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(rotuloVersaoDe(f))}</td><td>${p.length?p.map(n=>`<div><span class="nv-num">#${n}</span> ${esc(tituloN(n)||(f.personalizacoesInfo||{})[n]||'')}</div>`).join(''):'<span class="muted">Nenhuma (só a versão comum)</span>'}</td></tr>`; }).join('')}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada.</p></div>'}
+    ${clin.length?`<div class="overflow"><table><thead><tr><th>Clínica</th><th>Versão</th><th>Personalizações ativas</th>${Nuvem.ambienteTeste()?'<th></th>':''}</tr></thead><tbody>${clin.map(f=>{ const p=personalizacoesDe(f);
+      return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(rotuloVersaoDe(f))}</td><td>${p.length?p.map(n=>`<div><span class="nv-num">#${n}</span> ${esc(tituloN(n)||(f.personalizacoesInfo||{})[n]||'')}</div>`).join(''):'<span class="muted">Nenhuma (só a versão comum)</span>'}</td>${Nuvem.ambienteTeste()?`<td class="actions"><button class="btn-s" data-platgerir="${esc(f.id)}">Gerenciar</button></td>`:''}</tr>`; }).join('')}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhuma clínica criada.</p></div>'}
     <div class="bloco-corpo"><p class="muted" style="margin:0;font-size:12.5px">A Plataforma mostra só a versão e as personalizações de cada clínica. Os dados delas (pacientes, financeiro) não aparecem aqui.</p></div></section>
   <section class="bloco"><div class="bloco-cab"><h2>Como fazer uma personalização</h2></div><div class="bloco-corpo"><ol class="nv-passos">
     <li>No quadro <strong>Implementação</strong>, crie o item com tipo <strong>Personalização</strong> e marque a clínica que pediu. Ele recebe um número (#N).</li>
     <li>Eu programo a personalização no código comum, desligada por padrão, e publico no <strong>ambiente de teste</strong>.</li>
-    <li>No teste, crie (ou use) uma clínica de teste com os <strong>dados fictícios</strong>, ligue a personalização #N nela (Clínicas → Gerenciar) e valide.</li>
+    <li>No teste, crie (ou use) uma clínica de teste com os <strong>dados fictícios</strong>, ligue a personalização #N nela (Versões → Versão de cada clínica → Gerenciar) e valide.</li>
     <li>Aprovado: publico na produção (a versão vai para todos, mas a personalização fica desligada) e você liga a #N <strong>só na clínica do cliente</strong>. Ela passa a mostrar "${esc('Ver '+vCurta(APP_VERSION))} (N)".</li>
     <li>Ligar e desligar fica registrado no histórico da clínica.</li></ol>
     ${pers.length?`<p class="muted" style="margin:8px 0 0">Personalizações no quadro: ${pers.map(i=>'#'+(i.numero||'?')+' '+esc(i.titulo)).join(' · ')}</p>`:''}
