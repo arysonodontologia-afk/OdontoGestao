@@ -3482,6 +3482,7 @@ function bindNuvemEvents(){
 const PROD_URL='https://odontogestao-c8218.web.app';
 let versoesBase=null, versaoBaseConferidaEm=0;
 function versaoAlvoDe(pv,cid){ return pv ? (((pv.clinicas||{})[cid]) || pv.padrao || null) : null; }
+async function versaoMaisNova(){ try{ const r=await fetch('/versoes.json?t='+Date.now(),{cache:'no-store'}); if(r.ok){ const j=await r.json(); return (j&&j.atual)||null; } }catch(e){} return null; }
 async function urlDaVersao(v){
   const ler=async u=>{ try{ const r=await fetch(u+'versao.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return null; const j=await r.json(); return j&&j.versao; }catch(e){ return null; } };
   try{ const r=await fetch('/versoes.json?t='+Date.now(),{cache:'no-store'}); if(r.ok){ const j=await r.json();
@@ -3494,7 +3495,7 @@ async function conferirVersaoBase(){
   if(!NUVEM || Nuvem.ambienteTeste() || Nuvem.emEspelho() || !/^https?:/.test(location.protocol)) return false;
   versaoBaseConferidaEm=Date.now();
   const pv=await Nuvem.lerPlataforma('versoes'); versoesBase=pv;
-  const alvo=versaoAlvoDe(pv,Nuvem.clinicaId());
+  const alvo=ehVitalicia(fichaPers())?await versaoMaisNova():versaoAlvoDe(pv,Nuvem.clinicaId());
   if(!alvo || alvo===APP_VERSION){ try{ sessionStorage.removeItem('odonto-redir'); }catch(e){} return false; }
   const url=await urlDaVersao(alvo);
   if(!url){ console.warn('Versão '+alvo+' não está publicada; seguindo na '+APP_VERSION); return false; }
@@ -5064,6 +5065,8 @@ const PRECO_DENTISTA_EXTRA=19.90;
 // ficha com plano (a clínica principal, do Master, pode ter ficha "semPlano" só para personalizações)
 function fichaPers(){ return NUVEM&&window.Nuvem&&Nuvem.ficha?Nuvem.ficha():null; }
 function fichaClinica(){ const f=fichaPers(); return f&&!f.semPlano?f:null; }
+// clínica do dono da plataforma: grátis e vitalícia, sempre na versão mais nova e com todas as personalizações
+function ehVitalicia(f){ return !!(f && f.semPlano===true && f.todasPersonalizacoes===true); }
 function planoDe(f){ return PLANOS[f&&f.plano]||PLANOS.completo; }
 function temRecurso(r){ const f=fichaClinica(); if(!f) return true; return planoDe(f).recursos.includes(r) || !!(f.modulos&&f.modulos[r]); }
 function limiteDentistas(){ const f=fichaClinica(); return f?planoDe(f).dentistas+(+f.dentistasExtras||0):Infinity; }
@@ -5721,9 +5724,9 @@ function vCurta(v){ return String(v||'').replace(/\.0$/,''); }
 function cmpVer(a,b){ const x=String(a||'0').split('.').map(Number), y=String(b||'0').split('.').map(Number); for(let i=0;i<3;i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d; } return 0; }
 function personalizacoesDe(f){ return [...new Set(((f&&f.personalizacoes)||[]).map(Number).filter(Boolean))].sort((a,b)=>a-b); }
 // para usar no código de uma personalização: if(temPersonalizacao(184)){ ... }
-function temPersonalizacao(n){ return personalizacoesDe(fichaPers()).includes(+n); }
+function temPersonalizacao(n){ return ehVitalicia(fichaPers()) || personalizacoesDe(fichaPers()).includes(+n); }
 function temPersonalizacaoChave(ch){
-  const f=fichaPers(); if(!f) return false; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
+  const f=fichaPers(); if(!f) return false; if(ehVitalicia(f)) return true; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
   const prep=RM_PREPARADAS.find(p=>p.chave===ch);
   return ativos.some(n=>ch2[n]===ch || (prep && info[n]===prep.titulo));
 }
@@ -6074,7 +6077,9 @@ function renderPlatClientes(){
       <td>${esc(planoDe(f).nome)}${Object.keys(f.modulos||{}).filter(k=>f.modulos[k]).length?`<div class="muted" style="font-size:12px">+ ${esc(Object.keys(f.modulos).filter(k=>f.modulos[k]).map(k=>MODULOS[k]?MODULOS[k].nome:k).join(', '))}</div>`:''}</td><td><span class="sit ${cls}">${esc(s.txt)}</span></td>
       <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f,versaoDoCliente(f.id)||APP_VERSION))}</strong>${versaoDoCliente(f.id)&&prodVersoes&&prodVersoes.atual&&cmpVer(versaoDoCliente(f.id),prodVersoes.atual)<0?' <span class="sit sit-nao_vem">atualização disponível</span>':''}${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
       <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
-  const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"><input type="checkbox" data-envsel="principal" aria-label="Selecionar sua clínica" ${envSelecionados.has('principal')?'checked':''}></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(outroPrincipal,versaoDoCliente('principal')||APP_VERSION))}</strong>${(()=>{ const p=personalizacoesDe(outroPrincipal); return p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((outroPrincipal.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'; })()}</td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button><button class="btn-s" data-esppers="principal">Personalizações</button></td></tr>`;
+  const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td style="white-space:nowrap"><strong>${esc('Ver '+vCurta((ehVitalicia(outroPrincipal)&&prodVersoes&&prodVersoes.atual)||versaoDoCliente('principal')||APP_VERSION))}</strong><div class="muted" style="font-size:12px">${ehVitalicia(outroPrincipal)?'Acesso vitalício: sempre a versão mais nova e todas as personalizações':'Ligando o acesso vitalício…'}</div></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
+  if(outroLigado && !ehVitalicia(outroPrincipal) && !outroPrincipal.plano && !outroPrincipal.status && !renderPlatClientes._vit){ renderPlatClientes._vit=true;
+    Nuvem.gravarPrincipalOutro({todasPersonalizacoes:true}).then(()=>{ Object.assign(outroPrincipal,{semPlano:true,todasPersonalizacoes:true}); if(currentTab==='plataforma'&&platAba==='clientes') render(); }).catch(e=>console.warn('acesso vitalício',e)); }
   return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-p" data-novabase style="margin-left:auto">+ Nova base de cliente</button><button class="btn-s" data-ponterecarregar>Atualizar</button></div>
     ${envioVersaoHtml()}
     <div class="overflow"><table><thead><tr><th class="env-sel"><input type="checkbox" data-envtodos aria-label="Selecionar todos"></th><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão na produção e melhorias</th><th></th></tr></thead><tbody>${minha}${linhas}</tbody></table></div>
