@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.22.0';
+const APP_VERSION='2.23.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -53,6 +53,7 @@ let saveChain=Promise.resolve();
 function saveData(){
   if(NUVEM && clinicaBloqueada()){ avisarBloqueio(); try{ Nuvem.restaurar(state); }catch(e){} setTimeout(()=>{ if(view==='home') render(); },0); return; }
   if(NUVEM){
+    try{ if(window.waAposSalvar) window.waAposSalvar(); }catch(e){}
     try{ Nuvem.salvar(state); }
     catch(e){ console.error(e); saveErro='falha ao preparar o envio para a nuvem ('+e.message+')'; atualizarBannerSalvar(); }
     return;
@@ -1478,6 +1479,7 @@ function openAgendamentoForm(a){
         tratNovos=null;
       }
       if(isNew) state.agendamentos.push(data); else Object.assign(a,data);
+      if(isNew || data.remarcacoes){ try{ if(window.waNovaConsulta) window.waNovaConsulta(isNew?data:a); }catch(e){ console.warn(e); } }
       if(paciente && (isNew || statusAg(a)!=='cancelado' || data.remarcacoes)){
         paciente.evolucao=paciente.evolucao||[];
         let evol=paciente.evolucao.find(e=>e.agendamentoId===data.id);
@@ -2077,6 +2079,7 @@ function renderConfiguracoesPrincipal(){
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
   if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Formas de pagamento'});
   if(perms.usuarios) subTabs.push({id:'backup', label:'💾 Backup'});
+  if(u && u.tipo==='master' && window.waLiberado && window.waLiberado()) subTabs.push({id:'whatsapp', label:'💬 WhatsApp automático'});
   if(u && u.tipo==='master' && fichaClinica()) subTabs.push({id:'assinatura', label:'📄 Minha assinatura'});
   if(!subTabs.find(t=>t.id===configSubTab)) configSubTab='clinica';
   const bar=subTabs.map(t=>`<button data-consub="${t.id}" class="${configSubTab===t.id?'active':''}">${t.label}</button>`).join('');
@@ -2087,6 +2090,7 @@ function renderConfiguracoesPrincipal(){
   else if(configSubTab==='taxas') body=renderFormasPagamento();
   else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
   else if(configSubTab==='assinatura') body=renderMinhaAssinatura();
+  else if(configSubTab==='whatsapp') body=window.waTelaHtml?window.waTelaHtml():'';
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -3568,7 +3572,7 @@ async function aoMudarLogin(u){
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
         setTimeout(()=>{ try{ iniciarPlaylistAuto(); }catch(e){ console.warn(e); } },800);
-        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); try{ window.iaPreparar&&window.iaPreparar(); }catch(e){} },300);
+        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); try{ window.iaPreparar&&window.iaPreparar(); }catch(e){} try{ window.waIniciar&&window.waIniciar(); }catch(e){} },300);
       }
     }
     render();
@@ -5237,6 +5241,8 @@ const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','V
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
 // melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
 const RM_PREPARADAS=[
+  {chave:'whatsapp-automatico',titulo:'WhatsApp automático (avisos e respostas pelo número da clínica)',categoria:'Comunicação',prioridade:'alta',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
+   descricao:'Personalização (piloto): Configurações → WhatsApp automático. Avisos pelo número da própria clínica (API oficial da Meta, via Cloudflare): confirmação ao marcar a consulta, lembrete na véspera com os botões Confirmo / Preciso remarcar (a resposta muda a agenda e aparece no Painel) e agenda do dia às 07:30 para os dentistas. Modo simulação para testar sem enviar. Ver wa/LEIAME.md.'},
   {chave:'analise-radiografia',titulo:'Análise de radiografia com IA (apoio ao diagnóstico)',categoria:'Clínico',prioridade:'alta',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
    descricao:'Personalização: em Prontuário → Exames, cada radiografia ganha "Analisar com IA". A IA (Claude, via Cloudflare) sugere achados com a região marcada, o número de raízes e condutos e o traçado aproximado (raiz em linha contínua, conduto tracejado). O dentista confere, corrige o traçado e salva junto com a radiografia. Apoio ao diagnóstico: a decisão é do profissional. Precisa dos segredos CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID e ANTHROPIC_API_KEY no GitHub.'},
   {chave:'desconto-master-motivo',titulo:'Master: desconto de até 100% com motivo obrigatório',categoria:'Financeiro',prioridade:'media',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
@@ -7278,6 +7284,7 @@ function bindEvents(){
   document.querySelectorAll('[data-consub]').forEach(b=>b.addEventListener('click',()=>{
     configSubTab=b.getAttribute('data-consub'); render();
   }));
+  if(currentTab==='configuracoes' && configSubTab==='whatsapp' && window.waTelaLigar) window.waTelaLigar();
   const btnNewTipoDesp=document.getElementById('btnNewTipoDesp');
   if(btnNewTipoDesp) btnNewTipoDesp.addEventListener('click',()=>openTipoDespForm(null));
   document.querySelectorAll('[data-edittipodesp]').forEach(b=>b.addEventListener('click',()=>{

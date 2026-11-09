@@ -377,6 +377,14 @@ function ouvirCobranca(cb){
   const un=F.onSnapshot(ref('cobranca','pedido'),s=>cb(s.exists()?s.data():null),e=>console.warn(e));
   unsubs.push(un); return un;
 }
+// ---------- WhatsApp automático: documentos da clínica usados pelo Worker (wa/worker.js) ----------
+async function waLer(col,id){ try{ const s=await F.getDoc(ref(col,id)); return s.exists()?s.data():null; }catch(e){ return null; } }
+function waGravar(col,id,dados,mesclar){ return F.setDoc(ref(col,id),dados,mesclar?{merge:true}:undefined); }
+function waApagar(col,id){ return F.deleteDoc(ref(col,id)); }
+function waOuvir(col,cb){
+  const un=F.onSnapshot(colRef(col),s=>{ const l=[]; (s.docs||[]).forEach(d=>l.push(Object.assign({id:d.id},d.data()))); cb(l); },e=>console.warn('waOuvir',col,e));
+  unsubs.push(un); return un;
+}
 async function tokenId(){ if(!usuario) throw new Error('Sessão encerrada. Entre de novo.'); return usuario.getIdToken(); }
 async function trocarSenha(nova){ if(!auth.currentUser) throw new Error('Entre de novo.'); await A.updatePassword(auth.currentUser,nova); }
 async function atualizarClinica(cid,mud){
@@ -704,7 +712,7 @@ async function apagarImagensExceto(manter){
 }
 
 window.Nuvem={
-  ativa:ATIVA, iniciar, tokenId, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
+  ativa:ATIVA, iniciar, tokenId, waLer, waGravar, waApagar, waOuvir, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
   redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,

@@ -903,3 +903,22 @@ tr.pf-venc td{color:var(--danger)}
 .gb-motivo-l::before{content:"· "}
 .gr-bloco.gr-curto{padding:3px 8px;gap:0;line-height:1.25;justify-content:center}
 .gr-bloco.gr-curto .gb-motivo{font-size:11.5px;line-height:1.2}
+/* WhatsApp automático */
+.wa-cfg h4{margin:18px 0 6px;font-size:14.5px}
+.wa-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.wa-chave{display:flex;align-items:center;gap:8px;font-weight:600;margin:0;white-space:nowrap}
+.wa-chave input,.wa-modo input{width:auto;margin:0}
+.wa-modo{display:grid;gap:6px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md)}
+.wa-modo label{display:flex;align-items:baseline;gap:8px;font-weight:400;margin:0}
+.wa-conexao{margin:6px 0 0;border:1px solid var(--border);border-radius:var(--r-md);padding:8px 12px}
+.wa-conexao summary{cursor:pointer;font-weight:600;font-size:14px}
+.wa-logs{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.wa-log{border-bottom:1px solid var(--border);padding-bottom:12px}
+.wa-log:last-child{border-bottom:0;padding-bottom:0}
+.wa-log-cab{font-size:13.5px;margin-bottom:6px}
+.wa-bolha{display:inline-block;max-width:560px;background:#DCF8C6;color:#111B21;border-radius:10px 10px 10px 2px;padding:8px 12px;font-size:14px;line-height:1.45;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+.wa-botoes{display:flex;gap:6px;margin-top:8px;border-top:1px solid rgba(0,0,0,.08);padding-top:6px}
+.wa-botoes span{flex:1;text-align:center;color:#027EB5;font-weight:600;font-size:13.5px;background:rgba(255,255,255,.6);border-radius:6px;padding:4px 6px}
+.wa-log-erro .wa-bolha{background:#FDE2E1}
+.wa-sim{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:13px}
+.wa-sim .btn-s{padding:4px 10px;font-size:13px}
