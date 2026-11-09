@@ -164,6 +164,40 @@ service cloud.firestore {
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
 
+      // WhatsApp automático (wa/worker.js usa uma conta de serviço; o aplicativo só o que está abaixo).
+      // config: todos da clínica leem (para saber o que está ligado); só o Master altera.
+      match /wa/{doc} {
+        allow read: if membro() || admin();
+        allow write: if master() && doc == 'config';
+      }
+      // token da Meta: o Master grava e ninguém lê pelo aplicativo (só o Worker, pela conta de serviço).
+      match /waSegredo/{doc} {
+        allow create, update: if master() && doc == 'token'
+          && request.resource.data.keys().hasOnly(['token', 'em'])
+          && request.resource.data.token is string && request.resource.data.token.size() < 1000;
+      }
+      // resumo da agenda por dia (só o necessário para os avisos) e fila de "consulta agendada"
+      match /waDia/{data} {
+        allow read, write: if membro();
+      }
+      match /waFila/{id} {
+        allow create: if membro() && request.resource.data.keys().hasOnly(['agId', 'data', 'horario', 'pacienteNome', 'telefone', 'dentistaNome', 'motivo', 'criadoEm']);
+      }
+      // o que foi enviado (ou simulado): só leitura no aplicativo
+      match /waLog/{id} {
+        allow read: if membro();
+        allow delete: if master();
+      }
+      // respostas dos pacientes: o Worker grava; o aplicativo aplica na agenda e apaga.
+      // Em simulação, a própria clínica pode criar uma resposta de teste.
+      match /waRespostas/{id} {
+        allow read, delete: if membro();
+        allow create: if membro()
+          && get(/databases/$(database)/documents/clinicas/$(cid)/wa/config).data.get('simulacao', false) == true
+          && request.resource.data.keys().hasOnly(['agId', 'acao', 'telefone', 'em'])
+          && request.resource.data.acao in ['confirmar', 'remarcar'];
+      }
+
       // Assinatura pelo Mercado Pago: o Master registra o plano escolhido e, na volta
       // do pagamento, o código da assinatura. Quem confirma e libera a clínica é a
       // rotina do GitHub (conta de serviço), que confere o valor no Mercado Pago.
