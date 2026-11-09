@@ -97,6 +97,8 @@ export default {
 };
 
 function temPersonalizacao(f) {
+  // clínica do dono da plataforma (grátis e vitalícia): todas as personalizações
+  if (f.semPlano && f.semPlano.booleanValue === true && f.todasPersonalizacoes && f.todasPersonalizacoes.booleanValue === true) return true;
   const ativos = ((f.personalizacoes && f.personalizacoes.arrayValue && f.personalizacoes.arrayValue.values) || [])
     .map(v => String(v.integerValue || v.doubleValue || v.stringValue || ''));
   const chaves = (f.personalizacoesChaves && f.personalizacoesChaves.mapValue && f.personalizacoesChaves.mapValue.fields) || {};

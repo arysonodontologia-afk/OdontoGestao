@@ -14,7 +14,7 @@ async function urlIA(){
   iaUrlLida=true; return iaUrl;
 }
 function iaLiberada(){
-  if(!NUVEM || !fichaClinica() || !temPersonalizacaoChave(CHAVE_IA)) return false;
+  if(!NUVEM || !fichaPers() || !temPersonalizacaoChave(CHAVE_IA)) return false;
   const u=currentUser(); return !!u && (u.tipo==='master' || ehDentista(u));
 }
 window.iaLiberada=iaLiberada;

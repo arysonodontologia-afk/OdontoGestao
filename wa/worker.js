@@ -137,7 +137,7 @@ async function diagnostico(env) {
   return out;
 }
 function liberada(f, agora) {
-  if (f.status === 'ativa') return true;
+  if (f.status === 'ativa' || f.semPlano === true) return true;   // semPlano: clínica principal (do Master)
   if (f.status === 'teste') { const t = typeof f.testeAte === 'string' ? Date.parse(f.testeAte) : +f.testeAte; return !!t && t > agora; }
   return false;
 }

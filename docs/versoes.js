@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.24.1', data:'2026-11-09', itens:[
+    'Sua clínica (do dono da plataforma): acesso grátis e vitalício, sempre na versão mais nova e com todas as personalizações ligadas (WhatsApp automático, análise de radiografia com IA e as próximas)',
+  ]},
   {v:'2.24.0', data:'2026-11-09', itens:[
     'WhatsApp automático: "Personalizar mensagem" em cada aviso, com campos (paciente, clínica, data, hora, dentista, motivo), prévia e aprovação automática na Meta',
     'WhatsApp automático: consumo do mês (enviados, previsão, valor estimado) e limite mensal de avisos, com alerta no Painel a partir de 80%',

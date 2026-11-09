@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.24.0';
+const APP_VERSION='2.24.1';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -3482,6 +3482,7 @@ function bindNuvemEvents(){
 const PROD_URL='https://odontogestao-c8218.web.app';
 let versoesBase=null, versaoBaseConferidaEm=0;
 function versaoAlvoDe(pv,cid){ return pv ? (((pv.clinicas||{})[cid]) || pv.padrao || null) : null; }
+async function versaoMaisNova(){ try{ const r=await fetch('/versoes.json?t='+Date.now(),{cache:'no-store'}); if(r.ok){ const j=await r.json(); return (j&&j.atual)||null; } }catch(e){} return null; }
 async function urlDaVersao(v){
   const ler=async u=>{ try{ const r=await fetch(u+'versao.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return null; const j=await r.json(); return j&&j.versao; }catch(e){ return null; } };
   try{ const r=await fetch('/versoes.json?t='+Date.now(),{cache:'no-store'}); if(r.ok){ const j=await r.json();
@@ -3494,7 +3495,7 @@ async function conferirVersaoBase(){
   if(!NUVEM || Nuvem.ambienteTeste() || Nuvem.emEspelho() || !/^https?:/.test(location.protocol)) return false;
   versaoBaseConferidaEm=Date.now();
   const pv=await Nuvem.lerPlataforma('versoes'); versoesBase=pv;
-  const alvo=versaoAlvoDe(pv,Nuvem.clinicaId());
+  const alvo=ehVitalicia(fichaPers())?await versaoMaisNova():versaoAlvoDe(pv,Nuvem.clinicaId());
   if(!alvo || alvo===APP_VERSION){ try{ sessionStorage.removeItem('odonto-redir'); }catch(e){} return false; }
   const url=await urlDaVersao(alvo);
   if(!url){ console.warn('Versão '+alvo+' não está publicada; seguindo na '+APP_VERSION); return false; }
@@ -5061,7 +5062,11 @@ const MODULOS={
   formularios:{nome:'Formulários com assinatura',preco:19.90},
 };
 const PRECO_DENTISTA_EXTRA=19.90;
-function fichaClinica(){ return NUVEM&&window.Nuvem&&Nuvem.ficha?Nuvem.ficha():null; }
+// ficha com plano (a clínica principal, do Master, pode ter ficha "semPlano" só para personalizações)
+function fichaPers(){ return NUVEM&&window.Nuvem&&Nuvem.ficha?Nuvem.ficha():null; }
+function fichaClinica(){ const f=fichaPers(); return f&&!f.semPlano?f:null; }
+// clínica do dono da plataforma: grátis e vitalícia, sempre na versão mais nova e com todas as personalizações
+function ehVitalicia(f){ return !!(f && f.semPlano===true && f.todasPersonalizacoes===true); }
 function planoDe(f){ return PLANOS[f&&f.plano]||PLANOS.completo; }
 function temRecurso(r){ const f=fichaClinica(); if(!f) return true; return planoDe(f).recursos.includes(r) || !!(f.modulos&&f.modulos[r]); }
 function limiteDentistas(){ const f=fichaClinica(); return f?planoDe(f).dentistas+(+f.dentistasExtras||0):Infinity; }
@@ -5610,9 +5615,9 @@ function bindSugestoes(){
 // ---------- administrador: sugestões de todas as clínicas (produção + ambiente de teste) ----------
 let platSugestoes=null, platSugCarregando=false, platSugFiltro='abertas', platSugClinica='';
 // ponte com o outro ambiente (no teste: a produção; na produção: o teste)
-let outroLigado=null, outroClinicas=[], outroErro='';
+let outroLigado=null, outroClinicas=[], outroPrincipal={id:'principal'}, outroErro='';
 const nomeOutro=()=>Nuvem.ambienteTeste()?'produção':'teste';
-function verificarOutro(){ if(outroLigado!==null) return Promise.resolve(outroLigado); return Nuvem.outroConectado().then(v=>{ outroLigado=v; if(v) return Nuvem.clinicasOutro().then(l=>{ outroClinicas=l; return v; }); return v; }).catch(e=>{ outroLigado=false; outroErro=Nuvem.mapErro(e); return false; }); }
+function verificarOutro(){ if(outroLigado!==null) return Promise.resolve(outroLigado); return Nuvem.outroConectado().then(v=>{ outroLigado=v; if(v) return Promise.all([Nuvem.clinicasOutro(),Nuvem.principalOutro().catch(()=>({id:'principal'}))]).then(([l,pr])=>{ outroClinicas=l; outroPrincipal=pr; return v; }); return v; }).catch(e=>{ outroLigado=false; outroErro=Nuvem.mapErro(e); return false; }); }
 function ponteHtml(){
   const dom=Nuvem.ambienteTeste()?'odontogestao-teste.web.app':'odontogestao-c8218.web.app';
   if(outroLigado) return `<div class="faixa-plano"><div><strong>Conectado à ${nomeOutro()}.</strong> Itens de lá aparecem marcados com "(${nomeOutro()})".</div><button class="lnk-forte" data-ponterecarregar>Atualizar</button></div>`;
@@ -5719,13 +5724,13 @@ function vCurta(v){ return String(v||'').replace(/\.0$/,''); }
 function cmpVer(a,b){ const x=String(a||'0').split('.').map(Number), y=String(b||'0').split('.').map(Number); for(let i=0;i<3;i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d; } return 0; }
 function personalizacoesDe(f){ return [...new Set(((f&&f.personalizacoes)||[]).map(Number).filter(Boolean))].sort((a,b)=>a-b); }
 // para usar no código de uma personalização: if(temPersonalizacao(184)){ ... }
-function temPersonalizacao(n){ return personalizacoesDe(fichaClinica()).includes(+n); }
+function temPersonalizacao(n){ return ehVitalicia(fichaPers()) || personalizacoesDe(fichaPers()).includes(+n); }
 function temPersonalizacaoChave(ch){
-  const f=fichaClinica(); if(!f) return false; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
+  const f=fichaPers(); if(!f) return false; if(ehVitalicia(f)) return true; const ativos=personalizacoesDe(f), ch2=f.personalizacoesChaves||{}, info=f.personalizacoesInfo||{};
   const prep=RM_PREPARADAS.find(p=>p.chave===ch);
   return ativos.some(n=>ch2[n]===ch || (prep && info[n]===prep.titulo));
 }
-function rotuloVersao(f){ const p=personalizacoesDe(f===undefined?fichaClinica():f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
+function rotuloVersao(f){ const p=personalizacoesDe(f===undefined?fichaPers():f); return 'Ver '+vCurta(APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 function rotuloVersaoDe(f,v){ const p=personalizacoesDe(f); return 'Ver '+vCurta(v||APP_VERSION)+(p.length?' ('+p.join(', ')+')':''); }
 
 // versão publicada na produção (o ambiente de teste consulta para saber o que falta aprovar)
@@ -5747,7 +5752,7 @@ function faixaAprovacaoHtml(){
   return `<div class="faixa-plano aprovacao"><div><strong>${esc(rotuloVersao(null))} aguardando sua aprovação</strong> (produção: Ver ${esc(vCurta(versaoProducao))}). ${n} melhoria${n>1?'s':''}: ${esc(pend.flatMap(x=>x.itens).slice(0,3).join(' · '))}${n>3?' …':''}</div><button class="btn-p" data-irversoes>Ver o que será aprovado</button></div>`;
 }
 function abrirNovidades(){
-  const f=fichaClinica();
+  const f=fichaPers();
   const hist=((f&&f.personalizacoesHist)||[]).filter(h=>h.acao==='ativada');
   const ativos=personalizacoesDe(f);
   const info=(f&&f.personalizacoesInfo)||{};
@@ -6072,7 +6077,9 @@ function renderPlatClientes(){
       <td>${esc(planoDe(f).nome)}${Object.keys(f.modulos||{}).filter(k=>f.modulos[k]).length?`<div class="muted" style="font-size:12px">+ ${esc(Object.keys(f.modulos).filter(k=>f.modulos[k]).map(k=>MODULOS[k]?MODULOS[k].nome:k).join(', '))}</div>`:''}</td><td><span class="sit ${cls}">${esc(s.txt)}</span></td>
       <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f,versaoDoCliente(f.id)||APP_VERSION))}</strong>${versaoDoCliente(f.id)&&prodVersoes&&prodVersoes.atual&&cmpVer(versaoDoCliente(f.id),prodVersoes.atual)<0?' <span class="sit sit-nao_vem">atualização disponível</span>':''}${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
       <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
-  const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"><input type="checkbox" data-envsel="principal" aria-label="Selecionar sua clínica" ${envSelecionados.has('principal')?'checked':''}></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td><strong>${esc('Ver '+vCurta(versaoDoCliente('principal')||APP_VERSION))}</strong></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
+  const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td style="white-space:nowrap"><strong>${esc('Ver '+vCurta((ehVitalicia(outroPrincipal)&&prodVersoes&&prodVersoes.atual)||versaoDoCliente('principal')||APP_VERSION))}</strong><div class="muted" style="font-size:12px">${ehVitalicia(outroPrincipal)?'Acesso vitalício: sempre a versão mais nova e todas as personalizações':'Ligando o acesso vitalício…'}</div></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
+  if(outroLigado && !ehVitalicia(outroPrincipal) && !outroPrincipal.plano && !outroPrincipal.status && !renderPlatClientes._vit){ renderPlatClientes._vit=true;
+    Nuvem.gravarPrincipalOutro({todasPersonalizacoes:true}).then(()=>{ Object.assign(outroPrincipal,{semPlano:true,todasPersonalizacoes:true}); if(currentTab==='plataforma'&&platAba==='clientes') render(); }).catch(e=>console.warn('acesso vitalício',e)); }
   return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-p" data-novabase style="margin-left:auto">+ Nova base de cliente</button><button class="btn-s" data-ponterecarregar>Atualizar</button></div>
     ${envioVersaoHtml()}
     <div class="overflow"><table><thead><tr><th class="env-sel"><input type="checkbox" data-envtodos aria-label="Selecionar todos"></th><th>Cliente</th><th>Plano</th><th>Situação</th><th>Versão na produção e melhorias</th><th></th></tr></thead><tbody>${minha}${linhas}</tbody></table></div>
@@ -6157,7 +6164,8 @@ async function abrirBaseCliente(cidProd,btn){
   }catch(err){ prog.fechar(); if(btn) btn.disabled=false; avisar('Não foi possível abrir a base: '+Nuvem.mapErro(err)); }
 }
 function abrirPersonalizacoesCliente(cidProd){
-  const f=outroClinicas.find(x=>x.id===cidProd); if(!f) return;
+  const princ=cidProd==='principal';
+  const f=princ?Object.assign(outroPrincipal,{nome:'Sua clínica'}):outroClinicas.find(x=>x.id===cidProd); if(!f) return;
   const itens=(platRoadmap||[]).filter(i=>i.tipo==='personalizacao' && i.numero).sort((a,b)=>a.numero-b.numero);
   const atuais=personalizacoesDe(f);
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Personalizações de ${esc(f.nome)}</h3>
@@ -6180,7 +6188,7 @@ function abrirPersonalizacoesCliente(cidProd){
       const chaves=Object.assign({},f.personalizacoesChaves||{}); novas.forEach(n=>{ const it=itens.find(i=>i.numero===n); if(it&&it.chave) chaves[n]=it.chave; });
       const mud={personalizacoes:novas,personalizacoesHist:hist,personalizacoesInfo:info,personalizacoesChaves:chaves};
       try{
-        await Nuvem.atualizarClinicaOutro(f.id,mud); Object.assign(f,mud);
+        if(princ) await Nuvem.gravarPrincipalOutro(mud); else await Nuvem.atualizarClinicaOutro(f.id,mud); Object.assign(f,mud);
         const e=espelhoDe(f.id); if(e){ await Nuvem.sincronizarEspelho(e.id,f); Object.assign(e,mud); }
         bg.remove(); avisar('Aplicado na produção. '+f.nome+' agora está na '+rotuloVersaoDe(f)+'.'); render();
       }catch(err){ q('erro').textContent=Nuvem.mapErro(err); }
