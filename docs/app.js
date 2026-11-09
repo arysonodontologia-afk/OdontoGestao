@@ -997,7 +997,7 @@ function agendaCardsList(list){
       <div class="ag-time">${esc(a.horario)}<div class="ag-ate">até ${minParaHHMM(hhmmParaMin(a.horario)+duracaoDe(a))}</div></div>
       <div class="ag-info">
         <div class="ag-pac">${pacLinkAg(a)} ${agBadge(a)}</div>
-        <div class="ag-proc">${esc(a.procedimentoNome)}</div>
+        <div class="ag-proc">${esc(motivoAg(a))}</div>
         ${extra?`<div class="ag-extra muted">${extra}</div>`:''}
       </div>
       <span class="ag-dentista">${avatarHtml(a.dentistaNome,a.dentistaId,'av-peq')}${esc(a.dentistaNome)}${nCadeiras()>1?`<span class="ag-cad">${esc(nomeCadeira(cadeiraDe(a)))}</span>`:''}</span>
@@ -1019,7 +1019,7 @@ function renderAgendaLembretes(){
   const enviados=lista.filter(a=>a.lembreteEnviadoEm).length;
   const rows=lista.map(a=>{
     const pc=pacPorId(a.pacienteId);
-    return `<tr><td>${esc(a.horario)}</td><td>${pacLinkAg(a)}</td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
+    return `<tr><td>${esc(a.horario)}</td><td>${pacLinkAg(a)}<div class="muted" style="font-size:12.5px">${esc(motivoAg(a))}</div></td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
     <td>${statusAg(a)==='agendado'?`<button class="btn-s" data-agresp="${a.id}|sim">Sim</button> <button class="btn-s" data-agresp="${a.id}|nao">Não</button>`:(statusAg(a)==='confirmado'?'<span class="sit sit-confirmado">Respondeu sim</span>':'<span class="sit sit-nao_vem">Respondeu não</span>')}</td>
     <td>${a.lembreteEnviadoEm?'<span class="muted">Enviado '+esc(fmtDataHoraBR(a.lembreteEnviadoEm))+'</span> ':''}<button class="btn-${a.lembreteEnviadoEm?'s':'p'}" data-agwpp="${a.id}">${a.lembreteEnviadoEm?'Reenviar':'Enviar'}</button></td></tr>`;
   }).join('');
@@ -1116,9 +1116,10 @@ function renderAgendaDia(){
         const blocos=meus.map(i=>{
           const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
           const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64;
-          return `<button class="gr-bloco gb-${st}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+AG_STATUS[st][0])}">
-            ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong></span>`
-            :`<span class="gb-linha"><strong>${pacNomeBloco(a)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
+          return `<button class="gr-bloco gb-${st}${curto?' gr-curto':''}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+motivoAg(a)+', '+AG_STATUS[st][0])}" title="${esc(a.horario+' · '+a.pacienteNome+' · '+motivoAg(a))}">
+            ${curto?(h>=34?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong></span><span class="gb-proc gb-motivo">${esc(motivoAg(a))}</span>`
+              :`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong><span class="gb-motivo gb-motivo-l">${esc(motivoAg(a))}</span></span>`)
+            :`<span class="gb-linha"><strong>${pacNomeBloco(a)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc gb-motivo">${esc(motivoAg(a))}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
           </button>`;
         }).join('');
         const iv=(state.clinic&&state.clinic.intervalo)||{}; let pausa='';
@@ -1215,7 +1216,7 @@ function renderAgendaCelular(){
       <div class="cel-hora${destaque?' destaque':''}">${esc(a.horario)}</div>
       <div class="cel-card${destaque?' destaque':''}${st==='agendado'?' tracejado':''}">
         <div class="cel-card-l1"><strong>${pacLinkAg(a)}</strong>${agBadge(a)}</div>
-        <div class="cel-card-l2">${esc(a.procedimentoNome||'')}</div>
+        <div class="cel-card-l2">${esc(motivoAg(a))}</div>
         <div class="cel-card-l3">${esc(a.dentistaNome||'')}, até ${minParaHHMM(fimM)}</div>
         ${!passado && st!=='nao_vem' ? `<div class="cel-card-acoes">
           <button class="btn-s" data-agwpp="${a.id}">WhatsApp</button>
@@ -4000,6 +4001,13 @@ function pacLinkAg(a){
   if(!a.pacienteId || !pacPorId(a.pacienteId)) return nome;
   return `<button type="button" class="lnk-pac" data-agpront="${esc(a.pacienteId)}" title="Abrir o prontuário de ${nome}">${nome}</button>`;
 }
+// motivo do agendamento: avaliação, procedimento do plano ou retorno de um tratamento em andamento
+function motivoAg(a){
+  const n=String(a.procedimentoNome||'').trim();
+  if(a.tipo==='avaliacao' || !n || n==='Avaliação') return 'Avaliação';
+  const ret=/Retorno sess[ãa]o/i.test(n);
+  return (ret?'Retorno · ':'')+n.replace(/ · Retorno sess[ãa]o \d+/gi,'');
+}
 // dentro do bloco da grade (que já é um botão): o nome vira um atalho clicável para o prontuário
 function pacNomeBloco(a){
   const nome=esc(a.pacienteNome||'');
@@ -4164,7 +4172,7 @@ function renderDashboard(){
   const linhas=agHoje.filter(a=>!dashDentista||(a.dentistaId||'?')===dashDentista).map(a=>{
     const st=statusAgExib(a), fimM=hhmmParaMin(a.horario)+duracaoDe(a);
     const passado=fimM<=agoraM || st==='atendido' || st==='faltou', ehProx=prox&&prox.id===a.id;
-    return `<tr class="${ehProx?'proximo':passado?'passado':''}" data-agabrir="${a.id}"><td class="ta-hora">${esc(a.horario)}</td><td><div class="ta-pac">${esc(a.pacienteNome)}</div><div class="ta-sub">${esc(a.procedimentoNome||'')}</div></td><td>${esc(a.dentistaNome||'')}</td><td>${agBadge(a)}${ehProx?'<span class="tag-prox">Próximo</span>':''}</td></tr>`;
+    return `<tr class="${ehProx?'proximo':passado?'passado':''}" data-agabrir="${a.id}"><td class="ta-hora">${esc(a.horario)}</td><td><div class="ta-pac">${esc(a.pacienteNome)}</div><div class="ta-sub">${esc(motivoAg(a))}</div></td><td>${esc(a.dentistaNome||'')}</td><td>${agBadge(a)}${ehProx?'<span class="tag-prox">Próximo</span>':''}</td></tr>`;
   }).join('');
   const agendaBloco=`<section class="bloco"><div class="bloco-cab"><h2>Agenda de hoje</h2>${filtro}<button class="lnk-forte"${filtro?'':' style="margin-left:auto"'} data-dashgo="agenda">Abrir agenda</button></div>
     ${linhas?`<div class="overflow"><table class="t-agenda"><thead><tr><th style="width:70px">Horário</th><th>Paciente</th><th>Dentista</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`:'<div class="bloco-corpo"><p class="muted" style="margin:0">Nenhum atendimento agendado para hoje.</p></div>'}</section>`;
