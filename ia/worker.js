@@ -71,7 +71,7 @@ export default {
     const corpo = '{"model":' + JSON.stringify(modelo) + ',"max_tokens":6000,"system":' + JSON.stringify(SISTEMA)
       + ',"tools":[' + JSON.stringify(FERRAMENTA) + '],"tool_choice":{"type":"tool","name":"registrar_analise"}'
       + ',"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"'
-      + b64 + '"},"transformations":{"oversized_image":"error"}},{"type":"text","text":' + JSON.stringify(pedido(tipo, dente, W, H)) + '}]}]}';
+      + b64 + '"},"oversized_image":"error"},{"type":"text","text":' + JSON.stringify(pedido(tipo, dente, W, H)) + '}]}]}';
 
     let r;
     try {
@@ -85,7 +85,7 @@ export default {
     if (!r.ok) {
       const msg = (j.error && j.error.message) || ('HTTP ' + r.status);
       console.log('anthropic', r.status, msg.slice(0, 300));
-      return resp(502, { erro: r.status === 429 || r.status === 529 ? 'A IA está ocupada. Tente de novo em alguns segundos.' : r.status === 402 || /credit/i.test(msg) ? 'Sem créditos na conta da IA. Avise o suporte do OdontoGestão.' : 'A IA não conseguiu analisar esta imagem.' });
+      return resp(502, { erro: r.status === 429 || r.status === 529 ? 'A IA está ocupada. Tente de novo em alguns segundos.' : r.status === 402 || /credit/i.test(msg) ? 'Sem créditos na conta da IA. Avise o suporte do OdontoGestão.' : 'A IA não conseguiu analisar esta imagem.', detalhe: ('HTTP ' + r.status + ': ' + msg).slice(0, 240) });
     }
     const uso = (j.content || []).find(c => c.type === 'tool_use');
     if (!uso) return resp(502, { erro: 'A IA não devolveu uma análise. Tente de novo.' });

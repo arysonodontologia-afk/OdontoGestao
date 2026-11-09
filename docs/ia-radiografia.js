@@ -85,7 +85,7 @@ async function analisar(p,tipo,id){
     const tok=await Nuvem.tokenId();
     const r=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'text/plain','X-Clinica':Nuvem.clinicaId(),'X-Tipo':tipo,'X-Dente':String(it.dente||''),'X-Largura':String(im.w),'X-Altura':String(im.h)},body:im.b64});
     const j=await r.json().catch(()=>({}));
-    if(!r.ok || !j.analise) throw new Error(j.erro||('Falha na análise ('+r.status+').'));
+    if(!r.ok || !j.analise) throw new Error((j.erro||('Falha na análise ('+r.status+').'))+(j.detalhe?' Detalhe técnico: '+j.detalhe:''));
     it.analiseIA={em:new Date().toISOString(),por:(currentUser()||{}).id||'',modelo:j.modelo||'',largura:im.w,altura:im.h,resultado:j.analise,tracos:tracosDe(j.analise),editado:false};
     saveData(); bg.remove(); abrirAnalise(p,tipo,id);
   }catch(e){ console.error(e); bg.remove(); avisar(e.message||'Não foi possível analisar a radiografia.'); }
