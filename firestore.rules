@@ -86,11 +86,13 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/membros/$(meuEmail())).data.cid == cid;
 
       // Clínica liberada para gravar: assinatura ativa ou teste dentro do prazo.
-      // Sem ficha (a clínica original, "principal") = liberada.
+      // Sem ficha, ou ficha "semPlano" (a clínica do dono da plataforma, grátis e vitalícia) = liberada.
+      // semPlano só o administrador grava (o autocadastro não aceita esse campo).
       function liberada() {
         return !exists(caminhoClinica(cid))
-          || get(caminhoClinica(cid)).data.status == 'ativa'
-          || (get(caminhoClinica(cid)).data.status == 'teste' && get(caminhoClinica(cid)).data.testeAte > request.time);
+          || get(caminhoClinica(cid)).data.get('semPlano', false) == true
+          || get(caminhoClinica(cid)).data.get('status', '') == 'ativa'
+          || (get(caminhoClinica(cid)).data.get('status', '') == 'teste' && get(caminhoClinica(cid)).data.testeAte > request.time);
       }
       function souDonoDaFicha() {
         return exists(caminhoClinica(cid)) && get(caminhoClinica(cid)).data.donoEmail == meuEmail();
