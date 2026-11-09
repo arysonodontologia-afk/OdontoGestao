@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.21.0';
+const APP_VERSION='2.22.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -2851,15 +2851,15 @@ function renderExames(p){
       <h4 style="margin:0 0 8px 0">${m.label}</h4>
       ${existing?`<img ${imgAttr(existing)} class="zoom-img" data-viewpano="${existing.id}" style="max-width:100%;border-radius:8px;border:1px solid var(--border)">
       <p class="muted" style="font-size:12px;margin:6px 0">Enviada em ${esc(existing.dataUpload)}</p>
-      <button class="btn-d" data-delpano="${existing.id}">Remover</button>`
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${window.iaBotoes?window.iaBotoes(existing):''}<button class="btn-d" data-delpano="${existing.id}">Remover</button></div>`
       :`<input type="file" accept="image/*" data-panoupload="${m.id}">`}
     </div>`;
   }).join('');
   const periList=p.exames.periapicais.slice().sort((a,b)=>(b.dataUpload||'').localeCompare(a.dataUpload||''));
   const periRows=periList.map(x=>`<div class="card" style="display:flex;gap:12px;align-items:center">
     <img ${imgAttr(x)} class="zoom-img" data-viewperi="${x.id}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
-    <div style="flex:1"><strong>Dente ${esc(x.dente)}</strong><p class="muted" style="margin:4px 0">Enviada em ${esc(x.dataUpload)}</p></div>
-    <button class="btn-d" data-delperi="${x.id}">Remover</button>
+    <div style="flex:1"><strong>Dente ${esc(x.dente)}</strong><p class="muted" style="margin:4px 0">Enviada em ${esc(x.dataUpload)}${x.analiseIA?' · análise IA'+(x.analiseIA.editado?' (traçado corrigido)':''):''}</p></div>
+    ${window.iaBotoes?window.iaBotoes(x):''}<button class="btn-d" data-delperi="${x.id}">Remover</button>
   </div>`).join('');
   return `<div class="card"><h3>Radiografias Panorâmicas</h3>
   <p class="muted">Até 3 panorâmicas por paciente — início, meio e fim do tratamento.</p>
@@ -3567,7 +3567,7 @@ async function aoMudarLogin(u){
         try{ conferirIndice(); }catch(e){ console.warn(e); }
         try{ conferirBoasVindas(); }catch(e){ console.warn(e); }
         setTimeout(()=>{ try{ iniciarPlaylistAuto(); }catch(e){ console.warn(e); } },800);
-        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); },300);
+        setTimeout(()=>{ prepararCobranca().catch(e=>console.warn(e)); try{ window.iaPreparar&&window.iaPreparar(); }catch(e){} },300);
       }
     }
     render();
@@ -5207,6 +5207,8 @@ const RM_CATEG=['Plataforma','Agenda','Clínico','Financeiro','Comunicação','V
 const RM_PRIOR={alta:'Alta',media:'Média',baixa:'Baixa'};
 // melhorias já desenvolvidas que dependem de contratar um serviço: entram sozinhas no quadro (ambiente de teste)
 const RM_PREPARADAS=[
+  {chave:'analise-radiografia',titulo:'Análise de radiografia com IA (apoio ao diagnóstico)',categoria:'Clínico',prioridade:'alta',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
+   descricao:'Personalização: em Prontuário → Exames, cada radiografia ganha "Analisar com IA". A IA (Claude, via Cloudflare) sugere achados com a região marcada, o número de raízes e condutos e o traçado aproximado (raiz em linha contínua, conduto tracejado). O dentista confere, corrige o traçado e salva junto com a radiografia. Apoio ao diagnóstico: a decisão é do profissional. Precisa dos segredos CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID e ANTHROPIC_API_KEY no GitHub.'},
   {chave:'desconto-master-motivo',titulo:'Master: desconto de até 100% com motivo obrigatório',categoria:'Financeiro',prioridade:'media',status:'teste',tipo:'personalizacao',alvo:'Cliente específico',publico:false,
    descricao:'Personalização: na base em que estiver ligada, o Master pode dar desconto de até 100% no orçamento, mas só salva informando o motivo do desconto.'},
   {chave:'agenda-diaria-dentista',titulo:'Agenda do dia para o dentista às 07:30',categoria:'Comunicação',prioridade:'alta',status:'pronta',tipo:'geral',alvo:'Todos os planos',
@@ -6853,6 +6855,7 @@ function bindEvents(){
       saveData(); render();
     }catch(e){ console.error(e); avisar('Não foi possível guardar a imagem (armazenamento cheio ou bloqueado). Exporte um backup e libere espaço no computador.'); }
   });
+  if(window.iaLigar){ const pIA=state.patients.find(x=>x.id===patientDetailId); if(pIA && pIA.exames) window.iaLigar(pIA); }
   document.querySelectorAll('[data-delperi]').forEach(b=>b.addEventListener('click',()=>{
     customConfirm('Remover esta radiografia periapical?', ()=>{
       const p=state.patients.find(x=>x.id===patientDetailId);

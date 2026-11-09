@@ -1,0 +1,19 @@
+# Worker da análise de radiografia com IA. Publicado pelo GitHub (.github/workflows/ia-worker.yml).
+name = "odontogestao-ia"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[vars]
+PROJETOS = "odontogestao-c8218"
+ORIGENS = "https://odontogestao-c8218.web.app,https://odontogestao-c8218.firebaseapp.com"
+MODELO = "claude-sonnet-5-5"
+
+[env.teste]
+name = "odontogestao-ia-teste"
+workers_dev = true
+
+[env.teste.vars]
+PROJETOS = "odontogestao-teste"
+ORIGENS = "https://odontogestao-teste.web.app,https://odontogestao-teste.firebaseapp.com"
+MODELO = "claude-sonnet-5-5"

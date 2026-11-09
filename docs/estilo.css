@@ -861,3 +861,36 @@ tr.pf-venc td{color:var(--danger)}
 .as-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .as-acoes a{text-decoration:none;display:inline-flex;align-items:center;padding:9px 16px;border-radius:var(--r-sm);font-weight:600;font-size:14px;line-height:1.2;border:1px solid var(--border-strong)}
 .as-acoes a.btn-p{border-color:transparent}
+/* análise de radiografia com IA */
+.ia-btn{white-space:nowrap}
+.ia-modal{max-width:1180px;width:100%;max-height:calc(100vh - 32px);overflow:auto;text-align:left;padding:18px}
+.ia-topo{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+.ia-corpo{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:18px}
+@media (max-width:860px){.ia-corpo{grid-template-columns:1fr}}
+.ia-imagem{text-align:center;min-width:0}
+.ia-quadro{position:relative;display:inline-block;max-width:100%;background:#000;border-radius:var(--r-md);overflow:hidden;line-height:0;touch-action:none;vertical-align:top}
+.ia-quadro img{display:block;max-width:100%;max-height:62vh;width:auto;height:auto;user-select:none;-webkit-user-select:none}
+.ia-camadas,.ia-ferr{justify-content:center}
+.ia-quadro svg{position:absolute;inset:0;width:100%;height:100%}
+.ia-traco{cursor:pointer}
+.ia-ponto{cursor:grab}
+.ia-achado.ia-destaque rect{stroke-width:5}
+.ia-camadas{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 0;font-size:13.5px}
+.ia-camadas label{display:flex;align-items:center;gap:6px;font-weight:400;margin:0}
+.ia-leg{display:inline-block;width:22px;height:0;border-top:3px solid}
+.ia-leg-achado{border-top:3px dashed #3E9BFF}
+.ia-leg-raiz{border-color:#F5B400}
+.ia-leg-conduto{border-top:3px dashed #E5484D}
+.ia-ferr{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.ia-ferr .ativo{border-color:var(--primary);background:var(--primary-soft);color:var(--primary)}
+.ia-dica{font-size:12.5px;margin:6px 0 0}
+.ia-lado{display:flex;flex-direction:column;gap:12px;font-size:14px}
+.ia-bloco{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px}
+.ia-bloco p{margin:4px 0 0}
+.ia-lista{margin:6px 0 0;padding-left:18px;display:grid;gap:6px}
+.ia-achados{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:8px}
+.ia-achados li{display:flex;gap:8px;align-items:flex-start}
+.ia-num{flex:none;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#3E9BFF;color:#fff;font-size:12px;font-weight:700;margin-top:1px}
+.ia-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.ia-girando{width:36px;height:36px;margin:6px auto 0;border-radius:50%;border:3px solid var(--border);border-top-color:var(--primary);animation:iagira 1s linear infinite}
+@keyframes iagira{to{transform:rotate(360deg)}}
