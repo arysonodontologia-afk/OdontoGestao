@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.24.2', data:'2026-11-09', itens:[
+    'Sua clínica (acesso vitalício) fica sempre registrada na versão mais nova: não abre mais uma versão antiga que a tratava como teste encerrado',
+  ]},
   {v:'2.24.1', data:'2026-11-09', itens:[
     'Sua clínica (do dono da plataforma): acesso grátis e vitalício, sempre na versão mais nova e com todas as personalizações ligadas (WhatsApp automático, análise de radiografia com IA e as próximas)',
   ]},

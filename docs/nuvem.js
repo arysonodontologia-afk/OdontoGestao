@@ -302,6 +302,7 @@ async function gravarPrincipalOutro(mud){ const t=await ponteOutro(); await F.se
 async function atualizarClinicaOutro(cid,mud){ const t=await ponteOutro(); await F.updateDoc(F.doc(t.db,'clinicas',cid),mud); }
 async function salvarVitrineOutro(v){ const t=await ponteOutro(); if(t.user) await F.setDoc(F.doc(t.db,'plataforma','vitrine'),v); }
 // versões por cliente (plataforma/versoes = {padrao, clinicas:{cid:versão}, hist:[...]})
+async function salvarPlataforma(id,v){ await F.setDoc(F.doc(db,'plataforma',id),v); }
 async function lerPlataforma(id){ try{ const s=await F.getDoc(F.doc(db,'plataforma',id)); return s.exists()?s.data():null; }catch(e){ return null; } }
 async function lerPlataformaOutro(id){ const t=await ponteOutro(); const s=await F.getDoc(F.doc(t.db,'plataforma',id)); return s.exists()?s.data():null; }
 async function salvarPlataformaOutro(id,v){ const t=await ponteOutro(); await F.setDoc(F.doc(t.db,'plataforma',id),v); }
@@ -720,7 +721,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, principalOutro, gravarPrincipalOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine, lerPlataforma, lerPlataformaOutro, salvarPlataformaOutro,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, principalOutro, salvarPlataforma, gravarPrincipalOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine, lerPlataforma, lerPlataformaOutro, salvarPlataformaOutro,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };
