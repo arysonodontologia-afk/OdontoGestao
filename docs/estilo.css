@@ -894,3 +894,6 @@ tr.pf-venc td{color:var(--danger)}
 .ia-acoes{display:flex;gap:8px;flex-wrap:wrap}
 .ia-girando{width:36px;height:36px;margin:6px auto 0;border-radius:50%;border:3px solid var(--border);border-top-color:var(--primary);animation:iagira 1s linear infinite}
 @keyframes iagira{to{transform:rotate(360deg)}}
+/* agenda: nome do paciente abre o prontuário */
+.lnk-pac{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;transition:color .15s,text-decoration-color .15s}
+.lnk-pac:hover,.lnk-pac:focus-visible{color:var(--primary);text-decoration-color:currentColor}

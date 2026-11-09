@@ -996,7 +996,7 @@ function agendaCardsList(list){
     return `<div class="ag-card${st==='cancelado'?' ag-cancelado':''}${agendaSelId===a.id?' ag-card-sel':''}">
       <div class="ag-time">${esc(a.horario)}<div class="ag-ate">até ${minParaHHMM(hhmmParaMin(a.horario)+duracaoDe(a))}</div></div>
       <div class="ag-info">
-        <div class="ag-pac">${esc(a.pacienteNome)} ${agBadge(a)}</div>
+        <div class="ag-pac">${pacLinkAg(a)} ${agBadge(a)}</div>
         <div class="ag-proc">${esc(a.procedimentoNome)}</div>
         ${extra?`<div class="ag-extra muted">${extra}</div>`:''}
       </div>
@@ -1019,7 +1019,7 @@ function renderAgendaLembretes(){
   const enviados=lista.filter(a=>a.lembreteEnviadoEm).length;
   const rows=lista.map(a=>{
     const pc=pacPorId(a.pacienteId);
-    return `<tr><td>${esc(a.horario)}</td><td>${esc(a.pacienteNome)}</td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
+    return `<tr><td>${esc(a.horario)}</td><td>${pacLinkAg(a)}</td><td>${esc((pc&&pc.telefone)||'—')}</td><td>${esc(a.dentistaNome)}</td><td>${agStatusSelect(a)}</td>
     <td>${statusAg(a)==='agendado'?`<button class="btn-s" data-agresp="${a.id}|sim">Sim</button> <button class="btn-s" data-agresp="${a.id}|nao">Não</button>`:(statusAg(a)==='confirmado'?'<span class="sit sit-confirmado">Respondeu sim</span>':'<span class="sit sit-nao_vem">Respondeu não</span>')}</td>
     <td>${a.lembreteEnviadoEm?'<span class="muted">Enviado '+esc(fmtDataHoraBR(a.lembreteEnviadoEm))+'</span> ':''}<button class="btn-${a.lembreteEnviadoEm?'s':'p'}" data-agwpp="${a.id}">${a.lembreteEnviadoEm?'Reenviar':'Enviar'}</button></td></tr>`;
   }).join('');
@@ -1117,8 +1117,8 @@ function renderAgendaDia(){
           const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
           const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64;
           return `<button class="gr-bloco gb-${st}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 5px);width:calc(${larg}% - 10px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+AG_STATUS[st][0])}">
-            ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${esc(a.pacienteNome)}</strong></span>`
-            :`<span class="gb-linha"><strong>${esc(a.pacienteNome)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
+            ${curto?`<span class="gb-linha"><span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong></span>`
+            :`<span class="gb-linha"><strong>${pacNomeBloco(a)}</strong><span class="gb-st">${AG_STATUS[st][0]}</span></span><span class="gb-proc">${esc(a.procedimentoNome||'')}</span><span class="gb-h">${esc(a.horario)} a ${minParaHHMM(i.fim)}${porCad?' · '+esc(a.dentistaNome||''):(nCadeiras()>1?' · '+esc(nomeCadeira(cadeiraDe(a))):'')}</span>`}
           </button>`;
         }).join('');
         const iv=(state.clinic&&state.clinic.intervalo)||{}; let pausa='';
@@ -1214,7 +1214,7 @@ function renderAgendaCelular(){
     return `${linha}<div class="cel-item${passado?' passado':''}">
       <div class="cel-hora${destaque?' destaque':''}">${esc(a.horario)}</div>
       <div class="cel-card${destaque?' destaque':''}${st==='agendado'?' tracejado':''}">
-        <div class="cel-card-l1"><strong>${esc(a.pacienteNome)}</strong>${agBadge(a)}</div>
+        <div class="cel-card-l1"><strong>${pacLinkAg(a)}</strong>${agBadge(a)}</div>
         <div class="cel-card-l2">${esc(a.procedimentoNome||'')}</div>
         <div class="cel-card-l3">${esc(a.dentistaNome||'')}, até ${minParaHHMM(fimM)}</div>
         ${!passado && st!=='nao_vem' ? `<div class="cel-card-acoes">
@@ -3993,6 +3993,28 @@ function buscarPacientes(q){
     return false;
   }).sort((a,b)=>{ const ia=normTxt(a.nome).indexOf(t), ib=normTxt(b.nome).indexOf(t); return (ia===0?0:1)-(ib===0?0:1) || (a.nome||'').localeCompare(b.nome||''); }).slice(0,8);
 }
+// agenda → prontuário: o nome do paciente agendado abre a ficha dele; "Voltar" retorna à agenda
+let voltarParaAgenda=false;
+function pacLinkAg(a){
+  const nome=esc(a.pacienteNome||'');
+  if(!a.pacienteId || !pacPorId(a.pacienteId)) return nome;
+  return `<button type="button" class="lnk-pac" data-agpront="${esc(a.pacienteId)}" title="Abrir o prontuário de ${nome}">${nome}</button>`;
+}
+// dentro do bloco da grade (que já é um botão): o nome vira um atalho clicável para o prontuário
+function pacNomeBloco(a){
+  const nome=esc(a.pacienteNome||'');
+  return a.pacienteId && pacPorId(a.pacienteId)?`<span class="lnk-pac" data-agpront="${esc(a.pacienteId)}" title="Abrir o prontuário de ${nome}">${nome}</span>`:nome;
+}
+function abrirProntuarioDaAgenda(pid){
+  const u=currentUser();
+  if(!pacPorId(pid)){ avisar('Paciente não encontrado no cadastro.'); return; }
+  if(!u || !permsDe(u).pacientes){ avisar('Seu usuário não tem acesso a Pacientes. Peça ao Master para liberar.'); return; }
+  voltarParaAgenda=true; abrirPaciente(pid);
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest && e.target.closest('[data-agpront]'); if(!b) return;
+  e.preventDefault(); e.stopPropagation(); abrirProntuarioDaAgenda(b.getAttribute('data-agpront'));
+},true);
 function abrirPaciente(id){
   currentTab='pacientes'; patientDetailId=id; patientDetailTab='dados';
   anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null; odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null;
@@ -4467,7 +4489,7 @@ function renderPatientDetail(id){
   else body=renderStub(tabs.find(t=>t.id===patientDetailTab)?.label||'');
   const age=calcAge(p.nascimento);
   return `<div class="card" style="display:flex;justify-content:space-between;align-items:center">
-    <div><button id="btnBackPatients" class="btn-s">← Voltar</button></div>
+    <div><button id="btnBackPatients" class="btn-s">${voltarParaAgenda?'← Voltar à agenda':'← Voltar'}</button></div>
     <div style="text-align:right"><strong>Prontuário Odontológico — ${esc(p.nome)}</strong><div class="muted">${age!==null?age+' anos':''}</div></div>
   </div>
   ${bannerAtencao(p)}
@@ -6676,7 +6698,7 @@ function bindEvents(){
   });
 
   document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
-    currentTab=b.getAttribute('data-tab'); patientDetailId=null; render();
+    currentTab=b.getAttribute('data-tab'); patientDetailId=null; voltarParaAgenda=false; render();
   }));
 
   const btnNewUser=document.getElementById('btnNewUser');
@@ -7310,7 +7332,7 @@ function bindEvents(){
     saveData(); render();
   }));
   const btnBackPatients=document.getElementById('btnBackPatients');
-  if(btnBackPatients) btnBackPatients.addEventListener('click',()=>{ patientDetailId=null; anamneseOpenId=null; render(); });
+  if(btnBackPatients) btnBackPatients.addEventListener('click',()=>{ patientDetailId=null; anamneseOpenId=null; if(voltarParaAgenda){ voltarParaAgenda=false; currentTab='agenda'; } render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-opentab]').forEach(b=>b.addEventListener('click',()=>{
     patientDetailTab=b.getAttribute('data-opentab'); anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null;
     odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null; render();
