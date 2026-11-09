@@ -295,7 +295,10 @@ async function conectarOutro(){
   const c=await A.signInWithPopup(t.auth,prov); t.user=(c&&c.user)||t.auth.currentUser;
   if(!t.user || normEmail(t.user.email)!==ADMIN_EMAIL){ try{ await A.signOut(t.auth); }catch(_){} t.user=null; throw new Error('Entre com '+ADMIN_EMAIL+'.'); }
 }
-async function clinicasOutro(){ const t=await ponteOutro(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id})); }
+async function clinicasOutro(){ const t=await ponteOutro(); const s=await F.getDocs(F.collection(t.db,'clinicas')); return s.docs.filter(d=>d.id!=='principal').map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id})); }
+// ficha da clínica principal (a do Master): sem plano, guarda só as personalizações
+async function principalOutro(){ const t=await ponteOutro(); const s=await F.getDoc(F.doc(t.db,'clinicas','principal')); return Object.assign(s.exists()?fichaLimpa(s.data()):{},{id:'principal'}); }
+async function gravarPrincipalOutro(mud){ const t=await ponteOutro(); await F.setDoc(F.doc(t.db,'clinicas','principal'),Object.assign({semPlano:true},mud),{merge:true}); }
 async function atualizarClinicaOutro(cid,mud){ const t=await ponteOutro(); await F.updateDoc(F.doc(t.db,'clinicas',cid),mud); }
 async function salvarVitrineOutro(v){ const t=await ponteOutro(); if(t.user) await F.setDoc(F.doc(t.db,'plataforma','vitrine'),v); }
 // versões por cliente (plataforma/versoes = {padrao, clinicas:{cid:versão}, hist:[...]})
@@ -309,7 +312,7 @@ function salvarVitrine(v){ return F.setDoc(F.doc(db,'plataforma','vitrine'),v); 
 // ---------- plataforma (somente o administrador) ----------
 async function listarClinicas(){
   const s=await F.getDocs(F.collection(db,'clinicas'));
-  return s.docs.map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id}));
+  return s.docs.filter(d=>d.id!=='principal').map(d=>Object.assign(fichaLimpa(d.data()),{id:d.id}));
 }
 async function criarEspelho(f){
   const cid='espelho-'+String(f.id).replace(/[^\w-]/g,'').slice(0,40);
@@ -717,7 +720,7 @@ window.Nuvem={
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
   meuEmail, mapErro, normEmail, pendentes:()=>pendentes,
-  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine, lerPlataforma, lerPlataformaOutro, salvarPlataformaOutro,
+  clinicaId:()=>CLINICA, ficha:()=>ficha, souAdmin, ambienteTeste, projeto:()=>CFG.projectId||'', reindexar, situacaoEmail, restaurar, enviarSugestao, apagarSugestao, listarSugestoes, responderSugestao, outroConectado, conectarOutro, clinicasOutro, principalOutro, gravarPrincipalOutro, atualizarClinicaOutro, salvarVitrineOutro, criarEspelho, sincronizarEspelho, entrarEspelho, emEspelho:()=>emEspelho, espelhoEscolhido, lerVitrine, salvarVitrine, lerPlataforma, lerPlataformaOutro, salvarPlataformaOutro,
   listarClinicas, criarClinica, atualizarClinica, ouvirRoadmap, numerarRoadmap, salvarItemRoadmap, apagarItemRoadmap, semearRoadmap,
   usuarioAuth:()=>usuario, provedores:()=>usuario?usuario.providerData.map(p=>p.providerId):[],
 };

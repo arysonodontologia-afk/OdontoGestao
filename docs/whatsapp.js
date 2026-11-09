@@ -6,7 +6,7 @@ const CHAVE_WA='whatsapp-automatico';
 const DIAS_RESUMO=14;
 let modelosPed={}, usoMes={}, statusServ=null, cfg=null, cfgLido=false, ouvindo=false, logs=[], respProc=new Set(), ultimos={}, limpezaFeita=false, timerSync=null, urlWebhook='';
 
-function liberado(){ return !!(NUVEM && fichaClinica() && temPersonalizacaoChave(CHAVE_WA)); }
+function liberado(){ return !!(NUVEM && fichaPers() && temPersonalizacaoChave(CHAVE_WA)); }
 window.waLiberado=liberado;
 const isoMais=(n)=>{ const d=new Date(hojeISO()+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
 const fusoUF={AC:'America/Rio_Branco',AM:'America/Manaus',RR:'America/Boa_Vista',RO:'America/Porto_Velho',MT:'America/Cuiaba',MS:'America/Campo_Grande',PA:'America/Belem',AP:'America/Belem',TO:'America/Araguaina',MA:'America/Fortaleza',PI:'America/Fortaleza',CE:'America/Fortaleza',RN:'America/Fortaleza',PB:'America/Fortaleza',PE:'America/Recife',AL:'America/Maceio',SE:'America/Maceio',BA:'America/Bahia'};
