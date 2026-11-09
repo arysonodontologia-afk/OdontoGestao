@@ -9,6 +9,12 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.24.0', data:'2026-11-09', itens:[
+    'WhatsApp automático: "Personalizar mensagem" em cada aviso, com campos (paciente, clínica, data, hora, dentista, motivo), prévia e aprovação automática na Meta',
+    'WhatsApp automático: consumo do mês (enviados, previsão, valor estimado) e limite mensal de avisos, com alerta no Painel a partir de 80%',
+    'WhatsApp automático: bases espelho do teste rodam em simulação e página de diagnóstico do serviço',
+    'WhatsApp automático: resposta automática opcional para mensagens escritas (para números só de avisos)',
+  ]},
   {v:'2.23.0', data:'2026-11-09', itens:[
     'Personalização "WhatsApp automático" (piloto): pelo número da clínica, confirmação ao marcar a consulta, lembrete na véspera com Confirmo / Preciso remarcar (a resposta muda a agenda e aparece no Painel) e agenda do dia às 07:30 para os dentistas. Com modo simulação.',
   ]},

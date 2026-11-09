@@ -922,3 +922,15 @@ tr.pf-venc td{color:var(--danger)}
 .wa-log-erro .wa-bolha{background:#FDE2E1}
 .wa-sim{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:13px}
 .wa-sim .btn-s{padding:4px 10px;font-size:13px}
+.wa-aviso{padding:6px 0;border-bottom:1px dashed var(--border)}
+.wa-aviso:last-of-type{border-bottom:0}
+.wa-modelo-linha{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 0 30px;font-size:13px}
+.wa-editor{max-width:640px;width:100%;text-align:left}
+.wa-editor textarea{width:100%;font-size:14.5px;line-height:1.5}
+.wa-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.wa-chips .btn-s{padding:4px 10px;font-size:12.5px}
+.wa-previa{margin-top:8px;padding:12px;border-radius:var(--r-md);background:#ECE5DD}
+.wa-numeros{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.wa-numeros>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-size:13.5px}
+.wa-numeros strong{font-size:22px}
+.wa-limite{margin-top:12px}

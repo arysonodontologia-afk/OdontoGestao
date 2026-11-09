@@ -28,7 +28,7 @@ Resposta do paciente: **Confirmo** → consulta confirmada; **Preciso remarcar**
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | já cadastrados |
 
 ## Modelos para criar na Meta (categoria **Utilidade**, idioma **Português (BR)**)
-Parâmetros não podem ter quebra de linha (o Worker já remove).
+Parâmetros não podem ter quebra de linha (o Worker já remove). A Meta recusa modelo que começa ou termina com variável, ou com duas variáveis seguidas.
 
 **`lembrete_consulta`** — corpo:
 `Olá, {{1}}! Lembrete da sua consulta na {{2}}: {{3}}, às {{4}}, com {{5}}. Motivo: {{6}}. Você confirma a presença?`
@@ -38,7 +38,7 @@ Botões de resposta rápida: `Confirmo` e `Preciso remarcar` (nessa ordem).
 `Olá, {{1}}! Sua consulta na {{2}} foi agendada para {{3}}, às {{4}}, com {{5}}. Motivo: {{6}}. Até lá!`
 
 **`agenda_do_dia`** — corpo:
-`Bom dia, {{1}}! Sua agenda de hoje ({{2}}) na {{3}}: {{4}}. {{5}}`
+`Bom dia, {{1}}! Sua agenda de hoje ({{2}}) na {{3}}: {{4}}. {{5}} Bom trabalho!`
 
 Exemplos para a aprovação: Maria · Clínica Sorriso · quinta-feira, 12/11/2026 · 09:00 · Dra. Ana · Avaliação.
 
