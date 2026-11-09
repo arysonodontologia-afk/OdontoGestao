@@ -4,7 +4,7 @@
 (function(){
 const CHAVE_WA='whatsapp-automatico';
 const DIAS_RESUMO=14;
-let cfg=null, cfgLido=false, ouvindo=false, logs=[], respProc=new Set(), ultimos={}, limpezaFeita=false, timerSync=null, urlWebhook='';
+let statusServ=null, cfg=null, cfgLido=false, ouvindo=false, logs=[], respProc=new Set(), ultimos={}, limpezaFeita=false, timerSync=null, urlWebhook='';
 
 function liberado(){ return !!(NUVEM && fichaClinica() && temPersonalizacaoChave(CHAVE_WA)); }
 window.waLiberado=liberado;
@@ -19,6 +19,7 @@ window.waIniciar=async function(){
   if(!liberado()) return;
   cfg=await Nuvem.waLer('wa','config'); cfgLido=true;
   try{ const d=await Nuvem.lerPlataforma('wa'); urlWebhook=(d&&d.url)?d.url.replace(/\/$/,'')+'/webhook':''; }catch(e){}
+  try{ statusServ=await Nuvem.lerPlataforma('waStatus'); }catch(e){}
   if(!ouvindo){
     ouvindo=true;
     Nuvem.waOuvir('waRespostas',aplicarRespostas);
@@ -103,7 +104,7 @@ window.waTelaHtml=function(){
     <p class="erro-campo" id="waErro" role="alert"></p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn-p" id="waSalvar">Salvar</button></div>
   </div>
-  <div class="card"><h3 style="margin:0 0 8px">Últimos envios</h3>${ult?`<ul class="wa-logs">${ult}</ul>`:'<p class="muted">Nenhuma mensagem ainda. Com o WhatsApp ligado, os avisos aparecem aqui em até 5 minutos depois do horário.</p>'}</div>`;
+  <div class="card"><h3 style="margin:0 0 4px">Últimos envios</h3><p class="muted" style="font-size:12.5px;margin:0 0 10px">${statusServ&&statusServ.em?'Última verificação do serviço: '+esc(fmt(statusServ.em))+((statusServ.clinicas||{})[Nuvem.clinicaId()]?' · '+esc(statusServ.clinicas[Nuvem.clinicaId()]):''):'O serviço de envio ainda não fez nenhuma verificação.'}${urlWebhook?` · <a href="${esc(urlWebhook.replace(/\/webhook$/,'/diagnostico'))}" target="_blank" rel="noopener">diagnóstico</a>`:''}</p>${ult?`<ul class="wa-logs">${ult}</ul>`:'<p class="muted">Nenhuma mensagem ainda. Com o WhatsApp ligado, os avisos aparecem aqui em até 5 minutos depois do horário.</p>'}</div>`;
 };
 window.waTelaLigar=function(){
   const q=id=>document.getElementById(id); if(!q('waSalvar')) return;

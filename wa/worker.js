@@ -32,6 +32,7 @@ export default {
       if (req.method === 'POST') return receberWebhook(req, env, ctx);
     }
     if (url.pathname === '/' && req.method === 'GET') return new Response('odontogestao-wa ok');
+    if (url.pathname === '/diagnostico' && req.method === 'GET') return new Response(JSON.stringify(await diagnostico(env), null, 2), { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
     return new Response('não encontrado', { status: 404 });
   },
   async scheduled(evento, env, ctx) {
@@ -89,9 +90,31 @@ export async function rodarRotina(env, agoraMs = Date.now()) {
   for (const [cid, ficha] of clinicas) {
     if (ficha.espelho || !liberada(ficha, agoraMs)) continue;
     try { res.push([cid, await rotinaClinica(fs, env, cid, ficha, agoraMs)]); }
-    catch (e) { console.log('clínica', cid, e && e.message); }
+    catch (e) { console.log('clínica', cid, e && e.message); res.push([cid, 'erro: ' + String(e && e.message || e).slice(0, 200)]); }
   }
+  // situação da última rodada (sem dados de pacientes), mostrada ao Master na tela do WhatsApp
+  const porClinica = {}; for (const [cid, r] of res) porClinica[cid] = Array.isArray(r) ? (r.length ? r.length + ' aviso(s)' : 'nada a enviar agora') : String(r);
+  await fs.mesclar('plataforma/waStatus', { em: agoraMs, ok: true, erro: '', clinicas: porClinica }).catch(e => console.log('status', e && e.message));
   return res;
+}
+// diagnóstico: só contagens e mensagens de erro (nenhum dado de paciente)
+async function diagnostico(env) {
+  const out = { servico: 'odontogestao-wa', projeto: env.PROJETO || '', temContaServico: !!env.GOOGLE_SA, temVerifyToken: !!env.WA_VERIFY_TOKEN, temAppSecret: !!env.WA_APP_SECRET };
+  if (!env.GOOGLE_SA) return out;
+  try { const sa = JSON.parse(env.GOOGLE_SA); out.contaServico = String(sa.client_email || '').replace(/^[^@]{0,6}/, '…'); } catch (e) { out.erroContaServico = 'o segredo não é um JSON válido'; return out; }
+  const fs = new Firestore(env);
+  try { await fs.tok(); out.loginGoogle = 'ok'; } catch (e) { out.loginGoogle = String(e.message || e).slice(0, 300); return out; }
+  try {
+    const cl = await fs.listar('clinicas'); out.clinicas = cl.length; out.comWhatsApp = [];
+    for (const [cid, f] of cl) {
+      const cfg = await fs.ler(`clinicas/${cid}/wa/config`); if (!cfg) continue;
+      const tz = cfg.fuso || 'America/Sao_Paulo', ag = agoraNoFuso(tz, Date.now()), am = maisDias(ag.data, 1);
+      const dia = await fs.ler(`clinicas/${cid}/waDia/${am}`), fila = await fs.listar(`clinicas/${cid}/waFila`);
+      out.comWhatsApp.push({ cid, ligado: !!cfg.ativo, simulacao: cfg.simulacao !== false, liberada: liberada(f, Date.now()), espelho: !!f.espelho, horaLocal: `${String(Math.floor(ag.min / 60)).padStart(2, '0')}:${String(ag.min % 60).padStart(2, '0')}`, lembreteHora: cfg.lembreteHora || '', consultasAmanha: ((dia && dia.itens) || []).length, naFila: fila.length });
+    }
+    const st = await fs.ler('plataforma/waStatus'); out.ultimaRodada = st ? new Date(st.em).toISOString() : 'nenhuma';
+  } catch (e) { out.erroFirestore = String(e.message || e).slice(0, 300); }
+  return out;
 }
 function liberada(f, agora) {
   if (f.status === 'ativa') return true;
