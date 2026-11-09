@@ -69,7 +69,7 @@ export default {
 
     const modelo = env.MODELO || 'claude-sonnet-5-5';
     const corpo = '{"model":' + JSON.stringify(modelo) + ',"max_tokens":6000,"system":' + JSON.stringify(SISTEMA)
-      + ',"tools":[' + JSON.stringify(FERRAMENTA) + '],"tool_choice":{"type":"tool","name":"registrar_analise"}'
+      + ',"output_config":{"format":{"type":"json_schema","schema":' + JSON.stringify(ESQUEMA) + '}}'
       + ',"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"'
       + b64 + '"}},{"type":"text","text":' + JSON.stringify(pedido(tipo, dente, W, H)) + '}]}]}';
 
@@ -87,9 +87,12 @@ export default {
       console.log('anthropic', r.status, msg.slice(0, 300));
       return resp(502, { erro: r.status === 429 || r.status === 529 ? 'A IA está ocupada. Tente de novo em alguns segundos.' : r.status === 402 || /credit/i.test(msg) ? 'Sem créditos na conta da IA. Avise o suporte do OdontoGestão.' : 'A IA não conseguiu analisar esta imagem.', detalhe: ('HTTP ' + r.status + ': ' + msg).slice(0, 240) });
     }
-    const uso = (j.content || []).find(c => c.type === 'tool_use');
-    if (!uso) return resp(502, { erro: 'A IA não devolveu uma análise. Tente de novo.' });
-    return resp(200, { analise: uso.input, modelo: j.model || modelo, largura: W, altura: H, tokens: j.usage || null });
+    // resposta em JSON no bloco de texto (saída estruturada pelo esquema)
+    const texto = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+    let analise = null;
+    try { analise = JSON.parse(texto); } catch (e) { const m = texto.match(/\{[\s\S]*\}/); if (m) { try { analise = JSON.parse(m[0]); } catch (e2) {} } }
+    if (!analise || typeof analise !== 'object') return resp(502, { erro: 'A IA não devolveu uma análise. Tente de novo.', detalhe: (j.stop_reason || '') + ' ' + texto.slice(0, 160) });
+    return resp(200, { analise, modelo: j.model || modelo, largura: W, altura: H, tokens: j.usage || null });
   },
 };
 
@@ -137,7 +140,7 @@ Regras:
 - Use a numeração dentária FDI (11 a 48) quando conseguir identificar o dente; senão deixe o campo vazio.
 - Coordenadas: SEMPRE em pixels da imagem recebida, com origem (0,0) no canto superior esquerdo, x para a direita e y para baixo, dentro dos limites da largura e altura informadas.
 - Escreva tudo em português do Brasil, de forma objetiva e técnica.
-- Registre o resultado chamando a ferramenta registrar_analise.`;
+- Responda somente com o JSON pedido.`;
 
 function pedido(tipo, dente, W, H) {
   const pano = tipo === 'panorâmica';
@@ -152,48 +155,27 @@ function pedido(tipo, dente, W, H) {
 4. Escreva um resumo curto e as limitações desta análise.`;
 }
 
-const PONTOS = { type: 'array', items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }, minItems: 2, maxItems: 24 };
-const FERRAMENTA = {
-  name: 'registrar_analise',
-  description: 'Registra a análise de apoio da radiografia: achados, raízes e condutos com coordenadas em pixels.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      qualidade_imagem: { type: 'string', description: 'Boa, regular ou ruim, com o motivo em poucas palavras.' },
-      resumo: { type: 'string', description: 'Até 3 frases.' },
-      achados: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            titulo: { type: 'string' },
-            descricao: { type: 'string' },
-            dente: { type: 'string', description: 'Número FDI ou vazio.' },
-            tipo: { type: 'string', enum: ['carie', 'lesao_periapical', 'perda_ossea', 'reabsorcao', 'fratura', 'restauracao', 'tratamento_endodontico', 'pino_coroa', 'implante', 'calculo', 'incluso', 'outro'] },
-            certeza: { type: 'string', enum: ['baixa', 'media', 'alta'] },
-            caixa: { type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4, description: '[x1, y1, x2, y2] em pixels.' },
-          },
-          required: ['titulo', 'descricao', 'tipo', 'certeza', 'caixa'],
-        },
-      },
-      dentes: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            dente: { type: 'string', description: 'Número FDI ou vazio.' },
-            n_raizes: { type: 'integer' },
-            n_condutos: { type: 'integer' },
-            certeza: { type: 'string', enum: ['baixa', 'media', 'alta'] },
-            observacao: { type: 'string' },
-            raizes: { type: 'array', items: { type: 'object', properties: { nome: { type: 'string', description: 'Ex.: mesial, distal, palatina, única.' }, pontos: PONTOS }, required: ['pontos'] } },
-            condutos: { type: 'array', items: { type: 'object', properties: { nome: { type: 'string', description: 'Ex.: MV, ML, D, P, único.' }, pontos: PONTOS }, required: ['pontos'] } },
-          },
-          required: ['n_raizes', 'n_condutos', 'certeza', 'raizes', 'condutos'],
-        },
-      },
-      limitacoes: { type: 'string' },
-    },
-    required: ['qualidade_imagem', 'resumo', 'achados', 'dentes', 'limitacoes'],
-  },
-};
+const PONTOS = { type: 'array', description: 'Lista de pontos [x, y] em pixels, na ordem do traçado.', items: { type: 'array', items: { type: 'number' } } };
+const OBJ = (props) => ({ type: 'object', properties: props, required: Object.keys(props), additionalProperties: false });
+const ESQUEMA = OBJ({
+  qualidade_imagem: { type: 'string', description: 'Boa, regular ou ruim, com o motivo em poucas palavras.' },
+  resumo: { type: 'string', description: 'Até 3 frases.' },
+  achados: { type: 'array', items: OBJ({
+    titulo: { type: 'string' },
+    descricao: { type: 'string' },
+    dente: { type: 'string', description: 'Número FDI ou vazio.' },
+    tipo: { type: 'string', enum: ['carie', 'lesao_periapical', 'perda_ossea', 'reabsorcao', 'fratura', 'restauracao', 'tratamento_endodontico', 'pino_coroa', 'implante', 'calculo', 'incluso', 'outro'] },
+    certeza: { type: 'string', enum: ['baixa', 'media', 'alta'] },
+    caixa: { type: 'array', items: { type: 'number' }, description: '[x1, y1, x2, y2] em pixels.' },
+  }) },
+  dentes: { type: 'array', items: OBJ({
+    dente: { type: 'string', description: 'Número FDI ou vazio.' },
+    n_raizes: { type: 'integer' },
+    n_condutos: { type: 'integer' },
+    certeza: { type: 'string', enum: ['baixa', 'media', 'alta'] },
+    observacao: { type: 'string' },
+    raizes: { type: 'array', items: OBJ({ nome: { type: 'string', description: 'Ex.: mesial, distal, palatina, única.' }, pontos: PONTOS }) },
+    condutos: { type: 'array', items: OBJ({ nome: { type: 'string', description: 'Ex.: MV, ML, D, P, único.' }, pontos: PONTOS }) },
+  }) },
+  limitacoes: { type: 'string' },
+});
