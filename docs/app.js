@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.24.1';
+const APP_VERSION='2.24.2';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -3482,6 +3482,12 @@ function bindNuvemEvents(){
 const PROD_URL='https://odontogestao-c8218.web.app';
 let versoesBase=null, versaoBaseConferidaEm=0;
 function versaoAlvoDe(pv,cid){ return pv ? (((pv.clinicas||{})[cid]) || pv.padrao || null) : null; }
+// a clínica vitalícia fica registrada na versão mais nova (versões antigas abertas por engano voltam para a atual)
+function fixarVersaoVitalicia(pv,v){
+  if(!v || !Nuvem.souAdmin() || Nuvem.clinicaId()!=='principal' || ((pv&&pv.clinicas)||{}).principal===v) return;
+  const novo=Object.assign({},pv||{},{padrao:(pv&&pv.padrao)||v,clinicas:Object.assign({},(pv&&pv.clinicas)||{},{principal:v})});
+  Nuvem.salvarPlataforma('versoes',novo).catch(e=>console.warn('versão vitalícia',e));
+}
 async function versaoMaisNova(){ try{ const r=await fetch('/versoes.json?t='+Date.now(),{cache:'no-store'}); if(r.ok){ const j=await r.json(); return (j&&j.atual)||null; } }catch(e){} return null; }
 async function urlDaVersao(v){
   const ler=async u=>{ try{ const r=await fetch(u+'versao.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return null; const j=await r.json(); return j&&j.versao; }catch(e){ return null; } };
@@ -3495,7 +3501,8 @@ async function conferirVersaoBase(){
   if(!NUVEM || Nuvem.ambienteTeste() || Nuvem.emEspelho() || !/^https?:/.test(location.protocol)) return false;
   versaoBaseConferidaEm=Date.now();
   const pv=await Nuvem.lerPlataforma('versoes'); versoesBase=pv;
-  const alvo=ehVitalicia(fichaPers())?await versaoMaisNova():versaoAlvoDe(pv,Nuvem.clinicaId());
+  const vit=ehVitalicia(fichaPers()), alvo=vit?await versaoMaisNova():versaoAlvoDe(pv,Nuvem.clinicaId());
+  if(vit) fixarVersaoVitalicia(pv,alvo);
   if(!alvo || alvo===APP_VERSION){ try{ sessionStorage.removeItem('odonto-redir'); }catch(e){} return false; }
   const url=await urlDaVersao(alvo);
   if(!url){ console.warn('Versão '+alvo+' não está publicada; seguindo na '+APP_VERSION); return false; }
@@ -6078,6 +6085,9 @@ function renderPlatClientes(){
       <td style="white-space:nowrap"><strong>${esc(rotuloVersaoDe(f,versaoDoCliente(f.id)||APP_VERSION))}</strong>${versaoDoCliente(f.id)&&prodVersoes&&prodVersoes.atual&&cmpVer(versaoDoCliente(f.id),prodVersoes.atual)<0?' <span class="sit sit-nao_vem">atualização disponível</span>':''}${p.length?`<div class="muted" style="font-size:12px">${p.map(n=>'#'+n+' '+esc((f.personalizacoesInfo||{})[n]||'')).join('<br>')}</div>`:'<div class="muted" style="font-size:12px">Sem personalizações</div>'}</td>
       <td class="actions"><button class="btn-p" data-baseabrir="${esc(f.id)}">Abrir base</button><button class="btn-s" data-esppers="${esc(f.id)}">Personalizações</button>${e?'':'<div class="muted" style="font-size:11.5px;margin-top:4px">Primeira vez: a base de teste é criada ao abrir</div>'}</td></tr>`; }).join('');
   const minha=`<tr class="base-linha" data-baseminha tabindex="0"><td class="env-sel"></td><td><strong>Sua clínica</strong><div class="muted" style="font-size:12px">${esc(Nuvem.meuEmail())}</div></td><td>Completo</td><td><span class="sit sit-chegou">Sem plano (acesso completo)</span></td><td style="white-space:nowrap"><strong>${esc('Ver '+vCurta((ehVitalicia(outroPrincipal)&&prodVersoes&&prodVersoes.atual)||versaoDoCliente('principal')||APP_VERSION))}</strong><div class="muted" style="font-size:12px">${ehVitalicia(outroPrincipal)?'Acesso vitalício: sempre a versão mais nova e todas as personalizações':'Ligando o acesso vitalício…'}</div></td><td class="actions"><button class="btn-p" data-baseminha>Abrir base</button></td></tr>`;
+  if(outroLigado && ehVitalicia(outroPrincipal) && prodPlat && prodVersoes && prodVersoes.atual && !prodVersoes.semLista && (prodPlat.clinicas||{}).principal!==prodVersoes.atual && !renderPlatClientes._vv){ renderPlatClientes._vv=true;
+    const novo=Object.assign({},prodPlat,{padrao:prodPlat.padrao||prodVersoes.atual,clinicas:Object.assign({},prodPlat.clinicas||{},{principal:prodVersoes.atual})});
+    Nuvem.salvarPlataformaOutro('versoes',novo).then(()=>{ prodPlat=novo; }).catch(e=>{ renderPlatClientes._vv=false; console.warn('versão vitalícia',e); }); }
   if(outroLigado && !ehVitalicia(outroPrincipal) && !outroPrincipal.plano && !outroPrincipal.status && !renderPlatClientes._vit){ renderPlatClientes._vit=true;
     Nuvem.gravarPrincipalOutro({todasPersonalizacoes:true}).then(()=>{ Object.assign(outroPrincipal,{semPlano:true,todasPersonalizacoes:true}); if(currentTab==='plataforma'&&platAba==='clientes') render(); }).catch(e=>console.warn('acesso vitalício',e)); }
   return ponteHtml()+`<section class="bloco"><div class="bloco-cab"><h2>Bases dos clientes</h2><button class="btn-p" data-novabase style="margin-left:auto">+ Nova base de cliente</button><button class="btn-s" data-ponterecarregar>Atualizar</button></div>
