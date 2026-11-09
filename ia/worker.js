@@ -71,7 +71,7 @@ export default {
     const corpo = '{"model":' + JSON.stringify(modelo) + ',"max_tokens":6000,"system":' + JSON.stringify(SISTEMA)
       + ',"tools":[' + JSON.stringify(FERRAMENTA) + '],"tool_choice":{"type":"tool","name":"registrar_analise"}'
       + ',"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"'
-      + b64 + '"},"oversized_image":"error"},{"type":"text","text":' + JSON.stringify(pedido(tipo, dente, W, H)) + '}]}]}';
+      + b64 + '"}},{"type":"text","text":' + JSON.stringify(pedido(tipo, dente, W, H)) + '}]}]}';
 
     let r;
     try {
