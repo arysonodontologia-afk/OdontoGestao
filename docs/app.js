@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.23.0';
+const APP_VERSION='2.24.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -4081,7 +4081,7 @@ function renderApp(){
   else if(currentTab==='configuracoes') content=renderConfiguracoesPrincipal();
   else if(currentTab==='plataforma') content=renderPlataforma();
   else content=renderStub(items.find(i=>i.id===currentTab)?.label||'');
-  if(currentTab!=='plataforma') content=faixaPlanoHtml()+content;
+  if(currentTab!=='plataforma') content=faixaPlanoHtml()+(window.waAvisoPainel?window.waAvisoPainel():'')+content;
   if(currentTab==='dashboard' && NUVEM) content=faixaAprovacaoHtml()+content;
   if(NUVEM) content=faixaEspelhoHtml()+content;
 
@@ -5603,6 +5603,7 @@ function bindSugestoes(){
   const b=document.querySelector('[data-bvabrir]'); if(b) b.addEventListener('click',()=>abrirBoasVindas(false));
   document.querySelectorAll('[data-bvplanos]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirBoasVindas(false); }));
   document.querySelectorAll('[data-assinar]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); abrirAssinar(); }));
+  document.querySelectorAll('[data-waconsumo]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); currentTab='configuracoes'; configSubTab='whatsapp'; patientDetailId=null; render(); }));
   document.querySelectorAll('[data-minhaass]').forEach(x=>x.addEventListener('click',e=>{ e.preventDefault(); currentTab='configuracoes'; configSubTab='assinatura'; patientDetailId=null; render(); }));
 }
 

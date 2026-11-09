@@ -70,7 +70,20 @@ export async function processarWebhook(j, env) {
     for (const m of v.messages || []) {
       const payload = (m.button && m.button.payload) || (m.interactive && m.interactive.button_reply && m.interactive.button_reply.id) || '';
       const p = /^(C|R)\|([\w-]{1,80})\|([\w-]{1,80})$/.exec(payload);
-      if (!p) continue;   // texto livre: a recepção responde pelo WhatsApp da clínica (coexistência)
+      if (!p) {   // texto livre do paciente
+        // número só de avisos: responde uma vez por dia indicando o WhatsApp da recepção (opcional)
+        const cfgN = numId ? await cfgPorNumero(fs, numId) : null;
+        if (cfgN && cfgN.cfg.respostaTexto && !cfgN.cfg.simulacao && m.from) {
+          const dia = new Date().toISOString().slice(0, 10), chave = `t_${String(m.from).replace(/\D/g, '')}`;
+          const ja = (await fs.ler(`clinicas/${cfgN.cid}/waEnviados/${dia}`)) || {};
+          if (!ja[chave]) {
+            const tok = await tokenClinica(fs, cfgN.cid);
+            if (tok) await enviarTexto(env, numId, tok, m.from, String(cfgN.cfg.respostaTexto).slice(0, 900)).catch(() => {});
+            await fs.mesclar(`clinicas/${cfgN.cid}/waEnviados/${dia}`, { [chave]: Date.now() });
+          }
+        }
+        continue;
+      }
       const [, acao, cid, agId] = p;
       const cfg = await fs.ler(`clinicas/${cid}/wa/config`);
       if (!cfg || String(cfg.phoneNumberId || '') !== String(numId || '')) continue;   // a resposta tem que vir do número da própria clínica
@@ -83,6 +96,13 @@ export async function processarWebhook(j, env) {
 }
 
 // =============================== rotina ===============================
+async function cfgPorNumero(fs, numId) {   // acha a clínica dona do número (poucas clínicas no piloto)
+  for (const [cid] of await fs.listar('clinicas')) {
+    const cfg = await fs.ler(`clinicas/${cid}/wa/config`);
+    if (cfg && String(cfg.phoneNumberId || '') === String(numId)) return { cid, cfg };
+  }
+  return null;
+}
 export async function rodarRotina(env, agoraMs = Date.now()) {
   const fs = new Firestore(env);
   const clinicas = await fs.listar('clinicas');
@@ -143,6 +163,10 @@ async function rotinaClinica(fs, env, cid, ficha, agoraMs) {
   if (ficha.espelho) cfg.simulacao = true;   // espelho do ambiente de teste nunca envia de verdade
   const ctx = { fs, env, cid, cfg, nomeClinica, tok: cfg.simulacao ? '' : await tokenClinica(fs, cid) };
   const feito = [];
+  ctx.mes = ag.data.slice(0, 7);
+  ctx.uso = (await fs.ler(`clinicas/${cid}/waUso/${ctx.mes}`)) || {};
+  ctx.usoMudou = false;
+  await processarModelos(ctx);
 
   // 1) confirmação ao marcar (fila)
   if (cfg.confirmarAoMarcar !== false) {
@@ -186,7 +210,68 @@ async function rotinaClinica(fs, env, cid, ficha, agoraMs) {
     }
     if (Object.keys(marcados).length) await fs.mesclar(`clinicas/${cid}/waEnviados/${ag.data}`, marcados);
   }
+  if (ctx.usoMudou) await fs.mesclar(`clinicas/${cid}/waUso/${ctx.mes}`, Object.assign({}, ctx.uso, { atualizadoEm: Date.now() }));
   return feito;
+}
+
+// ---------- mensagens personalizadas pela clínica (modelos da Meta) ----------
+export const CAMPOS = {
+  lembrete: ['paciente', 'clinica', 'data', 'hora', 'dentista', 'motivo'],
+  agendada: ['paciente', 'clinica', 'data', 'hora', 'dentista', 'motivo'],
+  agenda: ['dentista', 'data', 'clinica', 'lista', 'resumo'],
+};
+const EXEMPLO = { paciente: 'Maria', clinica: 'Clínica Sorriso', data: 'quinta-feira, 12/11/2026', hora: '09:00', dentista: 'Dra. Ana', motivo: 'Avaliação',
+  lista: '08:00 Rita (Avaliação) · 10:00 Carlos (Restauração) ✓', resumo: '2 atendimentos, 1 confirmado.' };
+export function camposDoTexto(tipo, texto) {
+  const ok = CAMPOS[tipo] || [], vistos = [];
+  String(texto || '').replace(/\{(\w+)\}/g, (m, k) => { if (ok.includes(k)) vistos.push(k); return m; });
+  return vistos;
+}
+function textoMeta(texto, campos) { let i = 0; return String(texto).replace(/\{(\w+)\}/g, (m, k) => campos.includes(k) ? '{{' + (++i) + '}}' : m); }
+async function processarModelos(ctx) {
+  const { fs, cid, cfg, env } = ctx;
+  const pedidos = await fs.listar(`clinicas/${cid}/waModelos`);
+  if (!pedidos.length) return;
+  const personal = Object.assign({}, cfg.personal || {}), modelos = Object.assign({}, cfg.modelos || {});
+  let mudou = false;
+  for (const [tipo, m] of pedidos) {
+    if (!CAMPOS[tipo]) continue;
+    const campos = camposDoTexto(tipo, m.texto);
+    if (m.status === 'restaurar') {   // volta para a mensagem padrão
+      delete personal[tipo]; delete modelos[tipo]; mudou = true; await fs.apagar(`clinicas/${cid}/waModelos/${tipo}`); continue;
+    }
+    if (m.status === 'novo') {
+      if (cfg.simulacao || !ctx.tok || !cfg.wabaId) {
+        personal[tipo] = { texto: m.texto, campos, status: 'simulado' }; mudou = true;
+        await fs.mesclar(`clinicas/${cid}/waModelos/${tipo}`, { status: 'simulado', campos, conferidoEm: Date.now() });
+        continue;
+      }
+      const nome = `${MODELOS[tipo]}_${Date.now().toString(36)}`;
+      const comp = [{ type: 'BODY', text: textoMeta(m.texto, campos), example: { body_text: [campos.map(k => EXEMPLO[k])] } }];
+      if (tipo === 'lembrete') comp.push({ type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Confirmo' }, { type: 'QUICK_REPLY', text: 'Preciso remarcar' }] });
+      const r = await fetch(`https://graph.facebook.com/${env.GRAPH || 'v21.0'}/${cfg.wabaId}/message_templates`, {
+        method: 'POST', headers: { Authorization: 'Bearer ' + ctx.tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nome, language: 'pt_BR', category: 'UTILITY', components: comp }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.id) { await fs.mesclar(`clinicas/${cid}/waModelos/${tipo}`, { status: 'rejeitado', motivo: ((j.error && (j.error.error_user_msg || j.error.message)) || ('HTTP ' + r.status)).slice(0, 300), conferidoEm: Date.now() }); continue; }
+      await fs.mesclar(`clinicas/${cid}/waModelos/${tipo}`, { status: 'em_analise', id: j.id, nome, campos, conferidoEm: Date.now() });
+      if (String(j.status || '').toUpperCase() !== 'APPROVED') continue;
+      m.status = 'em_analise'; m.id = j.id; m.nome = nome;
+    }
+    if (m.status === 'em_analise' && m.id && ctx.tok) {
+      const r = await fetch(`https://graph.facebook.com/${env.GRAPH || 'v21.0'}/${m.id}?fields=status,rejected_reason,category`, { headers: { Authorization: 'Bearer ' + ctx.tok } });
+      const j = await r.json().catch(() => ({}));
+      const st = String(j.status || '').toUpperCase();
+      if (st === 'APPROVED') {
+        personal[tipo] = { texto: m.texto, campos, nome: m.nome, status: 'aprovado' }; modelos[tipo] = m.nome; mudou = true;
+        await fs.mesclar(`clinicas/${cid}/waModelos/${tipo}`, { status: 'aprovado', categoria: j.category || '', conferidoEm: Date.now() });
+      } else if (st === 'REJECTED' || st === 'DISABLED') {
+        await fs.mesclar(`clinicas/${cid}/waModelos/${tipo}`, { status: 'rejeitado', motivo: String(j.rejected_reason || st).slice(0, 300), conferidoEm: Date.now() });
+      }
+    }
+  }
+  if (mudou) { cfg.personal = personal; cfg.modelos = modelos; await fs.mesclar(`clinicas/${cid}/wa/config`, { personal, modelos }); }
 }
 const primeiroNome = n => (String(n || '').trim().split(/\s+/)[0] || '');
 const nomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return /^dra?\.?$/i.test(p[0] || '') ? `${p[0]} ${p[1] || ''}`.trim() : (p[0] || ''); };
@@ -194,25 +279,40 @@ const nomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return /
 const TEXTOS = {
   lembrete: p => `Olá, ${p[0]}! Lembrete da sua consulta na ${p[1]}: ${p[2]}, às ${p[3]}, com ${p[4]}. Motivo: ${p[5]}. Você confirma a presença?`,
   agendada: p => `Olá, ${p[0]}! Sua consulta na ${p[1]} foi agendada para ${p[2]}, às ${p[3]}, com ${p[4]}. Motivo: ${p[5]}. Até lá!`,
-  agenda: p => `Bom dia, ${p[0]}! Sua agenda de hoje (${p[1]}) na ${p[2]}: ${p[3]}. ${p[4]}`,
+  agenda: p => `Bom dia, ${p[0]}! Sua agenda de hoje (${p[1]}) na ${p[2]}: ${p[3]}. ${p[4]} Bom trabalho!`,
 };
 async function enviar(ctx, tipo, fone, params, item, agIdBotoes) {
   const para = foneWA(fone);
   const ps = params.map(limpo);
-  const texto = TEXTOS[tipo](ps);
-  const log = { tipo, para: para ? para.slice(0, 4) + '•••' + para.slice(-4) : '', texto, em: Date.now(), agId: (item && item.agId) || '', simulado: !!ctx.cfg.simulacao || !ctx.tok, ok: true, erro: '' };
+  const valor = {}; CAMPOS[tipo].forEach((k, i) => { valor[k] = ps[i]; });
+  const pers = (ctx.cfg.personal || {})[tipo];
+  const simulado = !!ctx.cfg.simulacao || !ctx.tok;
+  // texto personalizado: em simulação vale na hora; no envio real, só depois de aprovado pela Meta
+  const usarPers = pers && pers.texto && (simulado || (pers.status === 'aprovado' && pers.nome));
+  const texto = usarPers ? String(pers.texto).replace(/\{(\w+)\}/g, (m, k) => (k in valor ? valor[k] : m)) : TEXTOS[tipo](ps);
+  const log = { tipo, para: para ? para.slice(0, 4) + '•••' + para.slice(-4) : '', texto, em: Date.now(), agId: (item && item.agId) || '', simulado, ok: true, erro: '' };
+  const limite = +ctx.cfg.limiteMensal || 0;
   if (!para) { log.ok = false; log.erro = 'telefone inválido'; }
-  else if (!log.simulado) {
-    const comp = [{ type: 'body', parameters: ps.map(t => ({ type: 'text', text: t })) }];
+  else if (!simulado && limite > 0 && (+ctx.uso.total || 0) >= limite) { log.ok = false; log.pausado = true; log.erro = `Não enviado: limite mensal de ${limite} avisos atingido.`; }
+  else if (!simulado) {
+    const ordem = usarPers ? (pers.campos || []) : CAMPOS[tipo];
+    const comp = [{ type: 'body', parameters: ordem.map(k => ({ type: 'text', text: valor[k] || '-' })) }];
     if (agIdBotoes) {
       comp.push({ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: `C|${ctx.cid}|${agIdBotoes}` }] });
       comp.push({ type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: `R|${ctx.cid}|${agIdBotoes}` }] });
     }
     const r = await fetch(`https://graph.facebook.com/${ctx.env.GRAPH || 'v21.0'}/${ctx.cfg.phoneNumberId}/messages`, {
       method: 'POST', headers: { Authorization: 'Bearer ' + ctx.tok, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to: para, type: 'template', template: { name: (ctx.cfg.modelos && ctx.cfg.modelos[tipo]) || MODELOS[tipo], language: { code: 'pt_BR' }, components: comp } }),
+      body: JSON.stringify({ messaging_product: 'whatsapp', to: para, type: 'template', template: { name: usarPers ? pers.nome : MODELOS[tipo], language: { code: 'pt_BR' }, components: comp } }),
     }).catch(e => ({ ok: false, status: 0, json: async () => ({ error: { message: String(e) } }) }));
     if (!r.ok) { const j = await r.json().catch(() => ({})); log.ok = false; log.erro = ((j.error && j.error.message) || ('HTTP ' + r.status)).slice(0, 200); }
+  }
+  // consumo do mês: enviados de verdade (cobrados pela Meta) e simulados, por tipo
+  if (para && !log.pausado && log.ok) {
+    const k = simulado ? 'sim_' + tipo : tipo;
+    ctx.uso[k] = (+ctx.uso[k] || 0) + 1;
+    if (!simulado) ctx.uso.total = (+ctx.uso.total || 0) + 1;
+    ctx.usoMudou = true;
   }
   await ctx.fs.criar(`clinicas/${ctx.cid}/waLog`, log);
   return log;

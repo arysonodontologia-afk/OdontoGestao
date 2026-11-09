@@ -183,6 +183,18 @@ service cloud.firestore {
       match /waFila/{id} {
         allow create: if membro() && request.resource.data.keys().hasOnly(['agId', 'data', 'horario', 'pacienteNome', 'telefone', 'dentistaNome', 'motivo', 'criadoEm']);
       }
+      // mensagens personalizadas: o Master pede; o Worker cria o modelo na Meta e acompanha a aprovação
+      match /waModelos/{tipo} {
+        allow read: if membro();
+        allow create, update: if master() && tipo in ['lembrete', 'agendada', 'agenda']
+          && request.resource.data.keys().hasOnly(['texto', 'status', 'pedidoEm'])
+          && request.resource.data.status in ['novo', 'restaurar']
+          && request.resource.data.texto is string && request.resource.data.texto.size() <= 1000;
+      }
+      // consumo do mês (contado pelo Worker)
+      match /waUso/{mes} {
+        allow read: if membro();
+      }
       // o que foi enviado (ou simulado): só leitura no aplicativo
       match /waLog/{id} {
         allow read: if membro();
