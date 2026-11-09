@@ -37,7 +37,7 @@ function resumoDia(data){
   return {itens,dentistas};
 }
 async function sincronizarDias(forcar){
-  if(!liberado() || !cfg || !cfg.ativo || Nuvem.emEspelho()) return;
+  if(!liberado() || !cfg || !cfg.ativo) return;
   for(let i=0;i<=DIAS_RESUMO;i++){
     const data=isoMais(i), r=resumoDia(data), h=JSON.stringify(r);
     if(ultimos[data]===h) continue;

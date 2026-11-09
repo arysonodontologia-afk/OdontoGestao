@@ -88,7 +88,7 @@ export async function rodarRotina(env, agoraMs = Date.now()) {
   const clinicas = await fs.listar('clinicas');
   const res = [];
   for (const [cid, ficha] of clinicas) {
-    if (ficha.espelho || !liberada(ficha, agoraMs)) continue;
+    if (!liberada(ficha, agoraMs)) continue;   // bases espelho (teste) rodam, mas sempre em simulação
     try { res.push([cid, await rotinaClinica(fs, env, cid, ficha, agoraMs)]); }
     catch (e) { console.log('clínica', cid, e && e.message); res.push([cid, 'erro: ' + String(e && e.message || e).slice(0, 200)]); }
   }
@@ -140,6 +140,7 @@ async function rotinaClinica(fs, env, cid, ficha, agoraMs) {
   const tz = cfg.fuso || FUSO_UF[String(cfg.uf || '').toUpperCase()] || 'America/Sao_Paulo';
   const ag = agoraNoFuso(tz, agoraMs);
   const nomeClinica = cfg.nomeClinica || ficha.nome || 'clínica';
+  if (ficha.espelho) cfg.simulacao = true;   // espelho do ambiente de teste nunca envia de verdade
   const ctx = { fs, env, cid, cfg, nomeClinica, tok: cfg.simulacao ? '' : await tokenClinica(fs, cid) };
   const feito = [];
 
