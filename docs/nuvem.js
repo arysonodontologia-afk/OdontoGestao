@@ -35,6 +35,9 @@ const COLS = {
   aportes:          {nome:'aportes',       baldes:1,  perm:'financeiro'},
   procedimentos:    {nome:'procedimentos', baldes:2,  perm:null},
   grupos:           {nome:'grupos',        baldes:1,  perm:null},
+  materiais:        {nome:'materiais',     baldes:2,  perm:null},
+  estoqueMov:       {nome:'estoqueMov',    baldes:8,  perm:null},
+  kits:             {nome:'kits',          baldes:2,  perm:null},
 };
 const LIMITE_BALDE = 1000*1000;     // limite do Firestore: ~1 MB por documento
 const ALERTA_BALDE = 800*1000;

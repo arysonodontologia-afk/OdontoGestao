@@ -9,6 +9,13 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.25.0', data:'2026-11-10', itens:[
+    'Estoque de materiais (plano Completo ou módulo avulso): saldo, estoque mínimo, custo médio e valor em estoque',
+    'Compras: cada item escolhe o destino (patrimônio, material de consumo para o estoque, ou outro, como material de escritório). A compra continua gerando as contas a pagar e o fluxo',
+    'Kits por procedimento, com uma base inicial de consumo médio (restaurações, canal, extrações, ortodontia, prótese, HOF e mais) e o kit de toda consulta (EPI e descartáveis)',
+    'Evolução: o dentista confere os materiais sugeridos pelo kit, ajusta as quantidades e a baixa acontece ao confirmar',
+    'Custo de material por procedimento e por atendimento, comparado ao valor da tabela; alerta de materiais para repor no Painel',
+  ]},
   {v:'2.24.2', data:'2026-11-09', itens:[
     'Sua clínica (acesso vitalício) fica sempre registrada na versão mais nova: não abre mais uma versão antiga que a tratava como teste encerrado',
   ]},
