@@ -9,6 +9,14 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.26.0', data:'2026-11-10', itens:[
+    'Inadimplência: dar baixa direto no relatório com a data real do pagamento (sugere a data do vencimento), forma e observação; baixa parcial deixa o restante em aberto',
+    'Inadimplência: baixa em lote (na data de cada vencimento ou numa data única), filtros por paciente, período e "só do sistema anterior", lista das conferências para desfazer',
+    'Cancelar parcela que não era devida (com motivo): sai da inadimplência sem contar como recebida, fica registrada na ficha e pode ser restaurada',
+    'Orçamento com validade (padrão 30 dias, ajustável em Configurações → Clínica): depois do prazo vira "Vencido", fica na ficha, sai dos pendentes e pede nova avaliação',
+    'Procedimentos de orçamento vencido aparecem como "Plano vencido" e saem de Tratamentos em aberto; ao confirmar o plano de novo, voltam com o valor atual da tabela',
+    'Relatório de orçamentos com filtro "Vencidos: chamar para nova avaliação", alerta de orçamentos vencendo em 5 dias no Painel e "Revalidar" (só Master)',
+  ]},
   {v:'2.25.2', data:'2026-11-10', itens:[
     'Evolução: a lista de medidas/cores mostra o saldo de cada uma; quem não pode confirmar vê o aviso de que o dentista escolhe ao confirmar',
   ]},
