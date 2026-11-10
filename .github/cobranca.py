@@ -22,10 +22,10 @@ from google.auth.transport.requests import AuthorizedSession
 PLANOS = {   # centavos; recursos já incluídos no plano
     'essencial': (4990, set()),
     'clinico':   (7990, {'prontuario', 'formularios'}),
-    'completo':  (11990, {'prontuario', 'formularios', 'financeiro'}),
+    'completo':  (11990, {'prontuario', 'formularios', 'financeiro', 'estoque'}),
 }
 NOMES = {'essencial': 'Essencial', 'clinico': 'Clínico', 'completo': 'Completo'}
-MODULOS = {'prontuario': 3990, 'financeiro': 4990, 'formularios': 1990}
+MODULOS = {'prontuario': 3990, 'financeiro': 4990, 'formularios': 1990, 'estoque': 2990}
 DENTISTA_EXTRA = 1990
 MAX_EXTRAS = 5
 DIAS_TOLERANCIA = 5

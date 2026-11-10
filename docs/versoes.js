@@ -9,6 +9,22 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.25.2', data:'2026-11-10', itens:[
+    'Evolução: a lista de medidas/cores mostra o saldo de cada uma; quem não pode confirmar vê o aviso de que o dentista escolhe ao confirmar',
+  ]},
+  {v:'2.25.1', data:'2026-11-10', itens:[
+    'Estoque com variações: cada material pode ter medidas, cores ou tipos, cada um com saldo, mínimo e custo próprios (arcos por liga, secção e arcada; resina por cor; braquetes por prescrição; limas por série; fio de sutura por número)',
+    'Ligaduras separadas: elástica simples, corrente elástica e metálica',
+    'Kits com itens opcionais: na manutenção ortodôntica, arco, corrente, ligadura metálica e tubo só saem se o dentista preencher; "+ outra" lança mais de uma medida (ex.: arco superior e inferior)',
+    'Na compra e no atendimento, o sistema pede qual variação foi comprada ou usada; "Para repor" mostra exatamente o que comprar',
+  ]},
+  {v:'2.25.0', data:'2026-11-10', itens:[
+    'Estoque de materiais (plano Completo ou módulo avulso): saldo, estoque mínimo, custo médio e valor em estoque',
+    'Compras: cada item escolhe o destino (patrimônio, material de consumo para o estoque, ou outro, como material de escritório). A compra continua gerando as contas a pagar e o fluxo',
+    'Kits por procedimento, com uma base inicial de consumo médio (restaurações, canal, extrações, ortodontia, prótese, HOF e mais) e o kit de toda consulta (EPI e descartáveis)',
+    'Evolução: o dentista confere os materiais sugeridos pelo kit, ajusta as quantidades e a baixa acontece ao confirmar',
+    'Custo de material por procedimento e por atendimento, comparado ao valor da tabela; alerta de materiais para repor no Painel',
+  ]},
   {v:'2.24.2', data:'2026-11-09', itens:[
     'Sua clínica (acesso vitalício) fica sempre registrada na versão mais nova: não abre mais uma versão antiga que a tratava como teste encerrado',
   ]},

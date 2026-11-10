@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.24.2';
+const APP_VERSION='2.25.2';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -2336,7 +2336,7 @@ function renderLancarDespesa(){
 function compraFormHtml(){
   if(!compraItens) compraItens=[{nome:'',qtd:1,unit:'',patrimonio:true,vida:10}];
   const tot=compraTotal();
-  const equip=(state.despesasCatalogo.find(d=>d.categoria==='Equipamentos')||{}).id;
+  const equip=(compraItens.some(it=>destinoItem(it)==='estoque')&&state.despesasCatalogo.find(d=>d.categoria==='Materiais e Insumos')||state.despesasCatalogo.find(d=>d.categoria==='Equipamentos')||{}).id;
   return `<form id="fCompra">
   <div class="row">
     <div><label for="cpTipo">Tipo de despesa</label><select id="cpTipo">${opcoesTipoDespesa(equip)}</select></div>
@@ -2347,14 +2347,15 @@ function compraFormHtml(){
     <div><label for="cpNf">Nota fiscal (opcional)</label><input id="cpNf"></div>
   </div>
   <h4 style="margin:14px 0 6px">Itens da compra</h4>
-  <div class="overflow"><table class="cp-itens"><thead><tr><th>Item</th><th>Qtd</th><th>Valor unitário</th><th>Total</th><th title="Entra no patrimônio da clínica, com depreciação">Patrimônio</th><th>Vida útil</th><th></th></tr></thead><tbody>
-  ${compraItens.map((it,i)=>`<tr><td><input data-cpi="${i}" data-k="nome" value="${esc(it.nome)}" placeholder="Ex.: Autoclave 21 L" aria-label="Item"></td>
-    <td><input data-cpi="${i}" data-k="qtd" type="number" min="1" value="${esc(it.qtd)}" style="width:70px" aria-label="Quantidade"></td>
+  <div class="overflow"><table class="cp-itens"><thead><tr><th>Item</th><th title="Patrimônio entra com depreciação; material de consumo entra no estoque">Destino</th><th>Qtd</th><th>Valor unitário</th><th>Total</th><th>Vida útil</th><th></th></tr></thead><tbody>
+  ${compraItens.map((it,i)=>{ const dest=destinoItem(it), mat=dest==='estoque'&&it.mid&&window.estoqueMaterial?estoqueMaterial(it.mid):null;
+    return `<tr><td>${dest==='estoque'?`<select data-cpi="${i}" data-k="mid" aria-label="Material">${estoqueOpcoesCompra(it.mid)}</select>${mat&&estoqueTemVar(mat.id)?`<select data-cpi="${i}" data-k="vid" aria-label="Variação" style="margin-top:4px">${estoqueOpcoesVarCompra(mat.id,it.vid||'')}</select>`:''}${mat?`<div class="muted" style="font-size:11.5px;margin-top:2px">${esc(mat.embalagem||'embalagem')}: ${esc(String(mat.porEmbalagem).replace('.',','))} ${esc(mat.unidade)} cada</div>`:''}`:`<input data-cpi="${i}" data-k="nome" value="${esc(it.nome)}" placeholder="${dest==='outro'?'Ex.: papel A4, toner':'Ex.: Autoclave 21 L'}" aria-label="Item">`}</td>
+    <td><select data-cpi="${i}" data-k="destino" aria-label="Destino do item">${compraDestinos().map(([v,t])=>`<option value="${v}" ${dest===v?'selected':''}>${t}</option>`).join('')}</select></td>
+    <td><input data-cpi="${i}" data-k="qtd" type="number" min="1" value="${esc(it.qtd)}" style="width:70px" aria-label="Quantidade">${dest==='estoque'?'<div class="muted" style="font-size:11px">embalagens</div>':''}</td>
     <td><input data-cpi="${i}" data-k="unit" inputmode="decimal" value="${esc(it.unit)}" placeholder="0,00" style="width:120px" aria-label="Valor unitário"></td>
     <td style="white-space:nowrap" data-cptot="${i}">${fmtMoney((+it.qtd||0)*(lerValor(it.unit)||0))}</td>
-    <td style="text-align:center"><input type="checkbox" data-cpi="${i}" data-k="patrimonio" ${it.patrimonio?'checked':''} aria-label="Patrimônio" style="width:auto"></td>
-    <td><select data-cpi="${i}" data-k="vida" aria-label="Vida útil" ${it.patrimonio?'':'disabled'}>${[3,5,10,15,20].map(a=>`<option value="${a}" ${+it.vida===a?'selected':''}>${a} anos</option>`).join('')}</select></td>
-    <td>${compraItens.length>1?`<button type="button" class="btn-icone peq btn-perigo" data-cprm="${i}" aria-label="Remover item">${ICONES.lixo}</button>`:''}</td></tr>`).join('')}
+    <td><select data-cpi="${i}" data-k="vida" aria-label="Vida útil" ${dest==='patrimonio'?'':'disabled'}>${[3,5,10,15,20].map(a=>`<option value="${a}" ${+it.vida===a?'selected':''}>${a} anos</option>`).join('')}</select></td>
+    <td>${compraItens.length>1?`<button type="button" class="btn-icone peq btn-perigo" data-cprm="${i}" aria-label="Remover item">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('')}
   </tbody></table></div>
   <button type="button" class="btn-s" id="cpAdd" style="margin-top:6px">+ Adicionar item</button>
   <p style="margin:10px 0 0;font-size:15px"><strong>Total da compra: <span id="cpTotal">${fmtMoney(tot)}</span></strong></p>
@@ -2378,6 +2379,8 @@ function compraFormHtml(){
   <div style="margin-top:12px"><button class="btn-p">Salvar compra</button></div>
   </form>`;
 }
+function destinoItem(it){ return it.destino||(it.patrimonio?'patrimonio':'outro'); }
+function compraDestinos(){ return [['patrimonio','Patrimônio (equipamento)']].concat(window.estoqueLiberado&&estoqueLiberado()?[['estoque','Material de consumo (estoque)']]:[]).concat([['outro','Outro (escritório, sem estoque)']]); }
 function compraTotal(){ return r2((compraItens||[]).reduce((s,it)=>s+(+it.qtd||0)*(lerValor(it.unit)||0),0)); }
 function compraParcelas(){
   const q=id=>document.getElementById(id), total=compraTotal(), cond=q('cpCond').value;
@@ -2432,6 +2435,13 @@ function bindLancarDespesa(){
   };
   fc.querySelectorAll('[data-cpi]').forEach(el=>{ const ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
     el.addEventListener(ev,()=>{ const it=compraItens[+el.getAttribute('data-cpi')], k=el.getAttribute('data-k'); it[k]=el.type==='checkbox'?el.checked:el.value;
+      if(k==='destino'||k==='mid'||k==='vid'){ compraRasc=lerRasc(); it.patrimonio=destinoItem(it)==='patrimonio';
+        if(k==='destino' && it.destino==='estoque'){ const t=state.despesasCatalogo.find(d=>d.id===compraRasc.cpTipo); if(!t||t.categoria==='Equipamentos'){ const mt=state.despesasCatalogo.find(d=>d.categoria==='Materiais e Insumos'); if(mt) compraRasc.cpTipo=mt.id; } }
+        if(k==='mid' && it.mid==='__novo'){ it.mid=''; const rasc=compraRasc; estoqueNovoMaterial('',m=>{ it.mid=m.id; it.nome=m.nome; compraRasc=rasc; render(); }); return; }
+        if(k==='vid' && it.vid==='__novavar'){ it.vid=''; const rasc=compraRasc; estoqueNovaVariacao(it.mid,v=>{ it.vid=v.id; it.nome=estoqueNomeCompleto(it.mid,v.id); compraRasc=rasc; render(); }); return; }
+        if(k==='mid'){ it.vid=''; const m=it.mid&&estoqueMaterial(it.mid); it.nome=m?m.nome:''; }
+        if(k==='vid'){ it.nome=estoqueNomeCompleto(it.mid,it.vid); }
+        render(); return; }
       if(k==='patrimonio'){ const s=fc.querySelector(`select[data-cpi="${el.getAttribute('data-cpi')}"][data-k="vida"]`); if(s) s.disabled=!el.checked; } atualizarResumo(); }); });
   if(compraRasc){ RASC_IDS.forEach(id=>{ const el=q(id); if(el && compraRasc[id]!==undefined){ if(el.type==='checkbox') el.checked=compraRasc[id]; else el.value=compraRasc[id]; } }); compraRasc=null; }
   fc.querySelectorAll('[data-cprm]').forEach(b=>b.addEventListener('click',()=>{ compraRasc=lerRasc(); compraItens.splice(+b.getAttribute('data-cprm'),1); render(); }));
@@ -2440,7 +2450,9 @@ function bindLancarDespesa(){
   atualizarResumo();
   fc.addEventListener('submit',ev=>{
     ev.preventDefault();
-    const itens=compraItens.map(it=>({nome:String(it.nome||'').trim(),qtd:Math.max(1,parseInt(it.qtd,10)||1),unit:r2(lerValor(it.unit)||0),patrimonio:!!it.patrimonio,vida:+it.vida||10})).filter(it=>it.nome||it.unit);
+    const itens=compraItens.map(it=>{ const d=destinoItem(it); return {nome:String(it.nome||'').trim(),qtd:Math.max(1,parseInt(it.qtd,10)||1),unit:r2(lerValor(it.unit)||0),patrimonio:d==='patrimonio',vida:+it.vida||10,destino:d,mid:d==='estoque'?(it.mid||''):'',vid:d==='estoque'?(it.vid||''):''}; }).filter(it=>it.nome||it.unit||it.mid);
+    if(itens.some(it=>it.destino==='estoque'&&!it.mid)){ avisar('Escolha o material de cada item que vai para o estoque.'); return; }
+    if(itens.some(it=>it.destino==='estoque'&&estoqueTemVar(it.mid)&&!it.vid)){ avisar('Escolha a variação (medida, cor ou tipo) de cada material que tem variações.'); return; }
     if(!itens.length || itens.some(it=>!it.nome||!(it.unit>0))){ avisar('Informe o nome e o valor unitário de cada item.'); return; }
     const forn=q('cpFornecedor').value.trim(); if(!forn){ avisar('Informe o fornecedor.'); return; }
     const total=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0)), ps=compraParcelas();
@@ -2448,11 +2460,13 @@ function bindLancarDespesa(){
     if(ps.some(p=>!p.vencimento)){ avisar('Informe as datas de pagamento.'); return; }
     const tipo=state.despesasCatalogo.find(d=>d.id===q('cpTipo').value), dataC=q('cpData').value||hojeISO(), id=uid();
     state.compras=state.compras||[]; state.patrimonio=state.patrimonio||[]; state.fluxoFinanceiro=state.fluxoFinanceiro||[];
-    state.compras.push({id,data:dataC,fornecedor:forn,nf:q('cpNf').value.trim(),tipoNome:tipo?tipo.nome:'',categoria:tipo?tipo.categoria:'',itens,total,forma:q('cpForma').value,condicao:q('cpCond').value,parcelas:ps.length,criadaEm:new Date().toISOString()});
+    const compra={id,data:dataC,fornecedor:forn,nf:q('cpNf').value.trim(),tipoNome:tipo?tipo.nome:'',categoria:tipo?tipo.categoria:'',itens,total,forma:q('cpForma').value,condicao:q('cpCond').value,parcelas:ps.length,criadaEm:new Date().toISOString()};
+    state.compras.push(compra);
+    const nEst=window.estoqueEntradasDaCompra?estoqueEntradasDaCompra(compra,itens):0;
     ps.forEach(p=>state.fluxoFinanceiro.push({id:uid(),tipo:'despesa',categoria:tipo?tipo.categoria:'',fornecedor:forn,label:(tipo?tipo.nome:'Compra')+' · '+p.label,valor:p.valor,vencimento:p.vencimento,confirmado:!!p.pago,dataPagamento:p.pago?p.vencimento:'',forma:q('cpForma').value,compraId:id}));
     itens.filter(it=>it.patrimonio).forEach(it=>state.patrimonio.push({id:uid(),compraId:id,nome:it.nome,qtd:it.qtd,custo:r2(it.qtd*it.unit),dataCompra:dataC,vidaAnos:it.vida,fornecedor:forn}));
     compraItens=null; saveData(); financeiroSubTab='fluxo'; render();
-    avisar(`Compra de ${fmtMoney(total)} lançada: ${ps.length} pagamento(s) no Financeiro${itens.some(it=>it.patrimonio)?' e '+itens.filter(it=>it.patrimonio).length+' item(ns) no Patrimônio':''}.`);
+    avisar(`Compra de ${fmtMoney(total)} lançada: ${ps.length} pagamento(s) no Financeiro${itens.some(it=>it.patrimonio)?', '+itens.filter(it=>it.patrimonio).length+' item(ns) no Patrimônio':''}${nEst?', '+nEst+' material(is) no Estoque':''}.`);
   });
 }
 function abrirCompra(id){
@@ -2461,16 +2475,17 @@ function abrirCompra(id){
   const pago=r2(fl.filter(e=>e.confirmado).reduce((s,e)=>s+(+e.valor||0),0));
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Compra · ${esc(c.fornecedor)}</h3>
     <p class="muted" style="margin:0 0 10px">${esc(fmtDataBR(c.data))}${c.nf?' · NF '+esc(c.nf):''} · ${esc(c.tipoNome||'')} · ${esc(c.forma||'')}</p>
-    <div class="overflow"><table><thead><tr><th>Item</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${c.itens.map(it=>`<tr><td>${esc(it.nome)}${it.patrimonio?' <span class="sit sit-chegou">patrimônio</span>':''}</td><td>${it.qtd}</td><td>${fmtMoney(it.unit)}</td><td>${fmtMoney(it.qtd*it.unit)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="overflow"><table><thead><tr><th>Item</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${c.itens.map(it=>`<tr><td>${esc(it.nome)}${it.patrimonio?' <span class="sit sit-chegou">patrimônio</span>':it.destino==='estoque'?' <span class="sit sit-confirmado">estoque</span>':''}</td><td>${it.qtd}</td><td>${fmtMoney(it.unit)}</td><td>${fmtMoney(it.qtd*it.unit)}</td></tr>`).join('')}</tbody></table></div>
     <div class="orc-resumo"><div><span>Total da compra</span><span>${fmtMoney(c.total)}</span></div><div class="orc-desc"><span>Já pago</span><span>${fmtMoney(pago)}</span></div><div class="orc-total"><span>Falta pagar</span><span>${fmtMoney(r2(c.total-pago))}</span></div></div>
     <h4 style="margin:12px 0 6px">Pagamentos</h4>
     <div class="overflow" style="max-height:220px"><table><tbody>${fl.map(e=>`<tr><td>${esc(e.label.split(' · ').pop())}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td>${e.confirmado?'<span class="sit sit-chegou">Pago</span>':'<span class="sit sit-agendado">A pagar</span>'}</td></tr>`).join('')}</tbody></table></div>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn-d" data-cpexc>Excluir compra</button><button class="btn-p" data-fechar>Fechar</button></div>`);
   bg.querySelector('[data-cpexc]').addEventListener('click',()=>{
     const pend=fl.filter(e=>!e.confirmado).length, pagas=fl.length-pend;
-    customConfirm(`Excluir esta compra? ${pend} pagamento(s) a pagar serão apagados${pagas?` e os ${pagas} já pagos ficam no Financeiro`:''}. Os itens saem do Patrimônio.`,()=>{
+    customConfirm(`Excluir esta compra? ${pend} pagamento(s) a pagar serão apagados${pagas?` e os ${pagas} já pagos ficam no Financeiro`:''}. Os itens saem do Patrimônio${(state.estoqueMov||[]).some(m=>m.compraId===id)?' e as entradas saem do Estoque':''}.`,()=>{
       state.fluxoFinanceiro=state.fluxoFinanceiro.filter(e=>!(e.compraId===id && !e.confirmado));
       state.compras=state.compras.filter(x=>x.id!==id); state.patrimonio=(state.patrimonio||[]).filter(p=>p.compraId!==id);
+      if(window.estoqueApagarCompra) estoqueApagarCompra(id);
       saveData(); bg.remove(); render(); });
   });
 }
@@ -2621,6 +2636,7 @@ function renderEvolucao(p){
       <p class="muted" style="margin:4px 0">Dentista: ${esc(e.dentistaNome)}</p>
       ${evolSessoesFeitasHtml(p,e)}
       ${e.observacao?`<p style="margin:6px 0">${esc(e.observacao)}</p>`:''}
+      ${window.estoqueEvolFeitaHtml?estoqueEvolFeitaHtml(e):''}
       <p class="muted" style="font-size:12px;margin:4px 0 0">Confirmado em ${esc(fmtDataBR(e.confirmadoEm))}${e.confirmadoPorNome?' por '+esc(e.confirmadoPorNome)+(e.confirmadoPorCro?' — CRO '+esc(e.confirmadoPorCro):''):''}</p>
       </div>`;
     }
@@ -2628,6 +2644,7 @@ function renderEvolucao(p){
     <p style="margin:0"><strong>${esc(fmtDataBR(e.data))} ${esc(e.hora)}</strong> — ${esc(e.procedimentoNome)} ${e.falta?'<span class="badge b-red">Falta</span> ':''}<span class="badge b-recep">Pendente de confirmação</span></p>
     <p class="muted" style="margin:4px 0 10px">Dentista: ${esc(e.dentistaNome)}</p>
     ${evolSessoesHtml(p,e,podeConfirmar)}
+    ${window.estoqueEvolHtml?estoqueEvolHtml(p,e,podeConfirmar):''}
     <label>Observação do dentista</label>
     <textarea data-evolobs="${e.id}" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit">${esc(e.observacao)}</textarea>
     <div style="margin-top:10px">${podeConfirmar?`<button class="btn-p" data-confevol="${e.id}">Confirmar Evolução</button>`:'<span class="muted">Somente um dentista pode confirmar a evolução.</span>'}</div>
@@ -3561,7 +3578,7 @@ async function aoMudarLogin(u){
     if(meu!==nuvemFluxo) return;
     if(await conferirVersaoBase()) return;   // a base deste cliente usa outra versão: abre a versão certa
     state=st;
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes','materiais','estoqueMov','kits'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     state.meta=state.meta||{};
     if(Nuvem.emEspelho()) prepararEspelho(ac);
     if(!state.clinic){ try{ const ex=await Nuvem.lerClinicaServidor(); if(ex) state.clinic=ex; }catch(e){ console.warn(e); } }
@@ -3685,7 +3702,7 @@ async function restaurarBackupNuvem(header,imgs){
     await Nuvem.enviarImagensBackup(imgs,(i,n)=>prog(`Enviando radiografias: ${i} de ${n}`));
     prog('Enviando os dados…');
     state=novo; state.meta=state.meta||{};
-    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
+    ['users','patients','agendamentos','fluxoFinanceiro','despesasCatalogo','avisos','procedimentos','grupos','compras','patrimonio','aportes','materiais','estoqueMov','kits'].forEach(k=>{ if(!Array.isArray(state[k])) state[k]=[]; });
     session=eu.id;
     try{ ensureProcedimentos(); }catch(e){ console.error(e); }
     saveData();
@@ -3984,7 +4001,7 @@ function menuItems(){
     {id:'financeiro', label:'Financeiro', grupo:'Gestão', enabled:p.financeiro},
     {id:'tabelavalores', label:'Tabela de valores', grupo:'Gestão', enabled:pront},
     {id:'relatorios', label:'Relatórios', grupo:'Gestão', enabled:pront||fin},
-    {id:'estoque', label:'Estoque', grupo:'Gestão', enabled:true, stub:true},
+    {id:'estoque', label:'Estoque', grupo:'Gestão', enabled:!temRecurso('estoque') || !!(window.estoquePodeVer&&estoquePodeVer())},
     {id:'usuarios', label:'Usuários', grupo:'Administração', enabled:p.usuarios},
     {id:'configuracoes', label:'Configurações', grupo:'Administração', enabled:true},
     {id:'plataforma', label:'Plataforma', grupo:'Administração', enabled:!!(NUVEM && Nuvem.souAdmin()) && !modoCelular()},
@@ -4086,6 +4103,7 @@ function renderApp(){
   else if(currentTab==='agenda') content=renderAgendaPrincipal();
   else if(currentTab==='tabelavalores') content=renderTabelaValores();
   else if(currentTab==='relatorios') content=renderRelatorios();
+  else if(currentTab==='estoque' && window.estoqueTelaHtml) content=estoqueTelaHtml();
   else if(currentTab==='configuracoes') content=renderConfiguracoesPrincipal();
   else if(currentTab==='plataforma') content=renderPlataforma();
   else content=renderStub(items.find(i=>i.id===currentTab)?.label||'');
@@ -4199,6 +4217,8 @@ function renderDashboard(){
   }
   const resp=(NUVEM&&perms.pacientes)?(state.formularios||[]).filter(f=>f.status==='respondido'):[];
   if(resp.length) pend.push(`<button class="pend" data-formsresp="1"><span><span class="pend-tit">Formulários devolvidos</span><span class="pend-sub">Anamneses e termos assinados pelos pacientes, para revisar</span></span><span class="pend-num">${resp.length}</span></button>`);
+  const nEst=window.estoquePodeVer&&estoquePodeVer()?estoqueAbaixoMinimo():0;
+  if(nEst) pend.push(`<button class="pend" data-dashgo="estoque"><span><span class="pend-tit">Materiais para repor</span><span class="pend-sub">Abaixo do estoque mínimo</span></span><span class="pend-num" style="color:var(--warn)">${nEst}</span></button>`);
   const ps=pendenciaSugestoesHtml(); if(ps) pend.push(ps);
   const alv=(u.tipo==='master'||perms.clinica)?alvaraAviso(state.clinic):null;
   if(alv) pend.push(`<button class="pend" data-tab="configuracoes"><span><span class="pend-tit">Alvará sanitário</span><span class="pend-sub">${esc(alv.txt)}</span></span><span class="pend-num${alv.ruim?' ruim':''}">!</span></button>`);
@@ -5061,12 +5081,13 @@ const SUPORTE_WHATSAPP='5592985081590';
 const PLANOS={
   essencial:{nome:'Essencial',preco:49.90,recursos:[],dentistas:1,usuarios:2,desc:'Agenda, cadastro de pacientes, lembretes e anamnese'},
   clinico:{nome:'Clínico',preco:79.90,recursos:['prontuario','formularios','cadeiras'],dentistas:1,usuarios:0,desc:'Essencial + prontuário completo e formulários assinados'},
-  completo:{nome:'Completo',preco:119.90,recursos:['prontuario','formularios','financeiro','cadeiras'],dentistas:3,usuarios:0,desc:'Clínico + financeiro, relatórios e permissões'},
+  completo:{nome:'Completo',preco:119.90,recursos:['prontuario','formularios','financeiro','cadeiras','estoque'],dentistas:3,usuarios:0,desc:'Clínico + financeiro, estoque, relatórios e permissões'},
 };
 const MODULOS={
   prontuario:{nome:'Prontuário clínico',preco:39.90},
   financeiro:{nome:'Financeiro e relatórios',preco:49.90},
   formularios:{nome:'Formulários com assinatura',preco:19.90},
+  estoque:{nome:'Estoque de materiais',preco:29.90},
 };
 const PRECO_DENTISTA_EXTRA=19.90;
 // ficha com plano (a clínica principal, do Master, pode ter ficha "semPlano" só para personalizações)
@@ -6029,6 +6050,7 @@ async function carregarDadosFicticios(prog){
   const desp=[['Aluguel',2500,-20,true],['Energia elétrica',480,-12,true],['Material odontológico',1350,-5,true],['Laboratório de prótese',900,3,false],['Internet e telefone',160,8,false],['Contador',650,-1,false]];
   desp.forEach(([nome,valor,dd,pago],j)=>{ const cat=(state.despesasCatalogo||[]).find(d=>normTxt(d.nome).includes(normTxt(nome.split(' ')[0])));
     state.fluxoFinanceiro.push({id:'fic-dp'+(j+1),ficticio:true,tipo:'despesa',categoria:cat?cat.categoria:'Despesas fixas',fornecedor:'Fornecedor fictício '+(j+1),label:cat?cat.nome:nome,valor,vencimento:dia(dd),confirmado:pago,dataPagamento:pago?dia(dd):''}); });
+  if(window.estoqueFicticios) estoqueFicticios(dia);
   state.meta=state.meta||{}; state.meta.dadosFicticiosEm=new Date().toISOString();
   saveData();
   return pacs.length;
@@ -6041,6 +6063,7 @@ function removerDadosFicticios(){
   state.agendamentos=(state.agendamentos||[]).filter(a=>!a.ficticio && !ids.has(a.pacienteId));
   state.fluxoFinanceiro=(state.fluxoFinanceiro||[]).filter(e=>!e.ficticio && !ids.has(e.pacienteId));
   state.users=state.users.filter(u=>!u.ficticio);
+  if(window.estoqueRemoverFicticios) estoqueRemoverFicticios();
   if(state.meta) delete state.meta.dadosFicticiosEm;
   saveData();
   return pacs.length;
@@ -6971,6 +6994,7 @@ function bindEvents(){
     if(g==='agenda'){ currentTab='agenda'; agendaViewMode='dia'; agendaViewDate=hojeISO(); }
     else if(g==='fin'){ currentTab='financeiro'; }
     else if(g==='inicio'){ currentTab='dashboard'; }
+    else if(g==='estoque'){ currentTab='estoque'; }
     else if(g.startsWith('rel:')){ currentTab='relatorios'; relatorioTab=g.slice(4); }
     render();
   }));
@@ -7052,11 +7076,13 @@ function bindEvents(){
       const ult=sessoesDe(rec)[sessoesDe(rec).length-1]; if(ult) ult.fim=false;
       saveData(); render(); });
   }));
+  if(window.estoqueEvolLigar && patientDetailId){ const pE=state.patients.find(x=>x.id===patientDetailId); if(pE) estoqueEvolLigar(pE); }
   document.querySelectorAll('[data-confevol]').forEach(b=>b.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId);
     const e=p.evolucao.find(x=>x.id===b.getAttribute('data-confevol'));
     const eu=currentUser();
     if(!ehDentista(eu)){ avisar('Somente um dentista (com CRO cadastrado) pode confirmar a evolução.'); return; }
+    if(e && !e.confirmado && window.estoqueValidarEvol){ const msg=estoqueValidarEvol(p,e); if(msg){ avisar(msg); return; } }
     if(e && !e.confirmado){
       const ta=document.querySelector(`[data-evolobs="${e.id}"]`); if(ta) e.observacao=ta.value;
       e.confirmado=true; e.confirmadoEm=hojeISO(); e.confirmadoEmHora=new Date().toISOString();
@@ -7074,6 +7100,7 @@ function bindEvents(){
         e.sessoesInfo[id]={n,fim,nome:rec.nome};
       });
       if(!Object.keys(e.sessoesInfo).length) delete e.sessoesInfo;
+      if(window.estoqueBaixarEvol) estoqueBaixarEvol(p,e);
       saveData(); render();
     }
   }));
@@ -7304,6 +7331,7 @@ function bindEvents(){
     configSubTab=b.getAttribute('data-consub'); render();
   }));
   if(currentTab==='configuracoes' && configSubTab==='whatsapp' && window.waTelaLigar) window.waTelaLigar();
+  if(currentTab==='estoque' && window.estoqueLigar) window.estoqueLigar();
   const btnNewTipoDesp=document.getElementById('btnNewTipoDesp');
   if(btnNewTipoDesp) btnNewTipoDesp.addEventListener('click',()=>openTipoDespForm(null));
   document.querySelectorAll('[data-edittipodesp]').forEach(b=>b.addEventListener('click',()=>{

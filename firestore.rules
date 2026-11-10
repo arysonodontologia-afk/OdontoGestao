@@ -165,6 +165,10 @@ service cloud.firestore {
       match /aportes/{b}       { allow read: if pode('financeiro'); allow write: if pode('financeiro') && liberada(); }
       match /procedimentos/{b} { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
       match /grupos/{b}        { allow read: if membro(); allow write: if pode('procedimentos') && liberada(); }
+      // estoque: todos da clínica leem e gravam (o dentista dá baixa na evolução)
+      match /materiais/{b}     { allow read: if membro(); allow write: if membro() && liberada(); }
+      match /estoqueMov/{b}    { allow read: if membro(); allow write: if membro() && liberada(); }
+      match /kits/{b}          { allow read: if membro(); allow write: if membro() && liberada(); }
 
       // WhatsApp automático (wa/worker.js usa uma conta de serviço; o aplicativo só o que está abaixo).
       // config: todos da clínica leem (para saber o que está ligado); só o Master altera.
