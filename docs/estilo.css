@@ -958,3 +958,5 @@ tr.pf-venc td{color:var(--danger)}
 .est-opc td{opacity:.7}
 .est-pend{border-color:var(--warn)!important;box-shadow:0 0 0 2px var(--warn-soft)}
 .est-ger{border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:8px}
+.orc-vencido{background:var(--surface-2);border-left:3px solid var(--muted);padding:8px 12px;border-radius:8px;font-size:13.5px;margin:10px 0 0}
+.inad-lote{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--surface-2);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:13.5px}

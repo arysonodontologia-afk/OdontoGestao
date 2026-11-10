@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.25.2';
+const APP_VERSION='2.26.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -547,6 +547,7 @@ function collectPlanoItems(p){
     if(g.status==='Realizado anteriormente') return;
     items.push({id:g.id, ref:(g.arco?'Arcada '+arcoLabel(g.arco):'Geral'), nome:g.nome, especialidade:g.especialidade||'-', obs:g.obs||'', valor:g.valor||0, incluido:g.incluirOrcamento!==false, status:g.status||'Planejado'});
   });
+  if((p.orcamentos||[]).length){ const v=recsPlanoVencido(p); items.forEach(it=>{ if(v.has(it.id)) it.vencido=true; }); }
   return items;
 }
 function findProcedimentoRecordById(p,id){
@@ -593,7 +594,7 @@ function renderPlanoTratamento(p){
     return `<tr>
       <td><input type="checkbox" data-planochk="${id}" ${it.incluido?'checked':''} title="Incluir no Orçamento"></td>
       <td>${i+1}</td><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td>
-      <td>${statusProcBadge(it.status)}${(()=>{ const rec=findProcedimentoRecordById(p,id); const r=resumoSessoes(rec); const dent=ehDentista(currentUser());
+      <td>${it.vencido?'<span class="badge b-cinza" title="O orçamento deste procedimento perdeu a validade. Faça nova avaliação e confirme o plano de novo.">Plano vencido</span>':statusProcBadge(it.status)}${(()=>{ const rec=findProcedimentoRecordById(p,id); const r=resumoSessoes(rec); const dent=ehDentista(currentUser());
         return (r?`<div class="muted" style="font-size:12px;margin-top:3px">${esc(r)}</div>`:'')+(sessoesDe(rec).length>SESSOES_AVISO&&it.status==='Em andamento'?`<div class="aviso-sess">Já são ${sessoesDe(rec).length} sessões</div>`:'')
           +(dent&&it.status==='Em andamento'?`<button class="lnk-forte" data-tratfim="${id}" style="font-size:12.5px;display:block;margin-top:3px">Finalizar tratamento</button>`:'')
           +(dent&&it.status==='Concluído'&&rec&&sessoesDe(rec).length?`<button class="lnk-forte" data-tratreabrir="${id}" style="font-size:12.5px;display:block;margin-top:3px">Reabrir</button>`:''); })()}</td>
@@ -689,13 +690,13 @@ function renderOrcamento(p){
   }
   const podeFin=permsDe(currentUser()).financeiro;
   return orcs.map(o=>{
-    const aprovado=o.status==='aprovado', perdido=o.status==='perdido';
+    const aprovado=o.status==='aprovado', perdido=o.status==='perdido', vencido=orcVencido(o), master=currentUser()&&currentUser().tipo==='master';
     const rows=o.itens.map(it=>`<tr><td>${esc(it.especialidade)}</td><td>${esc(it.nome)}</td><td>${esc(it.ref)}</td><td>${it.valorTabela!=null&&+it.valorTabela!==+it.valor?`<s class="muted">${fmtMoney(it.valorTabela)}</s> `:''}${fmtMoney(it.valor)}</td></tr>`).join('');
     const sub=orcSubtotal(o), aj=orcAjusteValor(o,sub);
     return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-    <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':perdido?'b-cinza':'b-recep'}">${aprovado?'Aprovado':perdido?'Não fechado':'Pendente'}</span>${o.importado?' <span class="tag-pac">Sistema anterior</span>':''}</h3>
-    <div>${podeFin?`${aprovado||perdido?'':`<button class="btn-s" data-ajorc="${o.id}">Desconto / acréscimo</button> <button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:'<span class="muted">Aprovação pelo administrativo</span>'}</div>
+    <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':perdido||vencido?'b-cinza':'b-recep'}">${aprovado?'Aprovado':perdido?'Não fechado':vencido?'Vencido':'Pendente'}</span>${o.importado?' <span class="tag-pac">Sistema anterior</span>':''}</h3>
+    <div>${vencido?`<button class="btn-p" data-orcaval="${o.id}">Agendar nova avaliação</button> ${master?`<button class="btn-s" data-orcreval="${o.id}">Revalidar por mais ${validadeOrcDias()} dias</button> `:''}`:''}${podeFin?`${aprovado||perdido||vencido?'':`<button class="btn-s" data-ajorc="${o.id}">Desconto / acréscimo</button> <button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:(vencido?'':'<span class="muted">Aprovação pelo administrativo</span>')}</div>
     </div>
     <div class="overflow"><table><thead><tr><th>Grupo</th><th>Procedimento</th><th>Referência</th><th>Valor</th></tr></thead>
     <tbody>${rows||'<tr><td colspan="4" class="muted">Nenhum item</td></tr>'}</tbody></table></div>
@@ -703,8 +704,24 @@ function renderOrcamento(p){
     <p style="margin-top:12px"><strong>Total do Orçamento:</strong> ${fmtMoney(o.total)}${orcTabela(o)>o.total+0.004?` <span class="muted">(${fmtPct((1-o.total/orcTabela(o))*100)}% abaixo da tabela)</span>`:''}</p>
     ${o.ajustadoPorNome?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Valores ajustados por ${esc(o.ajustadoPorNome)} em ${esc(fmtDataBR(o.ajustadoEm))}${o.motivoAjuste&&!(o.ajuste&&o.ajuste.motivo)?' · motivo: '+esc(o.motivoAjuste):''}.</p>`:''}
     ${aprovado?'<p class="muted">Este orçamento já está disponível na aba Financeiro.</p>':''}
+    ${vencido?`<p class="orc-vencido">Este orçamento venceu em ${esc(fmtDataBR(orcVenceEm(o)))} (validade de ${validadeOrcDias()} dias). Os valores perderam a validade: faça uma nova avaliação e confirme o plano de tratamento de novo para gerar um orçamento com os valores atuais.</p>`:''}
+    ${!aprovado&&!perdido&&!vencido?`<p class="muted" style="font-size:12.5px;margin:4px 0 0">Válido até ${esc(fmtDataBR(orcVenceEm(o)))}${o.revalidadoPorNome?` · revalidado por ${esc(o.revalidadoPorNome)} em ${esc(fmtDataBR(o.revalidadoEm))}`:''}.</p>`:''}
     </div>`;
   }).join('');
+}
+// ---- validade do orçamento: pendente depois do prazo vira "Vencido" (fica na ficha, sai dos pendentes) ----
+function validadeOrcDias(){ const v=+((state.clinic||{}).validadeOrcamento); return v>0?v:30; }
+function orcVenceEm(o){ return o.validoAte || addDaysStr(o.data||hojeISO(), validadeOrcDias()); }
+function orcVencido(o){ return !!o && o.status!=='aprovado' && o.status!=='perdido' && orcVenceEm(o)<hojeISO(); }
+function orcAberto(o){ return !!o && o.status!=='aprovado' && o.status!=='perdido' && !orcVencido(o); }
+// procedimentos "Planejado" que só estavam em orçamentos vencidos (não em aprovado nem em pendente válido)
+function recsPlanoVencido(p){
+  const planos={}; (p.planosConfirmados||[]).forEach(pl=>{ planos[pl.id]=pl; });
+  const ids=o=>{ const pl=planos[o.planoId]; return pl?(pl.itens||[]).filter(it=>it&&it.incluido!==false).map(it=>it.id):[]; };
+  const venc=new Set(), vivos=new Set();
+  (p.orcamentos||[]).forEach(o=>{ if(orcVencido(o)) ids(o).forEach(id=>venc.add(id)); else if(o.status!=='perdido') ids(o).forEach(id=>vivos.add(id)); });
+  const r=new Set(); venc.forEach(id=>{ if(vivos.has(id)) return; const rec=findProcedimentoRecordById(p,id); if(rec && (rec.status||'Planejado')==='Planejado') r.add(id); });
+  return r;
 }
 function addDaysStr(dateStr, days){
   const d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+days); return isoLocal(d);
@@ -734,7 +751,7 @@ function procedimentoChecksHtml(pacienteId, selectedIds){
   selectedIds=selectedIds||[];
   const p=state.patients.find(x=>x.id===pacienteId);
   if(!p) return '<p class="muted" style="margin:4px 0">Selecione o paciente primeiro</p>';
-  const items=collectPlanoItems(p).filter(it=>it.status!=='Concluído'||selectedIds.includes(it.id));
+  const items=collectPlanoItems(p).filter(it=>(it.status!=='Concluído'&&!it.vencido)||selectedIds.includes(it.id));
   if(!items.length) return '<p class="muted" style="margin:4px 0">Nenhum procedimento pendente no plano de tratamento deste paciente</p>';
   return items.map(it=>{ const n=sessoesDe(findProcedimentoRecordById(p,it.id)).length, ret=it.status==='Em andamento'&&n?' · retorno, sessão '+(n+1):'';
     return `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;color:var(--text);font-size:14px"><input type="checkbox" data-agproc="${it.id}" data-aglabel="${esc(it.nome+' ('+it.ref+')'+(ret?' · Retorno sessão '+(n+1):''))}" ${selectedIds.includes(it.id)?'checked':''} style="width:auto;margin-top:3px"><span>${esc(it.especialidade)} — ${esc(it.nome)} (${esc(it.ref)})${ret?`<span class="muted">${esc(ret)} · sem custo adicional</span>`:''}</span></label>`; }).join('');
@@ -1372,7 +1389,7 @@ function bindBuscaPacienteAg(){
   });
 }
 function openAgendamentoForm(a){
-  const isNew=!a;
+  const isNew=!a||!a.id;
   const dentistas=state.users.filter(dentistaAtivo);
   document.getElementById('agendaFormArea').innerHTML=`<div class="card">
   <h4>${isNew?'Novo Agendamento':'Editar Agendamento'}</h4>
@@ -1902,6 +1919,7 @@ function resumoExclusaoPaciente(p){
   add((state.agendamentos||[]).filter(a=>a.pacienteId===p.id).length,'agendamento','agendamentos');
   return {itens, fin:(state.fluxoFinanceiro||[]).filter(e=>e.pacienteId===p.id).length};
 }
+let repOrcSit='aberto';
 let relatorioTab='inadimplencia', repFluxoHorizonte=90, repOrcDias=0, repEvolDentista='', repRetornoMeses=6, repRetornoNunca=false;
 function repPacBtn(p,tab){ return `<button class="btn-s" data-reppac="${p.id}" data-reptab="${tab}" style="font-weight:600">${esc(p.nome)}</button>`; }
 const RELATORIOS=[
@@ -1927,18 +1945,128 @@ function repCard(titulo,descricao,filtros,resumo,tabela){
   ${filtros?`<div class="row" style="margin-bottom:8px">${filtros}</div>`:''}
   <p>${resumo}</p>${tabela}</div>`;
 }
+let repInadImp=false, repInadBusca='', repInadDe='', repInadAte='';
+const repInadSel=new Set();
+function inadPac(e){ return pacPorId(e.pacienteId); }
 function repInadimplencia(){
   ensureFluxoTipos();
-  const hoje=hojeISO();
-  const itens=(state.fluxoFinanceiro||[]).filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje)
-    .map(e=>({e, dias:diasEntre(e.vencimento,hoje), pac:pacPorId(e.pacienteId)})).sort((a,b)=>b.dias-a.dias);
+  const hoje=hojeISO(), fin=!!permsDe(currentUser()).financeiro;
+  let itens=(state.fluxoFinanceiro||[]).filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje)
+    .map(e=>({e, dias:diasEntre(e.vencimento,hoje), pac:inadPac(e)}));
+  if(repInadImp) itens=itens.filter(x=>x.e.importado);
+  if(repInadBusca){ const b=normTxt(repInadBusca); itens=itens.filter(x=>normTxt((x.pac?x.pac.nome:x.e.pacienteNome)||'').includes(b)); }
+  if(repInadDe) itens=itens.filter(x=>x.e.vencimento>=repInadDe);
+  if(repInadAte) itens=itens.filter(x=>x.e.vencimento<=repInadAte);
+  itens.sort((a,b)=>{ const na=(a.pac?a.pac.nome:a.e.pacienteNome)||'', nb=(b.pac?b.pac.nome:b.e.pacienteNome)||''; return repInadBusca||repInadImp?na.localeCompare(nb)||a.e.vencimento.localeCompare(b.e.vencimento):b.dias-a.dias; });
+  const visiveis=new Set(itens.map(x=>x.e.id)); [...repInadSel].forEach(id=>{ if(!visiveis.has(id)) repInadSel.delete(id); });
   const total=itens.reduce((sum,x)=>sum+(x.e.valor||0),0);
   const nPac=new Set(itens.map(x=>x.e.pacienteId||x.e.pacienteNome)).size;
-  const rows=itens.map(({e,dias,pac})=>`<tr><td>${pac?repPacBtn(pac,'financeiro'):esc(e.pacienteNome||'-')}</td><td>${pac?esc(pac.telefone||'-'):'-'}</td>
-    <td>${esc(e.label)}</td><td>${fmtDataBR(e.vencimento)}</td><td><span class="badge ${dias>30?'b-red':'b-recep'}">${dias} dia(s)</span></td><td>${fmtMoney(e.valor)}</td></tr>`).join('');
-  return repCard('Contas a receber vencidas','Parcelas cujo vencimento já passou e cujo pagamento ainda não foi confirmado no Fluxo Financeiro. Clique no nome para abrir o financeiro do paciente.','',
+  const rows=itens.map(({e,dias,pac})=>`<tr>${fin?`<td><input type="checkbox" data-inadsel="${e.id}" ${repInadSel.has(e.id)?'checked':''} aria-label="Selecionar parcela" style="width:auto"></td>`:''}<td>${pac?repPacBtn(pac,'financeiro'):esc(e.pacienteNome||'-')}</td><td>${pac?esc(pac.telefone||'-'):'-'}</td>
+    <td>${esc(e.label)}${e.importado?' <span class="tag-pac">Sistema anterior</span>':''}</td><td>${fmtDataBR(e.vencimento)}</td><td><span class="badge ${dias>30?'b-red':'b-recep'}">${dias} dia(s)</span></td><td>${fmtMoney(e.valor)}</td>
+    ${fin?`<td class="actions" style="white-space:nowrap"><button class="btn-p peq" data-inadbaixa="${e.id}">Dar baixa</button> <button class="btn-s peq" data-inadcanc="${e.id}" title="A parcela não era devida (ex.: lançamento errado na importação)">Cancelar</button></td>`:''}</tr>`).join('');
+  const filtros=`<div><label for="repInadBusca">Paciente</label><input id="repInadBusca" type="search" value="${esc(repInadBusca)}" placeholder="Nome do paciente"></div>
+    <div><label for="repInadDe">Vencimento de</label><input id="repInadDe" type="date" value="${esc(repInadDe)}"></div>
+    <div><label for="repInadAte">até</label><input id="repInadAte" type="date" value="${esc(repInadAte)}"></div>
+    <div style="align-self:flex-end"><label class="chk-linha"><input type="checkbox" id="repInadImp" ${repInadImp?'checked':''} style="width:auto"> Só do sistema anterior</label></div>`;
+  const lote=fin&&itens.length?`<div class="inad-lote"><span id="inadSelInfo">${repInadSel.size?repInadSel.size+' selecionada(s)':'Marque as parcelas conferidas para dar baixa em várias de uma vez.'}</span><button class="btn-p" data-inadlote ${repInadSel.size?'':'disabled'}>Dar baixa nas selecionadas</button></div>`:'';
+  // conferências recentes (para desfazer)
+  const recentes=fin?(state.fluxoFinanceiro||[]).filter(e=>e.baixaRetro).sort((a,b)=>(b.baixaRetro.em||'').localeCompare(a.baixaRetro.em||'')).slice(0,15):[];
+  const canc=fin?parcelasCanceladas().slice(0,15):[];
+  const extra=(recentes.length?`<h4 style="margin:18px 0 6px">Baixas conferidas recentemente</h4><div class="overflow"><table><thead><tr><th>Paciente</th><th>Parcela</th><th>Vencimento</th><th>Pago em</th><th>Valor</th><th>Conferido</th><th></th></tr></thead><tbody>${recentes.map(e=>{ const pac=inadPac(e); return `<tr><td>${esc(pac?pac.nome:(e.pacienteNome||'-'))}</td><td>${esc(e.label)}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtDataBR(e.dataPagamento)}${e.forma?' · '+esc(e.forma):''}</td><td>${fmtMoney(e.valor)}${e.baixaRetro.restanteId?' <span class="muted">(parcial)</span>':''}</td><td class="muted" style="font-size:12.5px">${esc(fmtDataBR((e.baixaRetro.em||'').slice(0,10)))} · ${esc(e.baixaRetro.por||'')}${e.baixaRetro.obs?'<br>'+esc(e.baixaRetro.obs):''}</td><td><button class="btn-s peq" data-inaddesf="${e.id}">Desfazer</button></td></tr>`; }).join('')}</tbody></table></div>`:'')
+    +(canc.length?`<h4 style="margin:18px 0 6px">Parcelas canceladas (não eram devidas)</h4><div class="overflow"><table><thead><tr><th>Paciente</th><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Motivo</th><th></th></tr></thead><tbody>${canc.map(({e,p})=>`<tr><td>${esc(p?p.nome:(e.pacienteNome||'-'))}</td><td>${esc(e.label)}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td class="muted" style="font-size:12.5px">${esc(e.cancelamento.motivo)}<br>${esc(fmtDataBR((e.cancelamento.em||'').slice(0,10)))} · ${esc(e.cancelamento.por||'')}</td><td><button class="btn-s peq" data-inadrest="${e.id}">Restaurar</button></td></tr>`).join('')}</tbody></table></div>`:'');
+  return repCard('Contas a receber vencidas','Parcelas cujo vencimento já passou e cujo pagamento ainda não foi confirmado. Conferiu na ficha física que o paciente pagou? Use <strong>Dar baixa</strong> com a data real do pagamento. Se a parcela nunca foi devida, use <strong>Cancelar</strong>.',filtros,
     `<strong>Total em atraso:</strong> <span style="color:var(--danger);font-weight:700">${fmtMoney(total)}</span> &nbsp;·&nbsp; <strong>Pacientes:</strong> ${nPac} &nbsp;·&nbsp; <strong>Parcelas:</strong> ${itens.length}`,
-    itens.length?`<div class="overflow"><table><thead><tr><th>Paciente</th><th>Telefone</th><th>Parcela</th><th>Vencimento</th><th>Atraso</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhuma parcela vencida em aberto.</p>');
+    (itens.length?lote+`<div class="overflow"><table><thead><tr>${fin?`<th><input type="checkbox" data-inadall aria-label="Selecionar todas" style="width:auto" ${itens.length&&itens.every(x=>repInadSel.has(x.e.id))?'checked':''}></th>`:''}<th>Paciente</th><th>Telefone</th><th>Parcela</th><th>Vencimento</th><th>Atraso</th><th>Valor</th>${fin?'<th></th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhuma parcela vencida em aberto com esse filtro.</p>')+extra);
+}
+// ---- baixa retroativa (conferência com a ficha física), baixa parcial e cancelamento de parcela ----
+function parcelasCanceladas(){
+  const l=[]; state.patients.forEach(p=>(p.parcelasCanceladas||[]).forEach(e=>l.push({e,p})));
+  ((state.meta&&state.meta.parcelasCanceladas)||[]).forEach(e=>l.push({e,p:null}));
+  return l.sort((a,b)=>(b.e.cancelamento.em||'').localeCompare(a.e.cancelamento.em||''));
+}
+function aplicarBaixaRetro(e,data,forma,valor,obs){
+  const u=currentUser(); const info={em:new Date().toISOString(),por:u?nomeExibicao(u):'',obs:obs||''};
+  if(valor!=null && valor<(+e.valor||0)-0.004){
+    const resto=r2((+e.valor||0)-valor);
+    const novo=Object.assign({},e,{id:uid(),valor:resto,label:(e.label||'Parcela')+' (restante)',confirmado:false,dataPagamento:''});
+    delete novo.baixaRetro; delete novo.forma;
+    state.fluxoFinanceiro.push(novo);
+    info.restanteId=novo.id; info.valorOriginal=+e.valor; e.valor=r2(valor);
+  }
+  e.confirmado=true; e.dataPagamento=data; if(forma) e.forma=forma; e.baixaRetro=info;
+}
+function desfazerBaixaRetro(e){
+  const b=e.baixaRetro||{};
+  if(b.restanteId){
+    const rest=state.fluxoFinanceiro.find(x=>x.id===b.restanteId);
+    if(rest && rest.confirmado){ avisar('A parte restante desta parcela já foi paga. Desfaça a baixa dela primeiro.'); return false; }
+    if(rest){ e.valor=r2((+e.valor||0)+(+rest.valor||0)); state.fluxoFinanceiro=state.fluxoFinanceiro.filter(x=>x.id!==rest.id); }
+    else if(b.valorOriginal) e.valor=b.valorOriginal;
+  }
+  e.confirmado=false; e.dataPagamento=''; delete e.baixaRetro;
+  return true;
+}
+function abrirBaixaRetro(ids){
+  const es=ids.map(id=>state.fluxoFinanceiro.find(x=>x.id===id)).filter(e=>e&&!e.confirmado); if(!es.length) return;
+  const um=es.length===1, e0=es[0], hoje=hojeISO(), pac=inadPac(e0);
+  const formas=`<option value="">Não informada</option>${FORMAS_PAG.map(f=>`<option ${um&&e0.forma===f?'selected':''}>${f}</option>`).join('')}`;
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">${um?'Dar baixa na parcela':'Dar baixa em '+es.length+' parcelas'}</h3>
+    <p class="muted" style="margin:0 0 10px">${um?esc((pac?pac.nome:(e0.pacienteNome||''))+' · '+(e0.label||'')+' · vencimento '+fmtDataBR(e0.vencimento)+' · '+fmtMoney(e0.valor)):'Total: '+fmtMoney(es.reduce((s,e)=>s+(+e.valor||0),0))}</p>
+    <form id="fBaixa">
+    ${um?`<div class="row"><div><label for="bxData">Data do pagamento</label><input id="bxData" type="date" value="${esc(e0.vencimento<hoje?e0.vencimento:hoje)}" max="${hoje}" required></div>
+      <div><label for="bxValor">Valor recebido</label><input id="bxValor" inputmode="decimal" value="${esc(String(r2(e0.valor)).replace('.',','))}" required></div></div>
+      <p class="muted" style="font-size:12.5px;margin:2px 0 6px">Se o paciente pagou só uma parte, informe o valor pago: o restante continua em aberto como uma nova parcela, com o mesmo vencimento.</p>`
+    :`<label>Data do pagamento</label>
+      <label class="chk-linha"><input type="radio" name="bxModo" value="venc" checked style="width:auto"> A data do vencimento de cada parcela</label>
+      <label class="chk-linha"><input type="radio" name="bxModo" value="unica" style="width:auto"> Uma data só para todas: <input id="bxDataU" type="date" max="${hoje}" style="width:auto;display:inline-block;margin-left:6px"></label>`}
+    <div class="row"><div><label for="bxForma">Forma de pagamento</label><select id="bxForma">${formas}</select></div>
+      <div><label for="bxObs">Observação</label><input id="bxObs" value="Conferido na ficha física"></div></div>
+    <p class="erro-campo" id="bxErro"></p>
+    <div style="margin-top:12px;text-align:right"><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Confirmar baixa</button></div></form>`);
+  const q=s=>bg.querySelector(s), err=t=>{ q('#bxErro').textContent=t; };
+  bg.querySelector('#fBaixa').addEventListener('submit',ev=>{
+    ev.preventDefault();
+    const forma=q('#bxForma').value, obs=q('#bxObs').value.trim();
+    if(um){
+      const d=q('#bxData').value, v=r2(lerValor(q('#bxValor').value));
+      if(!d) return err('Informe a data do pagamento.'); if(d>hoje) return err('A data do pagamento não pode ser no futuro.');
+      if(!(v>0)) return err('Informe o valor recebido.'); if(v>(+e0.valor||0)+0.004) return err('O valor passa do valor da parcela ('+fmtMoney(e0.valor)+').');
+      aplicarBaixaRetro(e0,d,forma,v,obs);
+    } else {
+      const modo=(bg.querySelector('input[name="bxModo"]:checked')||{}).value, du=q('#bxDataU').value;
+      if(modo==='unica'){ if(!du) return err('Informe a data.'); if(du>hoje) return err('A data do pagamento não pode ser no futuro.'); }
+      es.forEach(e=>aplicarBaixaRetro(e,modo==='unica'?du:(e.vencimento<=hoje?e.vencimento:hoje),forma,null,obs));
+    }
+    es.forEach(e=>repInadSel.delete(e.id));
+    saveData(); bg.remove(); render();
+    avisarRapido(um?'Baixa registrada.':es.length+' baixas registradas.');
+  });
+}
+function abrirCancelarParcela(id){
+  const e=state.fluxoFinanceiro.find(x=>x.id===id); if(!e||e.confirmado) return; const pac=inadPac(e);
+  const MOT=['Lançamento duplicado na importação','Parcela não existe na ficha física','Tratamento não realizado ou cancelado','Valor negociado / perdoado'];
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Cancelar parcela</h3>
+    <p class="muted" style="margin:0 0 10px">${esc((pac?pac.nome:(e.pacienteNome||''))+' · '+(e.label||'')+' · vencimento '+fmtDataBR(e.vencimento)+' · '+fmtMoney(e.valor))}</p>
+    <p style="margin:0 0 10px;font-size:13.5px">A parcela sai da inadimplência e do fluxo <strong>sem contar como recebida</strong>. Ela fica registrada na ficha do paciente e pode ser restaurada.</p>
+    <form id="fCanc"><label for="ccMot">Motivo</label><select id="ccMot">${MOT.map(m=>`<option>${m}</option>`).join('')}<option value="">Outro…</option></select>
+    <input id="ccOutro" placeholder="Descreva o motivo" style="display:none;margin-top:6px">
+    <div style="margin-top:12px;text-align:right"><button type="button" class="btn-s" data-fechar>Voltar</button> <button class="btn-d">Cancelar parcela</button></div></form>`);
+  const sel=bg.querySelector('#ccMot'), out=bg.querySelector('#ccOutro');
+  sel.addEventListener('change',()=>{ out.style.display=sel.value?'none':'block'; if(!sel.value) out.focus(); });
+  bg.querySelector('#fCanc').addEventListener('submit',ev=>{
+    ev.preventDefault(); const motivo=sel.value||out.value.trim(); if(!motivo){ avisar('Informe o motivo.'); return; }
+    const u=currentUser(); const c=Object.assign({},e,{cancelamento:{em:new Date().toISOString(),por:u?nomeExibicao(u):'',motivo}});
+    state.fluxoFinanceiro=state.fluxoFinanceiro.filter(x=>x.id!==e.id);
+    if(pac){ pac.parcelasCanceladas=pac.parcelasCanceladas||[]; pac.parcelasCanceladas.push(c); }
+    else { state.meta=state.meta||{}; state.meta.parcelasCanceladas=(state.meta.parcelasCanceladas||[]).concat([c]); }
+    repInadSel.delete(e.id); saveData(); bg.remove(); render(); avisarRapido('Parcela cancelada.');
+  });
+}
+function restaurarParcela(id){
+  let c=null;
+  state.patients.forEach(p=>{ const i=(p.parcelasCanceladas||[]).findIndex(x=>x.id===id); if(i>=0){ c=p.parcelasCanceladas[i]; p.parcelasCanceladas.splice(i,1); } });
+  if(!c && state.meta && state.meta.parcelasCanceladas){ const i=state.meta.parcelasCanceladas.findIndex(x=>x.id===id); if(i>=0){ c=state.meta.parcelasCanceladas[i]; state.meta.parcelasCanceladas.splice(i,1); } }
+  if(!c) return; delete c.cancelamento; state.fluxoFinanceiro.push(c); saveData(); render(); avisarRapido('Parcela restaurada.');
 }
 function repFluxoProjetado(){
   ensureFluxoTipos();
@@ -1963,20 +2091,21 @@ function repFluxoProjetado(){
 }
 function repOrcPendentes(){
   const hoje=hojeISO(); const itens=[];
-  state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && o.status!=='perdido'){ const dias=diasEntre(o.data,hoje); if(dias>=repOrcDias) itens.push({p,o,dias}); } }));
+  const venc=repOrcSit==='vencido';
+  state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(venc?orcVencido(o):orcAberto(o)){ const dias=diasEntre(o.data,hoje); if(venc || dias>=repOrcDias) itens.push({p,o,dias}); } }));
   itens.sort((a,b)=>b.dias-a.dias);
   const total=itens.reduce((sum,x)=>sum+(x.o.total||0),0);
   const rows=itens.map(({p,o,dias})=>`<tr><td>${repPacBtn(p,'orcamento')}</td><td>${esc(p.telefone||'-')}</td><td>${fmtDataBR(o.data)}</td>
-    <td><span class="badge ${dias>15?'b-red':'b-recep'}">${dias} dia(s)</span></td><td>${(o.itens||[]).length}</td><td>${fmtMoney(o.total)}</td></tr>`).join('');
-  const filtros=`<div><label>Sem resposta há mais de</label><select id="repOrcDiasSel">${[[0,'Todos'],[7,'7 dias'],[15,'15 dias'],[30,'30 dias']].map(([v,t])=>`<option value="${v}" ${repOrcDias===v?'selected':''}>${t}</option>`).join('')}</select></div>`;
-  return repCard('Orçamentos pendentes de resposta','Orçamentos gerados que ainda não foram aprovados. É a lista de quem a recepção deve procurar.',filtros,
-    `<strong>Orçamentos:</strong> ${itens.length} &nbsp;·&nbsp; <strong>Valor parado:</strong> ${fmtMoney(total)}`,
-    itens.length?`<div class="overflow"><table><thead><tr><th>Paciente</th><th>Telefone</th><th>Data do orçamento</th><th>Sem resposta há</th><th>Procedimentos</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum orçamento pendente com esse filtro.</p>');
+    <td>${venc?`<span class="badge b-cinza">venceu em ${fmtDataBR(orcVenceEm(o))}</span>`:`<span class="badge ${dias>15?'b-red':'b-recep'}">${dias} dia(s)</span> <span class="muted" style="font-size:12px">vence ${fmtDataBR(orcVenceEm(o))}</span>`}</td><td>${(o.itens||[]).length}</td><td>${fmtMoney(o.total)}</td></tr>`).join('');
+  const filtros=`<div><label for="repOrcSitSel">Situação</label><select id="repOrcSitSel"><option value="aberto" ${!venc?'selected':''}>Pendentes (dentro da validade)</option><option value="vencido" ${venc?'selected':''}>Vencidos: chamar para nova avaliação</option></select></div>`+(venc?'':`<div><label>Sem resposta há mais de</label><select id="repOrcDiasSel">${[[0,'Todos'],[7,'7 dias'],[15,'15 dias'],[30,'30 dias']].map(([v,t])=>`<option value="${v}" ${repOrcDias===v?'selected':''}>${t}</option>`).join('')}</select></div>`);
+  return repCard(venc?'Orçamentos vencidos':'Orçamentos pendentes de resposta',venc?`Orçamentos que passaram da validade (${validadeOrcDias()} dias) sem aprovação. Os valores não valem mais: chame o paciente para uma nova avaliação.`:`Orçamentos gerados que ainda não foram aprovados e estão dentro da validade (${validadeOrcDias()} dias). É a lista de quem a recepção deve procurar.`,filtros,
+    `<strong>Orçamentos:</strong> ${itens.length} &nbsp;·&nbsp; <strong>${venc?'Valor que estava proposto':'Valor parado'}:</strong> ${fmtMoney(total)}`,
+    itens.length?`<div class="overflow"><table><thead><tr><th>Paciente</th><th>Telefone</th><th>Data do orçamento</th><th>${venc?'Validade':'Sem resposta há'}</th><th>Procedimentos</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum orçamento pendente com esse filtro.</p>');
 }
 function repTratAbertos(){
   const linhas=[];
   state.patients.forEach(p=>{
-    const abertos=collectPlanoItems(p).filter(it=>it.status!=='Concluído');
+    const abertos=collectPlanoItems(p).filter(it=>it.status!=='Concluído'&&!it.vencido);
     if(abertos.length) linhas.push({p,abertos,valor:abertos.reduce((sum,it)=>sum+(it.valor||0),0)});
   });
   linhas.sort((a,b)=>b.valor-a.valor);
@@ -2040,7 +2169,7 @@ function repSemRetorno(){
   });
   itens.sort((a,b)=>(b.meses===null?-1:b.meses)-(a.meses===null?-1:a.meses));
   const rows=itens.map(({p,ult,meses})=>`<tr><td>${repPacBtn(p,'dados')}</td><td>${esc(p.telefone||'-')}</td><td>${ult?fmtDataBR(ult):'nenhuma'}</td>
-    <td>${meses===null?'-':meses+' mês(es)'}</td><td>${collectPlanoItems(p).filter(it=>it.status!=='Concluído').length}</td></tr>`).join('');
+    <td>${meses===null?'-':meses+' mês(es)'}</td><td>${collectPlanoItems(p).filter(it=>it.status!=='Concluído'&&!it.vencido).length}</td></tr>`).join('');
   const filtros=`<div><label>Sem consulta há pelo menos</label><select id="repRetMeses">${[3,6,12].map(n=>`<option value="${n}" ${repRetornoMeses===n?'selected':''}>${n} meses</option>`).join('')}</select></div>
     <div style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;color:var(--text);font-size:14px;margin:0"><input type="checkbox" id="repRetNunca" ${repRetornoNunca?'checked':''} style="width:auto"> Incluir quem nunca teve consulta confirmada</label></div>`;
   return repCard('Pacientes sem retorno','Pacientes sem consulta confirmada há muito tempo e sem nenhum agendamento futuro. Lista para entrar em contato (recall).',filtros,
@@ -2156,7 +2285,7 @@ function renderFluxoFinanceiro(){
     const situacao=e.confirmado?'Realizado':(despesa?'Pendente':'Entrada Prevista');
     const situacaoClass=e.confirmado?'b-dent':(despesa?'b-harm':'b-recep');
     const pagCell=e.confirmado
-      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>`
+      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>${e.baixaRetro?`<div class="muted" style="font-size:11.5px">conferido em ${esc(fmtDataBR((e.baixaRetro.em||'').slice(0,10)))} · ${esc(e.baixaRetro.por||'')}${e.baixaRetro.obs?' · '+esc(e.baixaRetro.obs):''}</div>`:''}`
       : `${e.estimado?`<input data-valreal="${e.id}" inputmode="decimal" placeholder="Valor real" aria-label="Valor real da conta" style="width:110px;display:inline-block"> `:''}<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
     return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
@@ -2544,6 +2673,10 @@ function bindFinanceiro2(){
   }));
 }
 function renderFinanceiro(p){
+  const canc=(p.parcelasCanceladas||[]);
+  return renderFinanceiroBase(p)+(canc.length&&permsDe(currentUser()).financeiro?`<div class="card"><h3>Parcelas canceladas (não eram devidas)</h3><div class="overflow"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Motivo</th></tr></thead><tbody>${canc.map(e=>`<tr><td>${esc(e.label||'')}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td class="muted" style="font-size:12.5px">${esc(e.cancelamento.motivo)} · ${esc(fmtDataBR((e.cancelamento.em||'').slice(0,10)))} · ${esc(e.cancelamento.por||'')}</td></tr>`).join('')}</tbody></table></div><p class="muted" style="font-size:12.5px;margin:6px 0 0">Para restaurar, use Relatórios → Inadimplência.</p></div>`:'');
+}
+function renderFinanceiroBase(p){
   const aprovados=(p.orcamentos||[]).filter(o=>o.status==='aprovado').slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   if(!aprovados.length){
     return `<div class="card"><h3>Financeiro</h3><p class="muted">Nenhum orçamento aprovado ainda. Aprove um orçamento na aba Orçamento para defini-lo aqui.</p></div>`;
@@ -3805,6 +3938,12 @@ function clinicaFormHtml(c,formId,podeEditar,inicial){
     </div>
   </section>
   <section class="cl-secao">
+    <div class="cl-secao-cab"><h3>Orçamentos</h3><p>Depois desse prazo sem aprovação, o orçamento vira "Vencido": fica na ficha do paciente, mas sai dos pendentes e pede nova avaliação.</p></div>
+    <div class="cl-grade">
+      <div class="cl-campo"><label for="clValOrc">Validade do orçamento (dias)</label><input id="clValOrc" type="number" min="1" max="365" value="${esc(String(d.validadeOrcamento||30))}"${dis}></div>
+    </div>
+  </section>
+  <section class="cl-secao">
     <div class="cl-secao-cab"><h3>Música na sala de atendimento</h3><p>Quando o paciente está na clínica, o botão 🎵 da agenda abre este app já no estilo ou artista preferido dele, e o app monta a sequência. O app precisa estar instalado e com a conta da clínica no aparelho da sala.</p></div>
     <div class="cl-grade">
       <div class="cl-campo"><label for="clMusApp">App de música da clínica</label><select id="clMusApp"${dis}>${Object.entries(MUSICA_APPS).map(([k,t])=>`<option value="${k}" ${(d.musicaApp||'spotify')===k?'selected':''}>${t}</option>`).join('')}</select></div>
@@ -3886,6 +4025,7 @@ function bindClinicaForm(formId,aoSalvar){
     c.inscricaoCro=val('clCroInsc').toUpperCase(); c.inscricaoMunicipal=val('clInscMun'); c.cnes=val('clCnes');
     c.alvaraNumero=val('clAlvara'); c.alvaraValidade=val('clAlvaraVal');
     c.rtNome=val('clRtNome'); c.rtCro=val('clRtCro').toUpperCase();
+    if(q('clValOrc')){ const vo=parseInt(val('clValOrc'),10); c.validadeOrcamento=vo>0?Math.min(vo,365):30; }
     c.telefone=val('clTel'); c.whatsapp=val('clZap'); c.email=val('clEmail'); c.site=val('clSite'); c.instagram=val('clInsta');
     if(q('clMusApp')){ c.musicaApp=val('clMusApp')||'spotify'; const pl=val('clMusPl');
       if(pl && !/^https?:\/\/\S+$/i.test(pl)){ avisar('O link da playlist precisa começar com https://'); return; }
@@ -4177,11 +4317,11 @@ function renderDashboard(){
   ks.push(kpi('Atendimentos hoje',n,prox?`Próximo às ${esc(prox.horario)}, ${esc(prox.pacienteNome)}`:(n?'Todos os de hoje já passaram':'Agenda livre hoje'),'agenda'));
   const conf=agHoje.filter(a=>['confirmado','chegou','atendido'].includes(statusAgExib(a))).length;
   ks.push(kpi('Presença confirmada',`${conf} <small>de ${n}</small>`,'','agenda','',`<div class="kpi-barra"><span style="width:${n?Math.round(conf/n*100):0}%"></span></div>`));
-  let evs=[], orcN=0, orcV=0, venc=[];
+  let evs=[], orcN=0, orcV=0, orcVencN=0, orcVencV=0, venc=[];
   if(perms.pacientes && temRecurso('prontuario')){
     state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(!e.confirmado && (e.data<hoje || (e.data===hoje && (e.hora||'')<=agora))) evs.push(e); }));
     if(u.tipo==='dentista') evs=evs.filter(e=>semTitulo(e.dentistaNome)===semTitulo(u.nomeCompleto));
-    state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status!=='aprovado' && o.status!=='perdido' && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } }));
+    state.patients.forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(orcAberto(o) && diasEntre(o.data,hoje)>=7){ orcN++; orcV+=o.total||0; } if(orcAberto(o) && diasEntre(hoje,orcVenceEm(o))<=5){ orcVencN++; orcVencV+=o.total||0; } }));
   }
   if(perms.financeiro){
     ensureFluxoTipos();
@@ -4210,6 +4350,7 @@ function renderDashboard(){
   if(perms.pacientes && temRecurso('prontuario')){
     pend.push(`<button class="pend" data-dashgo="rel:evolpendentes"><span><span class="pend-tit">Evoluções a confirmar</span><span class="pend-sub">${u.tipo==='dentista'?'Seus prontuários de atendimentos já feitos':'Prontuários de atendimentos já feitos'}</span></span><span class="pend-num">${evs.length}</span></button>`);
     pend.push(`<button class="pend" data-dashgo="rel:orcpendentes"><span><span class="pend-tit">Orçamentos sem resposta</span><span class="pend-sub">${orcN?'Há mais de 7 dias, '+fmtMoney(orcV).replace(',00','')+' parados':'Nenhum parado há mais de 7 dias'}</span></span><span class="pend-num">${orcN}</span></button>`);
+    if(orcVencN) pend.push(`<button class="pend" data-dashgo="rel:orcpendentes"><span><span class="pend-tit">Orçamentos vencendo</span><span class="pend-sub">Perdem a validade em até 5 dias, ${fmtMoney(orcVencV).replace(',00','')}</span></span><span class="pend-num" style="color:var(--warn)">${orcVencN}</span></button>`);
   }
   if(perms.financeiro){
     const pacs=new Set(venc.map(e=>e.pacienteId)).size;
@@ -7007,6 +7148,19 @@ function bindEvents(){
   const repSel=(id,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener('change',()=>{ fn(el); render(); }); };
   repSel('repFluxoHor',el=>{ repFluxoHorizonte=parseInt(el.value,10); });
   repSel('repOrcDiasSel',el=>{ repOrcDias=parseInt(el.value,10); });
+  repSel('repOrcSitSel',el=>{ repOrcSit=el.value; });
+  repSel('repInadBusca',el=>{ repInadBusca=el.value.trim(); });
+  repSel('repInadDe',el=>{ repInadDe=el.value; });
+  repSel('repInadAte',el=>{ repInadAte=el.value; });
+  repSel('repInadImp',el=>{ repInadImp=el.checked; });
+  const inadInfo=()=>{ const i=document.getElementById('inadSelInfo'), b=document.querySelector('[data-inadlote]'); if(i) i.textContent=repInadSel.size?repInadSel.size+' selecionada(s)':'Marque as parcelas conferidas para dar baixa em várias de uma vez.'; if(b) b.disabled=!repInadSel.size; };
+  document.querySelectorAll('[data-inadsel]').forEach(c=>c.addEventListener('change',()=>{ const id=c.getAttribute('data-inadsel'); if(c.checked) repInadSel.add(id); else repInadSel.delete(id); inadInfo(); }));
+  document.querySelectorAll('[data-inadall]').forEach(c=>c.addEventListener('change',()=>{ document.querySelectorAll('[data-inadsel]').forEach(x=>{ x.checked=c.checked; const id=x.getAttribute('data-inadsel'); if(c.checked) repInadSel.add(id); else repInadSel.delete(id); }); inadInfo(); }));
+  document.querySelectorAll('[data-inadbaixa]').forEach(b=>b.addEventListener('click',()=>abrirBaixaRetro([b.getAttribute('data-inadbaixa')])));
+  document.querySelectorAll('[data-inadlote]').forEach(b=>b.addEventListener('click',()=>abrirBaixaRetro([...repInadSel])));
+  document.querySelectorAll('[data-inadcanc]').forEach(b=>b.addEventListener('click',()=>abrirCancelarParcela(b.getAttribute('data-inadcanc'))));
+  document.querySelectorAll('[data-inaddesf]').forEach(b=>b.addEventListener('click',()=>{ const e=state.fluxoFinanceiro.find(x=>x.id===b.getAttribute('data-inaddesf')); if(e && desfazerBaixaRetro(e)){ saveData(); render(); } }));
+  document.querySelectorAll('[data-inadrest]').forEach(b=>b.addEventListener('click',()=>restaurarParcela(b.getAttribute('data-inadrest'))));
   repSel('repEvolDent',el=>{ repEvolDentista=el.value; });
   repSel('repRetMeses',el=>{ repRetornoMeses=parseInt(el.value,10); });
   repSel('repFaltasSel',el=>{ repFaltasDias=parseInt(el.value,10); });
@@ -7202,10 +7356,22 @@ function bindEvents(){
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para alterar valores de orçamento.'); return; }
     const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-ajorc')); if(o && o.status!=='aprovado') abrirAjusteOrcamento(p,o);
   }));
+  document.querySelectorAll('[data-orcaval]').forEach(b=>b.addEventListener('click',()=>{
+    const p=state.patients.find(x=>x.id===patientDetailId); const o=p&&(p.orcamentos||[]).find(x=>x.id===b.getAttribute('data-orcaval')); if(!p) return;
+    currentTab='agenda'; agendaViewMode='dia'; patientDetailId=null; render();
+    openAgendamentoForm({pacienteId:p.id,tipo:'avaliacao',data:agendaViewDate,horario:'',dentistaId:'',observacao:'Nova avaliação: orçamento de '+fmtDataBR(o?o.data:'')+' vencido'});
+  }));
+  document.querySelectorAll('[data-orcreval]').forEach(b=>b.addEventListener('click',()=>{
+    const p=state.patients.find(x=>x.id===patientDetailId); const o=p&&(p.orcamentos||[]).find(x=>x.id===b.getAttribute('data-orcreval')); if(!o) return;
+    if(!(currentUser()&&currentUser().tipo==='master')){ avisar('Somente o Master pode revalidar um orçamento.'); return; }
+    const ate=addDaysStr(hojeISO(),validadeOrcDias());
+    confirmarAcao(`Manter os mesmos valores e revalidar este orçamento até ${fmtDataBR(ate)}?`,'Revalidar',()=>{ o.validoAte=ate; o.revalidadoPorNome=currentUser().nomeCompleto; o.revalidadoEm=hojeISO(); saveData(); render(); });
+  }));
   document.querySelectorAll('[data-approveorc]').forEach(b=>b.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId);
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para aprovar orçamentos.'); return; }
     const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-approveorc'));
+    if(orcVencido(o)){ avisar('Este orçamento venceu em '+fmtDataBR(orcVenceEm(o))+'. Faça uma nova avaliação para gerar um orçamento com os valores atuais.'); return; }
     o.status='aprovado'; o.aprovadoPorId=currentUser().id; o.aprovadoPorNome=currentUser().nomeCompleto;
     o.dataAprovacao=hojeISO();
     saveData(); render();
@@ -7244,7 +7410,7 @@ function bindEvents(){
   }));
   document.querySelectorAll('[data-undoconf]').forEach(b=>b.addEventListener('click',()=>{
     const e=state.fluxoFinanceiro.find(x=>x.id===b.getAttribute('data-undoconf'));
-    e.confirmado=false;
+    if(e.baixaRetro){ if(!desfazerBaixaRetro(e)) return; } else e.confirmado=false;
     saveData(); render();
   }));
   document.querySelectorAll('[data-finsub]').forEach(b=>b.addEventListener('click',()=>{
@@ -7357,6 +7523,8 @@ function bindEvents(){
   const btnConfirmPlano=document.getElementById('btnConfirmPlano');
   if(btnConfirmPlano) btnConfirmPlano.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId);
+    // procedimentos de orçamento vencido voltam com o valor atual da tabela
+    const venc=recsPlanoVencido(p); venc.forEach(id=>{ const rec=findProcedimentoRecordById(p,id); const pr=rec&&rec.procId&&(state.procedimentos||[]).find(x=>x.id===rec.procId); if(pr && pr.valor!=null) rec.valor=pr.valor; });
     const items=collectPlanoItems(p);
     const order=getPlanoOrder(p, items);
     const byId={}; items.forEach(it=>byId[it.id]=it);
