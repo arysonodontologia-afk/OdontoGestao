@@ -292,7 +292,7 @@ function opcoesMateriais(sel,primeira){
   const cats={}; materiais().filter(m=>m.ativo!==false).forEach(m=>{ (cats[m.categoria||'Outros']=cats[m.categoria||'Outros']||[]).push(m); });
   return `<option value="">${primeira||'Incluir material…'}</option>`+Object.keys(cats).sort().map(c=>`<optgroup label="${esc(c)}">${cats[c].sort((a,b)=>a.nome.localeCompare(b.nome)).map(m=>`<option value="${m.id}" ${sel===m.id?'selected':''}>${esc(m.nome)} (${esc(m.unidade)})</option>`).join('')}</optgroup>`).join('');
 }
-function opcoesVar(m,sel,vazio){ return `<option value="">${vazio}</option>`+varsAtivas(m).map(v=>`<option value="${v.id}" ${sel===v.id?'selected':''}>${esc(v.nome)}</option>`).join('')+(sel&&!varsAtivas(m).some(v=>v.id===sel)&&varPorId(m,sel)?`<option value="${sel}" selected>${esc(nomeVar(m,sel))}</option>`:''); }
+function opcoesVar(m,sel,vazio,comSaldo){ return `<option value="">${vazio}</option>`+varsAtivas(m).map(v=>`<option value="${v.id}" ${sel===v.id?'selected':''}>${esc(v.nome)}${comSaldo?' — '+esc(fmtQtd(infoVar(m.id,v.id).saldo,m.unidade)):''}</option>`).join('')+(sel&&!varsAtivas(m).some(v=>v.id===sel)&&varPorId(m,sel)?`<option value="${sel}" selected>${esc(nomeVar(m,sel))}</option>`:''); }
 
 // ---------------------------------------------------------------------------
 // baixa na evolução: kit sugerido, rascunho editável e gravação ao confirmar
@@ -323,11 +323,12 @@ window.estoqueEvolHtml=function(p,e,podeConfirmar){
   const linhas=l.map((i,ix)=>{ const m=matPorId(i.mid); if(!m) return ''; const tv=temVar(m), s=(tv&&i.vid)?infoVar(m.id,i.vid).saldo:infoMat(m.id).saldo, falta=i.qtd>0&&s<i.qtd;
     const pend=tv&&i.qtd>0&&!i.vid;
     return `<tr class="${i.opc&&!(i.qtd>0)?'est-opc':''}"><td>${esc(m.nome)}<div class="muted" style="font-size:11.5px">${esc(nomeOrigem(i.origem))}${i.opc?` · opcional${i.ref?', normalmente '+esc(fmtQtd(i.ref,m.unidade)):''}`:''}</div>
-        ${tv?(podeConfirmar?`<select data-evvar="${e.id}" data-ix="${ix}" class="${pend?'est-pend':''}" aria-label="Variação de ${esc(m.nome)}">${opcoesVar(m,i.vid,'Escolha qual usou…')}</select>`:`<div style="font-size:12.5px">${esc(nomeVar(m,i.vid)||'—')}</div>`):''}</td>
+        ${tv?(podeConfirmar?`<select data-evvar="${e.id}" data-ix="${ix}" class="${pend?'est-pend':''}" aria-label="Variação de ${esc(m.nome)}">${opcoesVar(m,i.vid,'Escolha qual usou…',true)}</select>`:`<div style="font-size:12.5px" class="${i.vid?'':'muted'}">${esc(nomeVar(m,i.vid)||'medida escolhida pelo dentista ao confirmar')}</div>`):''}</td>
       <td style="white-space:nowrap">${podeConfirmar?`<input data-evmat="${e.id}" data-ix="${ix}" inputmode="decimal" value="${i.qtd?esc(String(i.qtd).replace('.',',')):''}" placeholder="0" style="width:78px" aria-label="Quantidade de ${esc(m.nome)}">`:esc(fmtQtd(i.qtd))} ${esc(m.unidade)}</td>
-      <td class="muted" style="font-size:12px;white-space:nowrap">${tv&&!i.vid?'':`<span${falta?' style="color:var(--warn)"':''}>em estoque: ${esc(fmtQtd(s,m.unidade))}</span>`}</td>
+      <td class="muted" style="font-size:12px;white-space:nowrap">${tv&&!i.vid?`em estoque: ${esc(fmtQtd(s,m.unidade))} <span style="font-size:11px">(todas as medidas)</span>`:`<span${falta?' style="color:var(--warn)"':''}>em estoque: ${esc(fmtQtd(s,m.unidade))}</span>`}</td>
       <td style="white-space:nowrap">${podeConfirmar&&tv?`<button type="button" class="btn-s peq" data-evdup="${e.id}" data-ix="${ix}" title="Lançar outra ${esc(m.nome.toLowerCase())} (outra medida ou cor)">+ outra</button> `:''}${podeConfirmar?`<button type="button" class="btn-icone peq btn-perigo" data-evmatrm="${e.id}" data-ix="${ix}" aria-label="Tirar ${esc(m.nome)}">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('');
   return `<details class="est-evol" ${l.length?'':'open'}><summary><strong>Materiais usados</strong> <span class="muted">· ${usados} ite${usados===1?'m':'ns'}, saem do estoque ao confirmar</span></summary>
+    ${!podeConfirmar&&l.length?'<p class="muted" style="margin:6px 0;font-size:12.5px">Só o dentista que confirma a evolução ajusta as quantidades e escolhe medidas e cores. Usuário Master que atende precisa ter o CRO no cadastro.</p>':''}
     ${l.length?`<div class="overflow"><table class="est-evol-t"><tbody>${linhas}</tbody></table></div>`:'<p class="muted" style="margin:6px 0">Nenhum material sugerido para este atendimento.</p>'}
     ${podeConfirmar?`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><select data-evmatadd="${e.id}" style="max-width:340px">${opcoesMateriais('')}</select><span class="muted" style="font-size:12px">Confira as quantidades: o kit é uma média. Itens opcionais só saem se você preencher.</span></div>`:''}
   </details>`;

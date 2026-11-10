@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.25.2', data:'2026-11-10', itens:[
+    'Evolução: a lista de medidas/cores mostra o saldo de cada uma; quem não pode confirmar vê o aviso de que o dentista escolhe ao confirmar',
+  ]},
   {v:'2.25.1', data:'2026-11-10', itens:[
     'Estoque com variações: cada material pode ter medidas, cores ou tipos, cada um com saldo, mínimo e custo próprios (arcos por liga, secção e arcada; resina por cor; braquetes por prescrição; limas por série; fio de sutura por número)',
     'Ligaduras separadas: elástica simples, corrente elástica e metálica',
