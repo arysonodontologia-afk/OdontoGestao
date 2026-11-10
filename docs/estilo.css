@@ -953,3 +953,8 @@ tr.pf-venc td{color:var(--danger)}
 .est-evol summary{cursor:pointer}
 .est-evol-t td{padding:5px 6px;border-bottom:1px solid var(--border)}
 @media (max-width:760px){ .est-kits{grid-template-columns:1fr} .est-kits-lista{max-height:40vh} }
+.est-var td{background:var(--surface-2);font-size:13px}
+.est-var td:first-child{padding-left:22px}
+.est-opc td{opacity:.7}
+.est-pend{border-color:var(--warn)!important;box-shadow:0 0 0 2px var(--warn-soft)}
+.est-ger{border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:8px}

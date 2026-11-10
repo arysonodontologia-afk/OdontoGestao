@@ -9,6 +9,12 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.25.1', data:'2026-11-10', itens:[
+    'Estoque com variações: cada material pode ter medidas, cores ou tipos, cada um com saldo, mínimo e custo próprios (arcos por liga, secção e arcada; resina por cor; braquetes por prescrição; limas por série; fio de sutura por número)',
+    'Ligaduras separadas: elástica simples, corrente elástica e metálica',
+    'Kits com itens opcionais: na manutenção ortodôntica, arco, corrente, ligadura metálica e tubo só saem se o dentista preencher; "+ outra" lança mais de uma medida (ex.: arco superior e inferior)',
+    'Na compra e no atendimento, o sistema pede qual variação foi comprada ou usada; "Para repor" mostra exatamente o que comprar',
+  ]},
   {v:'2.25.0', data:'2026-11-10', itens:[
     'Estoque de materiais (plano Completo ou módulo avulso): saldo, estoque mínimo, custo médio e valor em estoque',
     'Compras: cada item escolhe o destino (patrimônio, material de consumo para o estoque, ou outro, como material de escritório). A compra continua gerando as contas a pagar e o fluxo',

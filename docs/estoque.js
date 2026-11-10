@@ -74,7 +74,9 @@ const M=[ // [código, categoria, nome, unidade, embalagem, quanto vem, mínimo 
   ['braquete_est','Ortodontia','Braquete estético (cerâmico / safira)','un','Kit com 20',20,0],
   ['tubo','Ortodontia','Tubo ortodôntico (molar)','un','Pacote com 10',10,4],
   ['fio_orto','Ortodontia','Fio ortodôntico (arco)','un','Pacote com 10',10,10],
-  ['ligadura','Ortodontia','Ligadura elástica','un','Pacote com 1.000',1000,100],
+  ['ligadura','Ortodontia','Ligadura elástica simples','un','Pacote com 1.000',1000,100],
+  ['corrente','Ortodontia','Corrente elástica','cm','Rolo com 457 cm',457,100],
+  ['lig_metal','Ortodontia','Ligadura metálica','un','Pacote com 100',100,20],
   ['resina_orto','Ortodontia','Resina ortodôntica (colagem)','g','Seringa com 4 g',4,4],
   ['primer_orto','Ortodontia','Primer ortodôntico','ml','Frasco com 6 ml',6,2],
   ['elastico','Ortodontia','Elástico intermaxilar','un','Pacote com 100',100,50],
@@ -94,12 +96,27 @@ const M=[ // [código, categoria, nome, unidade, embalagem, quanto vem, mínimo 
   ['antisseptico','Harmonização Orofacial','Antisséptico (clorexidina 2% alcoólica)','ml','Frasco com 100 ml',100,30],
   ['filme_rx','Radiologia','Filme radiográfico / capa do sensor','un','Caixa com 150',150,30],
 ];
+// variações da base (medida, cor, prescrição, número): cada uma tem saldo, mínimo e custo próprios
+const combos=(ligas,seccoes,arcadas)=>{ const l=[]; ligas.forEach(([liga,secs])=>secs.forEach(sc=>arcadas.forEach(a=>l.push([liga+' '+sc+' · '+a,2])))); return l; };
+const VARS={
+  fio_orto:combos([['NiTi',['0,012','0,014','0,016','0,018','0,016x0,022','0,017x0,025']],['NiTi termoativado',['0,014','0,016','0,016x0,022','0,017x0,025']],['Aço',['0,016','0,018','0,016x0,022','0,019x0,025']]],null,['Superior','Inferior']),
+  resina:['A1','A2','A3','A3,5','B1','B2','Esmalte / incisal','Dentina / opaca'].map(c=>[c,4]),
+  braquete:['Roth','MBT','Edgewise standard'].map(c=>[c,20]),
+  braquete_est:['Roth','MBT'].map(c=>[c,0]),
+  lima:[['K 1ª série (15-40)',6],['K 2ª série (45-80)',0],['K #08',0],['K #10',0],['Hedström 1ª série',0],['Rotatória / reciprocante',0]],
+  fio_sutura:['Seda 3-0','Seda 4-0','Nylon 4-0','Nylon 5-0','Vicryl 4-0'].map(c=>[c,4]),
+};
+const slug=t=>normTxt(t).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const varsBase=c=>(VARS[c]||[]).map(([nome,minimo])=>({id:'v-'+slug(nome),nome,minimo,ativo:true}));
+
 const EPI_CIR=[['luva_est',2],['avental',2],['campo',1]];
+const OPC={opc:true};
 const ANEST=(n)=>[['anest',n],['agulha',1]];
 const RESTAURA=(resina,extra)=>[...ANEST(1),['acido',0.1],['adesivo',0.04],['microbrush',2],['resina',resina],['rolete',4],['disco',1],...(extra||[])];
 const ENDO=(lima,hipo,edta,guta,papel,cim,ser,pon,anest)=>[...ANEST(anest),['isolamento',1],['lima',lima],['hipoclorito',hipo],['edta',edta],['guta',guta],['papel',papel],['cim_endo',cim],['seringa_irr',ser],['ponta_irr',pon],['prov',0.3]];
 const ORTO_INST=(braq)=>[[braq,10],['tubo',2],['fio_orto',1],['ligadura',12],['resina_orto',0.4],['primer_orto',0.05],['acido',0.1],['microbrush',2],['cera',0.5]];
-// chave = trecho do nome do procedimento (sem acento, minúsculo); o primeiro que casar vale
+// chave = trecho do nome do procedimento (sem acento, minúsculo); o primeiro que casar vale.
+// Item: [material, quantidade, {opc:true}] — opcional entra com 0 e só sai se o dentista preencher.
 const K=[
   ['restauracao em resina composta (1 face)',RESTAURA(0.3)],
   ['restauracao em resina composta (2 faces)',RESTAURA(0.5,[['tira_poli',1],['cunha',1],['lixa',1]])],
@@ -131,7 +148,7 @@ const K=[
   ['exodontia de dente incluso',[...ANEST(3),['lamina',1],['gaze',8],['fio_sutura',1],['soro',50],...EPI_CIR]],
   ['exodontia de dente deciduo',[['anest_top',0.2],...ANEST(1),['gaze',2]]],
   ['exodontia de resto radicular',[...ANEST(2),['gaze',4],['fio_sutura',1],['soro',20]]],
-  ['extracao dentaria simples',[...ANEST(2),['gaze',4],['fio_sutura',1],['soro',20]]],
+  ['extracao dentaria simples',[...ANEST(2),['gaze',4],['fio_sutura',1,OPC],['soro',20]]],
   ['frenectomia',[...ANEST(2),['lamina',1],['gaze',4],['fio_sutura',1],['soro',20]]],
   ['biopsia',[...ANEST(1),['lamina',1],['gaze',4],['fio_sutura',1]]],
   ['drenagem de abscesso',[...ANEST(1),['lamina',1],['gaze',4],['soro',20]]],
@@ -142,7 +159,7 @@ const K=[
   ['levantamento de seio',[...ANEST(3),['lamina',1],['biomaterial',1],['membrana',1],['fio_sutura',1],['gaze',6],['soro',80],...EPI_CIR]],
   ['instalacao de aparelho ortodontico fixo',ORTO_INST('braquete')],
   ['aparelho ortodontico estetico',ORTO_INST('braquete_est')],
-  ['manutencao mensal do aparelho',[['ligadura',12],['fio_orto',0.5]]],
+  ['manutencao mensal do aparelho',[['ligadura',12],['fio_orto',1,OPC],['corrente',5,OPC],['lig_metal',4,OPC],['tubo',1,OPC],['braquete',1,OPC]]],
   ['colagem / recolagem de braquete',[['braquete',1],['resina_orto',0.05],['primer_orto',0.01],['acido',0.05],['microbrush',1]]],
   ['remocao do aparelho',[['disco',1],['pasta_prof',2]]],
   ['instalacao de contencao',[['fio_cont',1],['resina_flow',0.2],['acido',0.1],['adesivo',0.03],['microbrush',2]]],
@@ -170,10 +187,10 @@ const K=[
 const KIT_CONSULTA=[['luva',2],['mascara',2],['gorro',2],['babador',1],['sugador',1],['copo',1],['barreira',1],['envelope',2]];
 const ID_CONSULTA='__consulta';
 const idBase=c=>'m-'+c;
-const BASE_VERSAO=1;
+const BASE_VERSAO=2;
 
 // ---------------------------------------------------------------------------
-// acesso, cálculo de saldo e custo médio
+// acesso, cálculo de saldo e custo médio (por material e por variação)
 // ---------------------------------------------------------------------------
 function liberado(){ return typeof temRecurso==='function' && temRecurso('estoque'); }
 function eu(){ return currentUser(); }
@@ -190,111 +207,166 @@ function materiais(){ return (state.materiais||[]).filter(m=>!m.excluido); }
 function matPorId(id){ return (state.materiais||[]).find(m=>m.id===id); }
 function kits(){ return state.kits||[]; }
 function kitDe(id){ return kits().find(k=>k.id===id); }
+function temVar(m){ return !!(m && m.variacoes && m.variacoes.length); }
+function varsAtivas(m){ return ((m&&m.variacoes)||[]).filter(v=>v.ativo!==false); }
+function varPorId(m,vid){ return ((m&&m.variacoes)||[]).find(v=>v.id===vid); }
+function nomeVar(m,vid){ if(!vid) return ''; const v=varPorId(m,vid); return v?v.nome:'(variação excluída)'; }
+function nomeCompleto(m,vid){ return m?m.nome+(vid?' · '+nomeVar(m,vid):''):''; }
+const chaveMV=(mid,vid)=>mid+'|'+(vid||'');
 
-// percorre as movimentações em ordem: saldo e custo médio ponderado (móvel) de cada material
 let cache=null, cacheChave='';
 function calcular(){
   const movs=state.estoqueMov||[];
   const chave=movs.length+'|'+(state.materiais||[]).length+'|'+(movs.length?movs[movs.length-1].id:'');
   if(cache && chave===cacheChave && cache.ref===movs) return cache;
-  const r={}; (state.materiais||[]).forEach(m=>{ r[m.id]={saldo:0,custo:0,entradas:0,saidas:0}; });
+  const r={};
   movs.slice().sort((a,b)=>((a.data||'')+(a.em||'')).localeCompare((b.data||'')+(b.em||''))).forEach(mv=>{
-    const s=r[mv.mid]||(r[mv.mid]={saldo:0,custo:0,entradas:0,saidas:0}); const q=+mv.qtd||0; s.n=(s.n||0)+1;
-    if(mv.tipo==='entrada'){
-      const cu=+mv.custoUnit||0;
-      if(cu>0){ const base=Math.max(s.saldo,0); s.custo=(base*s.custo+q*cu)/((base+q)||1); }
-      s.saldo+=q; s.entradas+=q;
-    } else if(mv.tipo==='saida'){ s.saldo-=q; s.saidas+=q; }
+    const k=chaveMV(mv.mid,mv.vid); const s=r[k]||(r[k]={saldo:0,custo:0,entradas:0,saidas:0,n:0}); const q=+mv.qtd||0; s.n++;
+    if(mv.tipo==='entrada'){ const cu=+mv.custoUnit||0; if(cu>0){ const base=Math.max(s.saldo,0); s.custo=(base*s.custo+q*cu)/((base+q)||1); } s.saldo+=q; s.entradas+=q; }
+    else if(mv.tipo==='saida'){ s.saldo-=q; s.saidas+=q; }
     else if(mv.tipo==='ajuste'){ s.saldo+=q; }
   });
-  cache={ref:movs,r}; cacheChave=chave; return cache;
+  // total do material = soma das variações; custo = médio ponderado pelo saldo (ou média simples se tudo zerado)
+  const tot={};
+  Object.keys(r).forEach(k=>{ const mid=k.slice(0,k.lastIndexOf('|')), s=r[k]; const t=tot[mid]||(tot[mid]={saldo:0,valor:0,qPos:0,custos:[],entradas:0,saidas:0,n:0});
+    t.saldo+=s.saldo; t.entradas+=s.entradas; t.saidas+=s.saidas; t.n+=s.n; if(s.saldo>0){ t.valor+=s.saldo*s.custo; t.qPos+=s.saldo; } if(s.custo>0) t.custos.push(s.custo); });
+  Object.keys(tot).forEach(mid=>{ const t=tot[mid]; t.custo=t.qPos>0&&t.valor>0?t.valor/t.qPos:(t.custos.length?t.custos.reduce((a,b)=>a+b,0)/t.custos.length:0); });
+  cache={ref:movs,r,tot}; cacheChave=chave; return cache;
 }
-function infoMat(id){ return calcular().r[id]||{saldo:0,custo:0,entradas:0,saidas:0}; }
-window.estoqueSaldo=id=>infoMat(id).saldo;
-window.estoqueCustoMedio=id=>infoMat(id).custo;
-function situacao(m){ const s=infoMat(m.id).saldo; if(!controlado(m.id)) return ['Sem movimento','sit-agendado']; if(s<=0) return ['Zerado','sit-faltou']; if(m.minimo>0 && s<m.minimo) return ['Abaixo do mínimo','sit-nao_vem']; return ['OK','sit-chegou']; }
-// só entra no alerta o material que já teve movimento (o resto da base inicial ainda não é controlado)
-function controlado(id){ return !!infoMat(id).n; }
-function abaixoMinimo(){ return materiais().filter(m=>m.ativo!==false && controlado(m.id) && infoMat(m.id).saldo<(+m.minimo||0.0001)); }
-window.estoqueAbaixoMinimo=()=>liberado()?abaixoMinimo().length:0;
+const VAZIO={saldo:0,custo:0,entradas:0,saidas:0,n:0};
+function infoMat(id){ return calcular().tot[id]||VAZIO; }
+function infoVar(id,vid){ return calcular().r[chaveMV(id,vid)]||VAZIO; }
+function infoDe(id,vid){ return vid?infoVar(id,vid):infoMat(id); }
+// custo para estimar um item sem variação escolhida: o da variação, se houver; senão o médio do material
+function custoItem(mid,vid){ const c=vid?infoVar(mid,vid).custo:0; return c||infoMat(mid).custo; }
+window.estoqueSaldo=(id,vid)=>infoDe(id,vid).saldo;
+window.estoqueCustoMedio=(id,vid)=>infoDe(id,vid).custo;
+function controlado(id,vid){ return vid===undefined?!!infoMat(id).n:!!infoVar(id,vid).n; }
+function situacaoDe(saldo,minimo,ctrl){ if(!ctrl) return ['Sem movimento','sit-agendado']; if(saldo<=0) return ['Zerado','sit-faltou']; if(minimo>0 && saldo<minimo) return ['Abaixo do mínimo','sit-nao_vem']; return ['OK','sit-chegou']; }
+// lista do que repor: [{m, v}] (v = variação, ou null)
+function paraRepor(){
+  const l=[];
+  materiais().filter(m=>m.ativo!==false).forEach(m=>{
+    if(temVar(m)){ varsAtivas(m).forEach(v=>{ const i=infoVar(m.id,v.id); if(i.n && i.saldo<(+v.minimo||0.0001)) l.push({m,v}); });
+      const semV=infoVar(m.id,''); if(semV.n && semV.saldo<0) l.push({m,v:null}); }
+    else { const i=infoMat(m.id); if(i.n && i.saldo<(+m.minimo||0.0001)) l.push({m,v:null}); }
+  });
+  return l;
+}
+function situacaoMat(m){
+  if(temVar(m)){ const rep=paraRepor().filter(x=>x.m===m); if(!controlado(m.id)) return ['Sem movimento','sit-agendado'];
+    if(rep.some(x=>(x.v?infoVar(m.id,x.v.id):infoVar(m.id,'')).saldo<=0)) return [rep.length+' para repor','sit-faltou'];
+    return rep.length?[rep.length+' para repor','sit-nao_vem']:['OK','sit-chegou']; }
+  const i=infoMat(m.id); return situacaoDe(i.saldo,+m.minimo||0,!!i.n);
+}
+window.estoqueAbaixoMinimo=()=>liberado()?paraRepor().length:0;
 
 // ---------------------------------------------------------------------------
-// base inicial (uma vez por clínica): materiais + kits dos procedimentos que existem no catálogo
+// base inicial (por clínica): materiais, variações e kits; versão 2 traz as variações e os itens opcionais
 // ---------------------------------------------------------------------------
 function chaveNome(t){ return normTxt(t).replace(/\s+/g,' ').trim(); }
 function kitBasePara(nomeProc){ const n=chaveNome(nomeProc); const k=K.find(([t])=>n.includes(t)); return k?k[1]:null; }
+function montarKit(l){ return l.filter(([c])=>matPorId(idBase(c))).map(([c,q,o])=>Object.assign({mid:idBase(c),qtd:q},o&&o.opc?{opc:true}:{})); }
 function garantirBase(){
   if(!liberado()) return false;
   state.meta=state.meta||{};
-  if((state.meta.estoqueBase||0)>=BASE_VERSAO) return false;
+  const ver=state.meta.estoqueBase||0;
+  if(ver>=BASE_VERSAO) return false;
   if(!(state.procedimentos||[]).length) return false;   // catálogo ainda não carregado
   state.materiais=state.materiais||[]; state.kits=state.kits||[]; state.estoqueMov=state.estoqueMov||[];
   const ids=new Set(state.materiais.map(m=>m.id)), nomes=new Set(state.materiais.map(m=>chaveNome(m.nome)));
-  M.forEach(([c,cat,nome,un,emb,porEmb,min])=>{ if(!ids.has(idBase(c)) && !nomes.has(chaveNome(nome))) state.materiais.push({id:idBase(c),nome,categoria:cat,unidade:un,embalagem:emb,porEmbalagem:porEmb,minimo:min,ativo:true,base:true}); });
-  const existe=id=>state.materiais.some(m=>m.id===id);
-  const montar=l=>l.filter(([c])=>existe(idBase(c))).map(([c,q])=>({mid:idBase(c),qtd:q}));
-  if(!kitDe(ID_CONSULTA)) state.kits.push({id:ID_CONSULTA,itens:montar(KIT_CONSULTA),base:true});
-  (state.procedimentos||[]).forEach(pr=>{ if(kitDe(pr.id)) return; const b=kitBasePara(pr.nome); if(b) state.kits.push({id:pr.id,itens:montar(b),base:true}); });
-  state.meta.estoqueBase=BASE_VERSAO;
+  M.forEach(([c,cat,nome,un,emb,porEmb,min])=>{ if(!ids.has(idBase(c)) && !nomes.has(chaveNome(nome))) state.materiais.push(Object.assign({id:idBase(c),nome,categoria:cat,unidade:un,embalagem:emb,porEmbalagem:porEmb,minimo:min,ativo:true,base:true},VARS[c]?{variacoes:varsBase(c)}:{})); });
+  if(ver<2){
+    Object.keys(VARS).forEach(c=>{ const m=matPorId(idBase(c)); if(m && !temVar(m)) m.variacoes=varsBase(c); });
+    const lg=matPorId(idBase('ligadura')); if(lg && lg.nome==='Ligadura elástica') lg.nome='Ligadura elástica simples';
+  }
+  // kits: cria os que faltam e atualiza os que ainda são os da base (os editados pela clínica ficam)
+  const kc=kitDe(ID_CONSULTA); if(!kc) state.kits.push({id:ID_CONSULTA,itens:montarKit(KIT_CONSULTA),base:true}); else if(kc.base) kc.itens=montarKit(KIT_CONSULTA);
+  (state.procedimentos||[]).forEach(pr=>{ const b=kitBasePara(pr.nome); if(!b) return; const k=kitDe(pr.id); if(!k) state.kits.push({id:pr.id,itens:montarKit(b),base:true}); else if(k.base) k.itens=montarKit(b); });
+  state.meta.estoqueBase=BASE_VERSAO; cache=null;
   return true;
 }
 window.estoqueGarantirBase=function(){ if(garantirBase()) saveData(); };
 
+function opcoesMateriais(sel,primeira){
+  const cats={}; materiais().filter(m=>m.ativo!==false).forEach(m=>{ (cats[m.categoria||'Outros']=cats[m.categoria||'Outros']||[]).push(m); });
+  return `<option value="">${primeira||'Incluir material…'}</option>`+Object.keys(cats).sort().map(c=>`<optgroup label="${esc(c)}">${cats[c].sort((a,b)=>a.nome.localeCompare(b.nome)).map(m=>`<option value="${m.id}" ${sel===m.id?'selected':''}>${esc(m.nome)} (${esc(m.unidade)})</option>`).join('')}</optgroup>`).join('');
+}
+function opcoesVar(m,sel,vazio){ return `<option value="">${vazio}</option>`+varsAtivas(m).map(v=>`<option value="${v.id}" ${sel===v.id?'selected':''}>${esc(v.nome)}</option>`).join('')+(sel&&!varsAtivas(m).some(v=>v.id===sel)&&varPorId(m,sel)?`<option value="${sel}" selected>${esc(nomeVar(m,sel))}</option>`:''); }
+
 // ---------------------------------------------------------------------------
 // baixa na evolução: kit sugerido, rascunho editável e gravação ao confirmar
 // ---------------------------------------------------------------------------
-const rascunho={};   // evolId -> [{mid,qtd,origem}]
+const rascunho={};   // evolId -> [{mid,vid,qtd,origem,opc,ref}]
 function procCatalogo(rec){
   if(!rec) return null;
   return (rec.procId && (state.procedimentos||[]).find(pr=>pr.id===rec.procId)) || (state.procedimentos||[]).find(pr=>chaveNome(pr.nome)===chaveNome(rec.nome)) || null;
 }
 function multiplicador(rec,pr){ return (pr&&pr.escopo==='arcada'&&rec&&rec.arco==='ambos')?2:1; }
 function sugestaoKit(p,e){
-  const it=[]; const add=(mid,qtd,origem)=>{ if(!matPorId(mid)||!(qtd>0)) return; const x=it.find(y=>y.mid===mid&&y.origem===origem); if(x) x.qtd=r4(x.qtd+qtd); else it.push({mid,qtd:r4(qtd),origem}); };
-  const kc=kitDe(ID_CONSULTA); if(kc) kc.itens.forEach(i=>add(i.mid,+i.qtd,ID_CONSULTA));
+  const it=[]; const add=(i,mult,origem)=>{ const m=matPorId(i.mid); if(!m) return; const q=r4((+i.qtd||0)*mult); if(!(q>0)) return;
+    if(i.opc){ if(!it.some(y=>y.mid===i.mid&&y.origem===origem)) it.push({mid:i.mid,vid:i.vid||'',qtd:0,ref:q,origem,opc:true}); return; }
+    const x=it.find(y=>y.mid===i.mid&&(y.vid||'')===(i.vid||'')&&y.origem===origem&&!y.opc); if(x) x.qtd=r4(x.qtd+q); else it.push({mid:i.mid,vid:i.vid||'',qtd:q,origem}); };
+  const kc=kitDe(ID_CONSULTA); if(kc) kc.itens.forEach(i=>add(i,1,ID_CONSULTA));
   refsDaEvol(e).forEach(id=>{ const rec=findProcedimentoRecordById(p,id); if(!rec || rec.status==='Realizado anteriormente') return;
     const pr=procCatalogo(rec); const k=pr&&kitDe(pr.id); if(!k) return; const mult=multiplicador(rec,pr);
-    k.itens.forEach(i=>add(i.mid,(+i.qtd||0)*mult,pr.id)); });
+    k.itens.forEach(i=>add(i,mult,pr.id)); });
   return it;
 }
 function itensRascunho(p,e){ if(!rascunho[e.id]) rascunho[e.id]=sugestaoKit(p,e); return rascunho[e.id]; }
 function nomeOrigem(o){ if(o===ID_CONSULTA) return 'Consulta'; if(o==='avulso') return 'Incluído'; const pr=(state.procedimentos||[]).find(x=>x.id===o); return pr?pr.nome:''; }
-function opcoesMateriais(sel){
-  const cats={}; materiais().filter(m=>m.ativo!==false).forEach(m=>{ (cats[m.categoria||'Outros']=cats[m.categoria||'Outros']||[]).push(m); });
-  return '<option value="">Incluir material…</option>'+Object.keys(cats).sort().map(c=>`<optgroup label="${esc(c)}">${cats[c].sort((a,b)=>a.nome.localeCompare(b.nome)).map(m=>`<option value="${m.id}" ${sel===m.id?'selected':''}>${esc(m.nome)} (${esc(m.unidade)})</option>`).join('')}</optgroup>`).join('');
-}
 window.estoqueEvolHtml=function(p,e,podeConfirmar){
   if(!liberado() || e.falta || e.confirmado) return '';
-  if(!(state.materiais||[]).length){ if(garantirBase()) setTimeout(()=>{ saveData(); render(); },0); return ''; }
+  if(!(state.materiais||[]).length || (state.meta&&(state.meta.estoqueBase||0)<BASE_VERSAO)){ if(garantirBase()) setTimeout(()=>{ saveData(); render(); },0); if(!(state.materiais||[]).length) return ''; }
   const l=itensRascunho(p,e);
-  const linhas=l.map((i,ix)=>{ const m=matPorId(i.mid); if(!m) return ''; const s=infoMat(m.id).saldo, falta=s<i.qtd;
-    return `<tr><td>${esc(m.nome)}<div class="muted" style="font-size:11.5px">${esc(nomeOrigem(i.origem))}</div></td>
-      <td style="white-space:nowrap">${podeConfirmar?`<input data-evmat="${e.id}" data-ix="${ix}" inputmode="decimal" value="${esc(String(i.qtd).replace('.',','))}" style="width:78px" aria-label="Quantidade de ${esc(m.nome)}">`:esc(fmtQtd(i.qtd))} ${esc(m.unidade)}</td>
-      <td class="muted" style="font-size:12px;white-space:nowrap">${falta?`<span style="color:var(--warn)">em estoque: ${esc(fmtQtd(s,m.unidade))}</span>`:'em estoque: '+esc(fmtQtd(s,m.unidade))}</td>
-      <td>${podeConfirmar?`<button type="button" class="btn-icone peq btn-perigo" data-evmatrm="${e.id}" data-ix="${ix}" aria-label="Tirar ${esc(m.nome)}">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('');
-  return `<details class="est-evol" ${l.length?'':'open'}><summary><strong>Materiais usados</strong> <span class="muted">· ${l.length} ite${l.length===1?'m':'ns'}, saem do estoque ao confirmar</span></summary>
+  const usados=l.filter(i=>i.qtd>0).length;
+  const linhas=l.map((i,ix)=>{ const m=matPorId(i.mid); if(!m) return ''; const tv=temVar(m), s=(tv&&i.vid)?infoVar(m.id,i.vid).saldo:infoMat(m.id).saldo, falta=i.qtd>0&&s<i.qtd;
+    const pend=tv&&i.qtd>0&&!i.vid;
+    return `<tr class="${i.opc&&!(i.qtd>0)?'est-opc':''}"><td>${esc(m.nome)}<div class="muted" style="font-size:11.5px">${esc(nomeOrigem(i.origem))}${i.opc?` · opcional${i.ref?', normalmente '+esc(fmtQtd(i.ref,m.unidade)):''}`:''}</div>
+        ${tv?(podeConfirmar?`<select data-evvar="${e.id}" data-ix="${ix}" class="${pend?'est-pend':''}" aria-label="Variação de ${esc(m.nome)}">${opcoesVar(m,i.vid,'Escolha qual usou…')}</select>`:`<div style="font-size:12.5px">${esc(nomeVar(m,i.vid)||'—')}</div>`):''}</td>
+      <td style="white-space:nowrap">${podeConfirmar?`<input data-evmat="${e.id}" data-ix="${ix}" inputmode="decimal" value="${i.qtd?esc(String(i.qtd).replace('.',',')):''}" placeholder="0" style="width:78px" aria-label="Quantidade de ${esc(m.nome)}">`:esc(fmtQtd(i.qtd))} ${esc(m.unidade)}</td>
+      <td class="muted" style="font-size:12px;white-space:nowrap">${tv&&!i.vid?'':`<span${falta?' style="color:var(--warn)"':''}>em estoque: ${esc(fmtQtd(s,m.unidade))}</span>`}</td>
+      <td style="white-space:nowrap">${podeConfirmar&&tv?`<button type="button" class="btn-s peq" data-evdup="${e.id}" data-ix="${ix}" title="Lançar outra ${esc(m.nome.toLowerCase())} (outra medida ou cor)">+ outra</button> `:''}${podeConfirmar?`<button type="button" class="btn-icone peq btn-perigo" data-evmatrm="${e.id}" data-ix="${ix}" aria-label="Tirar ${esc(m.nome)}">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('');
+  return `<details class="est-evol" ${l.length?'':'open'}><summary><strong>Materiais usados</strong> <span class="muted">· ${usados} ite${usados===1?'m':'ns'}, saem do estoque ao confirmar</span></summary>
     ${l.length?`<div class="overflow"><table class="est-evol-t"><tbody>${linhas}</tbody></table></div>`:'<p class="muted" style="margin:6px 0">Nenhum material sugerido para este atendimento.</p>'}
-    ${podeConfirmar?`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><select data-evmatadd="${e.id}" style="max-width:340px">${opcoesMateriais('')}</select><span class="muted" style="font-size:12px">Confira as quantidades: o kit é uma média e pode ser ajustado.</span></div>`:''}
+    ${podeConfirmar?`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><select data-evmatadd="${e.id}" style="max-width:340px">${opcoesMateriais('')}</select><span class="muted" style="font-size:12px">Confira as quantidades: o kit é uma média. Itens opcionais só saem se você preencher.</span></div>`:''}
   </details>`;
 };
+function lerInputsEvol(eid){
+  const l=rascunho[eid]; if(!l) return;
+  document.querySelectorAll(`[data-evmat="${eid}"]`).forEach(inp=>{ const it=l[+inp.getAttribute('data-ix')]; if(it) it.qtd=Math.max(0,num(inp.value)); });
+  document.querySelectorAll(`[data-evvar="${eid}"]`).forEach(sel=>{ const it=l[+sel.getAttribute('data-ix')]; if(it) it.vid=sel.value; });
+}
 window.estoqueEvolLigar=function(p){
-  document.querySelectorAll('[data-evmat]').forEach(inp=>inp.addEventListener('input',()=>{ const l=rascunho[inp.getAttribute('data-evmat')]; if(!l) return; const it=l[+inp.getAttribute('data-ix')]; if(it) it.qtd=Math.max(0,num(inp.value)); }));
-  document.querySelectorAll('[data-evmatrm]').forEach(b=>b.addEventListener('click',()=>{ const l=rascunho[b.getAttribute('data-evmatrm')]; if(l){ l.splice(+b.getAttribute('data-ix'),1); render(); } }));
+  const abrir=eid=>setTimeout(()=>{ const d=document.querySelector(`[data-evmatadd="${eid}"]`); const det=d&&d.closest('details'); if(det) det.open=true; },0);
+  document.querySelectorAll('[data-evmat]').forEach(inp=>inp.addEventListener('input',()=>{ const l=rascunho[inp.getAttribute('data-evmat')]; const it=l&&l[+inp.getAttribute('data-ix')]; if(it) it.qtd=Math.max(0,num(inp.value)); }));
+  document.querySelectorAll('[data-evvar]').forEach(sel=>sel.addEventListener('change',()=>{ const eid=sel.getAttribute('data-evvar'); lerInputsEvol(eid); const it=rascunho[eid]&&rascunho[eid][+sel.getAttribute('data-ix')]; if(it){ it.vid=sel.value; if(it.opc&&!(it.qtd>0)&&sel.value) it.qtd=1; } render(); abrir(eid); }));
+  document.querySelectorAll('[data-evdup]').forEach(b=>b.addEventListener('click',()=>{ const eid=b.getAttribute('data-evdup'); lerInputsEvol(eid); const l=rascunho[eid]; const ix=+b.getAttribute('data-ix'); const it=l&&l[ix]; if(!it) return; l.splice(ix+1,0,{mid:it.mid,vid:'',qtd:it.opc?0:(it.ref||it.qtd||1),ref:it.ref,origem:it.origem,opc:it.opc}); render(); abrir(eid); }));
+  document.querySelectorAll('[data-evmatrm]').forEach(b=>b.addEventListener('click',()=>{ const eid=b.getAttribute('data-evmatrm'); lerInputsEvol(eid); const l=rascunho[eid]; if(l){ l.splice(+b.getAttribute('data-ix'),1); render(); abrir(eid); } }));
   document.querySelectorAll('[data-evmatadd]').forEach(s=>s.addEventListener('change',()=>{ const eid=s.getAttribute('data-evmatadd'); if(!s.value) return; const e=(p.evolucao||[]).find(x=>x.id===eid); if(!e) return;
-    const l=itensRascunho(p,e); const x=l.find(i=>i.mid===s.value&&i.origem==='avulso'); if(x) x.qtd=r4(x.qtd+1); else l.push({mid:s.value,qtd:1,origem:'avulso'}); render();
-    setTimeout(()=>{ const ins=document.querySelectorAll(`[data-evmat="${eid}"]`); if(ins.length){ const d=ins[ins.length-1].closest('details'); if(d) d.open=true; ins[ins.length-1].focus(); ins[ins.length-1].select(); } },30); }));
+    lerInputsEvol(eid); const l=itensRascunho(p,e); const m=matPorId(s.value); const x=!temVar(m)&&l.find(i=>i.mid===s.value&&i.origem==='avulso'); if(x) x.qtd=r4(x.qtd+1); else l.push({mid:s.value,vid:'',qtd:1,origem:'avulso'}); render(); abrir(eid);
+    setTimeout(()=>{ const ins=document.querySelectorAll(`[data-evmat="${eid}"]`); if(ins.length){ ins[ins.length-1].focus(); ins[ins.length-1].select(); } },30); }));
 };
-// chamado ao confirmar a evolução (antes de salvar): grava os materiais na evolução e a saída no estoque
-window.estoqueBaixarEvol=function(p,e){
+// antes de confirmar: tudo que tem variação e foi usado precisa da variação escolhida
+window.estoqueValidarEvol=function(p,e){
+  if(!liberado() || e.falta || !rascunho[e.id]) return '';
+  lerInputsEvol(e.id);
+  const falta=rascunho[e.id].filter(i=>i.qtd>0 && temVar(matPorId(i.mid)) && !i.vid).map(i=>matPorId(i.mid).nome);
+  return falta.length?'Escolha qual foi usado em: '+[...new Set(falta)].join(', ')+' (medida, cor ou tipo). Se não usou, deixe a quantidade em branco.':'';
+};
+// chamado ao confirmar a evolução (antes de salvar): grava os materiais na evolução e a saída no estoque.
+// auto=true (dados fictícios): sem variação escolhida, usa a de maior saldo.
+window.estoqueBaixarEvol=function(p,e,auto){
   if(!liberado() || e.falta || !(state.materiais||[]).length) return;
-  document.querySelectorAll(`[data-evmat="${e.id}"]`).forEach(inp=>{ const l=rascunho[e.id]; const it=l&&l[+inp.getAttribute('data-ix')]; if(it) it.qtd=Math.max(0,num(inp.value)); });
+  lerInputsEvol(e.id);
   const l=itensRascunho(p,e).filter(i=>i.qtd>0 && matPorId(i.mid));
+  if(auto) l.forEach(i=>{ const m=matPorId(i.mid); if(temVar(m)&&!i.vid){ const v=varsAtivas(m).slice().sort((a,b)=>infoVar(m.id,b.id).saldo-infoVar(m.id,a.id).saldo)[0]; if(v) i.vid=v.id; } });
   if(!l.length){ delete rascunho[e.id]; return; }
   state.estoqueMov=state.estoqueMov||[];
   const u=eu(), em=new Date().toISOString();
-  e.materiais=l.map(i=>{ const m=matPorId(i.mid), c=infoMat(i.mid).custo;
-    state.estoqueMov.push({id:uid(),mid:i.mid,tipo:'saida',qtd:r4(i.qtd),data:e.data||hojeISO(),em,custoUnit:r4(c),pacienteId:p.id,pacienteNome:p.nome,evolId:e.id,procId:i.origem,procNome:nomeOrigem(i.origem),porNome:u?nomeExibicao(u):''});
-    return {mid:i.mid,nome:m.nome,unidade:m.unidade,qtd:r4(i.qtd),custoUnit:r4(c),origem:i.origem}; });
+  e.materiais=l.map(i=>{ const m=matPorId(i.mid), c=custoItem(i.mid,i.vid);
+    state.estoqueMov.push({id:uid(),mid:i.mid,vid:i.vid||'',tipo:'saida',qtd:r4(i.qtd),data:e.data||hojeISO(),em,custoUnit:r4(c),pacienteId:p.id,pacienteNome:p.nome,evolId:e.id,procId:i.origem,procNome:nomeOrigem(i.origem),porNome:u?nomeExibicao(u):''});
+    return {mid:i.mid,vid:i.vid||'',nome:nomeCompleto(m,i.vid),unidade:m.unidade,qtd:r4(i.qtd),custoUnit:r4(c),origem:i.origem}; });
   e.custoMateriais=r2(e.materiais.reduce((s,i)=>s+i.qtd*i.custoUnit,0));
   delete rascunho[e.id]; cache=null;
 };
@@ -307,59 +379,103 @@ window.estoqueEvolFeitaHtml=function(e){
 // ---------------------------------------------------------------------------
 // entrada pela compra (Financeiro → Lançar despesa → Compra com itens)
 // ---------------------------------------------------------------------------
-window.estoqueOpcoesCompra=function(sel){ return '<option value="">Escolha o material…</option><option value="__novo">➕ Cadastrar material novo…</option>'+opcoesMateriais(sel).replace('<option value="">Incluir material…</option>',''); };
+window.estoqueOpcoesCompra=function(sel){ return opcoesMateriais(sel,'Escolha o material…').replace('</option>','</option><option value="__novo">➕ Cadastrar material novo…</option>'); };
+window.estoqueOpcoesVarCompra=function(mid,sel){ const m=matPorId(mid); if(!temVar(m)) return ''; return opcoesVar(m,sel,'Qual (medida, cor, tipo)…')+'<option value="__novavar">➕ Nova variação…</option>'; };
+window.estoqueTemVar=mid=>temVar(matPorId(mid));
 window.estoqueMaterial=matPorId;
+window.estoqueNomeCompleto=(mid,vid)=>nomeCompleto(matPorId(mid),vid);
 window.estoqueEntradasDaCompra=function(compra,itens){
   if(!liberado()) return 0;
   state.estoqueMov=state.estoqueMov||[]; let n=0; const em=new Date().toISOString();
   itens.forEach(it=>{ if(it.destino!=='estoque' || !it.mid) return; const m=matPorId(it.mid); if(!m) return; const por=+m.porEmbalagem||1;
-    state.estoqueMov.push({id:uid(),mid:m.id,tipo:'entrada',qtd:r4(it.qtd*por),custoUnit:r4(it.unit/por),data:compra.data,em,compraId:compra.id,fornecedor:compra.fornecedor,nf:compra.nf||'',porNome:eu()?nomeExibicao(eu()):''}); n++; });
+    state.estoqueMov.push({id:uid(),mid:m.id,vid:it.vid||'',tipo:'entrada',qtd:r4(it.qtd*por),custoUnit:r4(it.unit/por),data:compra.data,em,compraId:compra.id,fornecedor:compra.fornecedor,nf:compra.nf||'',porNome:eu()?nomeExibicao(eu()):''}); n++; });
   cache=null; return n;
 };
 window.estoqueApagarCompra=function(compraId){ const a=(state.estoqueMov||[]).length; state.estoqueMov=(state.estoqueMov||[]).filter(mv=>mv.compraId!==compraId); cache=null; return a-state.estoqueMov.length; };
+// nova variação direto da compra
+window.estoqueNovaVariacao=function(mid,depois){
+  const m=matPorId(mid); if(!m) return;
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Nova variação · ${esc(m.nome)}</h3><p class="muted" style="margin:0 0 10px">Ex.: NiTi 0,014 · Superior; A2; Roth; Seda 4-0.</p>
+    <form id="fNv"><div class="row"><div><label for="nvNome">Nome</label><input id="nvNome" required></div><div><label for="nvMin">Estoque mínimo (${esc(m.unidade)})</label><input id="nvMin" inputmode="decimal" value="0"></div></div>
+    <div style="margin-top:12px;text-align:right"><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Criar</button></div></form>`);
+  bg.querySelector('#fNv').addEventListener('submit',ev=>{ ev.preventDefault(); const nome=bg.querySelector('#nvNome').value.trim(); if(!nome) return;
+    if(varsAtivas(m).some(v=>chaveNome(v.nome)===chaveNome(nome))){ avisar('Essa variação já existe.'); return; }
+    const v={id:uid(),nome,minimo:Math.max(0,num(bg.querySelector('#nvMin').value)),ativo:true}; m.variacoes=(m.variacoes||[]).concat([v]); saveData(); bg.remove(); depois&&depois(v); });
+  setTimeout(()=>{ const i=bg.querySelector('#nvNome'); if(i) i.focus(); },30);
+};
 
 // ---------------------------------------------------------------------------
-// cadastro de material e ajuste de inventário
+// cadastro de material (com variações) e ajuste de inventário
 // ---------------------------------------------------------------------------
 function categorias(){ return [...new Set(M.map(x=>x[1]).concat(materiais().map(m=>m.categoria||'')).filter(Boolean))].sort(); }
 function abrirMaterial(id,nomeInicial,depois){
   const m=id?matPorId(id):null;
+  let vars=((m&&m.variacoes)||[]).map(v=>Object.assign({},v));
+  const usadas=new Set((state.estoqueMov||[]).filter(x=>m&&x.mid===m.id&&x.vid).map(x=>x.vid));
   const bg=modalPlat(`<h3 style="margin:0 0 10px">${m?'Editar material':'Novo material'}</h3>
     <form id="fMat">
-    <label for="mtNome">Nome</label><input id="mtNome" required value="${esc(m?m.nome:(nomeInicial||''))}" placeholder="Ex.: Resina composta A2">
+    <label for="mtNome">Nome</label><input id="mtNome" required value="${esc(m?m.nome:(nomeInicial||''))}" placeholder="Ex.: Fio ortodôntico (arco)">
     <div class="row">
-      <div><label for="mtCat">Categoria</label><input id="mtCat" list="mtCats" value="${esc(m?m.categoria:'')}" placeholder="Ex.: Dentística"><datalist id="mtCats">${categorias().map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div><label for="mtCat">Categoria</label><input id="mtCat" list="mtCats" value="${esc(m?m.categoria:'')}" placeholder="Ex.: Ortodontia"><datalist id="mtCats">${categorias().map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
       <div><label for="mtUn">Unidade de uso</label><select id="mtUn">${UNIDADES.map(([v,t])=>`<option value="${v}" ${(m?m.unidade:'un')===v?'selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <div class="row">
-      <div><label for="mtEmb">Como é comprado (embalagem)</label><input id="mtEmb" value="${esc(m?m.embalagem||'':'')}" placeholder="Ex.: Seringa com 4 g"></div>
+      <div><label for="mtEmb">Como é comprado (embalagem)</label><input id="mtEmb" value="${esc(m?m.embalagem||'':'')}" placeholder="Ex.: Pacote com 10"></div>
       <div><label for="mtPor">Quanto vem em cada embalagem</label><input id="mtPor" inputmode="decimal" value="${esc(String(m?m.porEmbalagem||1:1).replace('.',','))}" required></div>
     </div>
-    <div class="row">
+    <div class="row" id="mtMinW">
       <div><label for="mtMin">Estoque mínimo (na unidade de uso)</label><input id="mtMin" inputmode="decimal" value="${esc(String(m?m.minimo||0:0).replace('.',','))}"></div>
       ${m?`<div style="align-self:flex-end"><label class="chk-linha"><input type="checkbox" id="mtAtivo" ${m.ativo!==false?'checked':''}> Em uso (aparece nas listas)</label></div>`:''}
     </div>
-    <p class="muted" style="font-size:12.5px;margin:8px 0 0">Exemplo: resina comprada em seringa de 4 g → unidade de uso "g" e 4 por embalagem. Na compra você informa quantas seringas; no atendimento, quantos gramas.</p>
+    <h4 style="margin:14px 0 4px">Variações <span class="muted" style="font-weight:400;font-size:12.5px">(medida, cor, tipo, número; cada uma com saldo e mínimo próprios)</span></h4>
+    <div id="mtVars"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn-s peq" id="mtVarAdd">+ Variação</button><button type="button" class="btn-s peq" id="mtVarGer">Gerar combinações…</button></div>
+    <div id="mtGer" style="display:none" class="est-ger">
+      <p class="muted" style="margin:0 0 6px;font-size:12.5px">Separe as opções por ponto e vírgula. Ex.: <em>NiTi; Aço</em> · <em>0,014; 0,016; 0,016x0,022</em> · <em>Superior; Inferior</em></p>
+      <div class="row"><div><label for="gA">Opção 1</label><input id="gA" placeholder="NiTi; Aço"></div><div><label for="gB">Opção 2</label><input id="gB" placeholder="0,014; 0,016"></div><div><label for="gC">Opção 3</label><input id="gC" placeholder="Superior; Inferior"></div></div>
+      <div class="row"><div><label for="gMin">Mínimo de cada</label><input id="gMin" inputmode="decimal" value="0"></div><div style="align-self:flex-end"><button type="button" class="btn-p peq" id="gOk">Criar combinações</button></div></div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:10px 0 0">Exemplo: resina comprada em seringa de 4 g → unidade de uso "g" e 4 por embalagem; variações A1, A2, A3. Na compra você informa quantas seringas e de qual cor; no atendimento, quantos gramas e qual cor.</p>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">${m&&!(state.estoqueMov||[]).some(x=>x.mid===m.id)?'<button type="button" class="btn-d" id="mtExc">Excluir</button>':'<span></span>'}<span><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Salvar</button></span></div>
     </form>`);
-  const ex=bg.querySelector('#mtExc'); if(ex) ex.addEventListener('click',()=>customConfirm('Excluir este material? Ele sai também dos kits.',()=>{ state.materiais=state.materiais.filter(x=>x.id!==m.id); (state.kits||[]).forEach(k=>{ k.itens=k.itens.filter(i=>i.mid!==m.id); }); saveData(); bg.remove(); render(); }));
-  bg.querySelector('#fMat').addEventListener('submit',ev=>{
-    ev.preventDefault(); const q=s=>bg.querySelector(s);
+  const q=s=>bg.querySelector(s);
+  const lerVars=()=>{ bg.querySelectorAll('[data-vn]').forEach(i=>{ const v=vars[+i.getAttribute('data-vn')]; if(v) v.nome=i.value; }); bg.querySelectorAll('[data-vm]').forEach(i=>{ const v=vars[+i.getAttribute('data-vm')]; if(v) v.minimo=Math.max(0,num(i.value)); }); };
+  const desenhar=()=>{
+    q('#mtVars').innerHTML=vars.length?`<div class="overflow" style="max-height:260px"><table class="est-t"><thead><tr><th>Variação</th><th>Mínimo</th><th></th></tr></thead><tbody>${vars.map((v,i)=>`<tr class="${v.ativo===false?'est-inativo':''}"><td><input data-vn="${i}" value="${esc(v.nome)}" aria-label="Nome da variação"></td><td><input data-vm="${i}" inputmode="decimal" value="${esc(String(v.minimo||0).replace('.',','))}" style="width:80px" aria-label="Mínimo"></td><td>${usadas.has(v.id)?`<label class="chk-linha" style="font-size:12px"><input type="checkbox" data-va="${i}" ${v.ativo!==false?'checked':''}> em uso</label>`:`<button type="button" class="btn-icone peq btn-perigo" data-vx="${i}" aria-label="Tirar variação">${ICONES.lixo}</button>`}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted" style="margin:0;font-size:13px">Sem variações: o material tem um saldo só.</p>';
+    q('#mtMinW').querySelector('#mtMin').closest('div').style.display=vars.length?'none':'';
+    bg.querySelectorAll('[data-vx]').forEach(b=>b.addEventListener('click',()=>{ lerVars(); vars.splice(+b.getAttribute('data-vx'),1); desenhar(); }));
+    bg.querySelectorAll('[data-va]').forEach(c=>c.addEventListener('change',()=>{ lerVars(); vars[+c.getAttribute('data-va')].ativo=c.checked; }));
+  };
+  desenhar();
+  q('#mtVarAdd').addEventListener('click',()=>{ lerVars(); vars.push({id:uid(),nome:'',minimo:0,ativo:true}); desenhar(); const l=bg.querySelectorAll('[data-vn]'); if(l.length) l[l.length-1].focus(); });
+  q('#mtVarGer').addEventListener('click',()=>{ q('#mtGer').style.display=q('#mtGer').style.display==='none'?'block':'none'; });
+  q('#gOk').addEventListener('click',()=>{ lerVars(); const sp=t=>t.split(';').map(x=>x.trim()).filter(Boolean); const A=sp(q('#gA').value), B=sp(q('#gB').value), C=sp(q('#gC').value);
+    let l=[[]]; [A,B,C].forEach(o=>{ if(o.length) l=l.flatMap(x=>o.map(y=>x.concat([y]))); });
+    const nomes=l.map(x=>{ const ab=x.slice(0,2).join(' '); return x.length>2?ab+' · '+x[2]:ab; }).filter(Boolean); const min=Math.max(0,num(q('#gMin').value));
+    let n=0; nomes.forEach(nome=>{ if(!vars.some(v=>chaveNome(v.nome)===chaveNome(nome))){ vars.push({id:uid(),nome,minimo:min,ativo:true}); n++; } });
+    q('#mtGer').style.display='none'; desenhar(); avisarRapido(n+' variação(ões) criada(s).'); });
+  const ex=q('#mtExc'); if(ex) ex.addEventListener('click',()=>customConfirm('Excluir este material? Ele sai também dos kits.',()=>{ state.materiais=state.materiais.filter(x=>x.id!==m.id); (state.kits||[]).forEach(k=>{ k.itens=k.itens.filter(i=>i.mid!==m.id); }); saveData(); bg.remove(); render(); }));
+  q('#fMat').addEventListener('submit',ev=>{
+    ev.preventDefault(); lerVars();
     const d={nome:q('#mtNome').value.trim(),categoria:q('#mtCat').value.trim()||'Outros',unidade:q('#mtUn').value,embalagem:q('#mtEmb').value.trim(),porEmbalagem:num(q('#mtPor').value),minimo:Math.max(0,num(q('#mtMin').value))};
     if(!d.nome){ avisar('Informe o nome do material.'); return; }
     if(!(d.porEmbalagem>0)){ avisar('Informe quanto vem em cada embalagem (maior que zero).'); return; }
     if(materiais().some(x=>x.id!==(m&&m.id) && chaveNome(x.nome)===chaveNome(d.nome))){ avisar('Já existe um material com esse nome.'); return; }
+    vars=vars.filter(v=>v.nome.trim()); vars.forEach(v=>{ v.nome=v.nome.trim(); });
+    if(new Set(vars.map(v=>chaveNome(v.nome))).size!==vars.length){ avisar('Há variações com o mesmo nome.'); return; }
+    d.variacoes=vars;
     state.materiais=state.materiais||[];
     let alvo=m; if(m){ Object.assign(m,d); const at=q('#mtAtivo'); if(at) m.ativo=at.checked; } else { alvo=Object.assign({id:uid(),ativo:true},d); state.materiais.push(alvo); }
     cache=null; saveData(); bg.remove(); if(depois) depois(alvo); else render();
   });
 }
 window.estoqueNovoMaterial=(nome,depois)=>abrirMaterial(null,nome,depois);
-function abrirAjuste(id){
-  const m=matPorId(id); if(!m) return; const s=infoMat(id);
+function abrirAjuste(id,vidIni){
+  const m=matPorId(id); if(!m) return; const tv=temVar(m);
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Ajustar estoque · ${esc(m.nome)}</h3>
-    <p class="muted" style="margin:0 0 10px">Saldo no sistema: <strong>${esc(fmtQtd(s.saldo,m.unidade))}</strong></p>
     <form id="fAj">
+    ${tv?`<label for="ajVar">Variação</label><select id="ajVar" required>${opcoesVar(m,vidIni||'','Escolha…')}</select>`:''}
+    <p class="muted" style="margin:6px 0 10px" id="ajSaldo"></p>
     <label for="ajTipo">O que aconteceu</label>
     <select id="ajTipo"><option value="contagem">Contei o estoque (informar o saldo real)</option><option value="perda">Perda, vencimento ou quebra (dar baixa)</option><option value="entrada">Entrada sem compra (amostra, doação, saldo inicial)</option></select>
     <div class="row">
@@ -369,13 +485,18 @@ function abrirAjuste(id){
     <label for="ajObs">Observação</label><input id="ajObs" placeholder="Ex.: inventário do mês, lote vencido">
     <div style="margin-top:14px;text-align:right"><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Registrar</button></div>
     </form>`);
-  const tipo=bg.querySelector('#ajTipo'), rot=bg.querySelector('#ajQtdRot'), cw=bg.querySelector('#ajCustoW');
+  const tipo=bg.querySelector('#ajTipo'), rot=bg.querySelector('#ajQtdRot'), cw=bg.querySelector('#ajCustoW'), sv=bg.querySelector('#ajVar');
+  const vidAt=()=>tv?(sv.value||''):'';
+  const mostrarSaldo=()=>{ bg.querySelector('#ajSaldo').innerHTML=tv&&!sv.value?'':`Saldo no sistema: <strong>${esc(fmtQtd(infoDe(m.id,vidAt()).saldo,m.unidade))}</strong>`; };
+  if(sv) sv.addEventListener('change',mostrarSaldo); mostrarSaldo();
   tipo.addEventListener('change',()=>{ rot.textContent=(tipo.value==='contagem'?'Saldo real contado':tipo.value==='perda'?'Quantidade perdida':'Quantidade que entrou')+` (${m.unidade})`; cw.style.display=tipo.value==='entrada'?'block':'none'; });
   bg.querySelector('#fAj').addEventListener('submit',ev=>{
-    ev.preventDefault(); const q=num(bg.querySelector('#ajQtd').value); if(!(q>=0) || (tipo.value!=='contagem' && !(q>0))){ avisar('Informe a quantidade.'); return; }
-    const base={id:uid(),mid:m.id,data:hojeISO(),em:new Date().toISOString(),obs:bg.querySelector('#ajObs').value.trim(),porNome:eu()?nomeExibicao(eu()):''};
+    ev.preventDefault(); if(tv && !sv.value){ avisar('Escolha a variação.'); return; }
+    const q=num(bg.querySelector('#ajQtd').value); if(!(q>=0) || (tipo.value!=='contagem' && !(q>0))){ avisar('Informe a quantidade.'); return; }
+    const vid=vidAt(), saldo=infoDe(m.id,vid).saldo;
+    const base={id:uid(),mid:m.id,vid,data:hojeISO(),em:new Date().toISOString(),obs:bg.querySelector('#ajObs').value.trim(),porNome:eu()?nomeExibicao(eu()):''};
     state.estoqueMov=state.estoqueMov||[];
-    if(tipo.value==='contagem'){ const dif=r4(q-s.saldo); if(!dif){ bg.remove(); avisar('O saldo já está certo.'); return; } state.estoqueMov.push(Object.assign(base,{tipo:'ajuste',qtd:dif,motivo:'Contagem de estoque'})); }
+    if(tipo.value==='contagem'){ const dif=r4(q-saldo); if(!dif){ bg.remove(); avisar('O saldo já está certo.'); return; } state.estoqueMov.push(Object.assign(base,{tipo:'ajuste',qtd:dif,motivo:'Contagem de estoque'})); }
     else if(tipo.value==='perda') state.estoqueMov.push(Object.assign(base,{tipo:'ajuste',qtd:-q,motivo:'Perda / vencimento'}));
     else state.estoqueMov.push(Object.assign(base,{tipo:'entrada',qtd:q,custoUnit:r4(Math.max(0,num(bg.querySelector('#ajCusto').value))),motivo:'Entrada sem compra'}));
     cache=null; saveData(); bg.remove(); render();
@@ -386,6 +507,7 @@ function abrirAjuste(id){
 // tela Estoque
 // ---------------------------------------------------------------------------
 let aba='saldo', busca='', filtroCat='', filtroVer='', kitSel=ID_CONSULTA, kitBusca='', movFiltro='', custoPer='mes', kitEdit=null;
+const abertos=new Set();
 function kpi(r,v,sub,cls){ return `<div class="pf-kpi${cls?' '+cls:''}"><span class="pf-kpi-rot">${r}</span><strong>${v}</strong>${sub?`<span class="pf-kpi-sub">${sub}</span>`:''}</div>`; }
 window.estoqueTelaHtml=function(){
   if(!liberado()) return `<div class="card"><h2 style="margin-top:0">Estoque</h2><p>O controle de estoque faz parte do plano <strong>Completo</strong> e também pode ser contratado como módulo. Fale com o OdontoGestão para liberar.</p></div>`;
@@ -397,27 +519,37 @@ window.estoqueTelaHtml=function(){
   return `<h2 style="margin:0 0 10px 0">Estoque</h2><div class="tabs">${abas.map(([id,t])=>`<button data-estaba="${id}" class="${aba===id?'active':''}">${t}</button>`).join('')}</div>${corpo}`;
 };
 function telaSaldo(){
-  const lista=materiais().filter(m=>(!filtroCat||m.categoria===filtroCat) && (!busca||normTxt(m.nome).includes(normTxt(busca))) && (filtroVer!=='controle'||controlado(m.id)) && (filtroVer!=='repor'||abaixoMinimo().includes(m)));
-  const ativos=materiais().filter(m=>m.ativo!==false), baixo=abaixoMinimo();
-  const valor=r2(ativos.reduce((s,m)=>{ const i=infoMat(m.id); return s+Math.max(i.saldo,0)*i.custo; },0));
-  const rank=m=>m.ativo===false?4:({'Zerado':0,'Abaixo do mínimo':1,'OK':2,'Sem movimento':3})[situacao(m)[0]];
+  const repor=paraRepor();
+  const lista=materiais().filter(m=>(!filtroCat||m.categoria===filtroCat) && (!busca||normTxt(m.nome+' '+varsAtivas(m).map(v=>v.nome).join(' ')).includes(normTxt(busca))) && (filtroVer!=='controle'||controlado(m.id)) && (filtroVer!=='repor'||repor.some(x=>x.m===m)));
+  const ativos=materiais().filter(m=>m.ativo!==false);
+  const valor=r2(Object.values(calcular().r).reduce((s,i)=>s+Math.max(i.saldo,0)*i.custo,0));
+  const rank=m=>{ if(m.ativo===false) return 5; const st=situacaoMat(m)[1]; return ({'sit-faltou':0,'sit-nao_vem':1,'sit-chegou':2,'sit-agendado':3})[st]; };
   const ordem=(a,b)=>rank(a)-rank(b) || (a.categoria||'').localeCompare(b.categoria||'') || a.nome.localeCompare(b.nome);
   const temEntradas=(state.estoqueMov||[]).some(x=>x.tipo==='entrada');
-  const fin=eu()&&permsDe(eu()).financeiro;
-  return `<div class="card"><div class="pf-caixa">${kpi('Materiais cadastrados',ativos.length,'em uso')}${veCusto()?kpi('Valor em estoque',fmtMoney(valor),'pelo custo médio das compras'):''}${kpi('Abaixo do mínimo',baixo.length,baixo.length?'repor na próxima compra':'tudo em ordem',baixo.length?'ruim':'')}</div>
+  const fin=eu()&&permsDe(eu()).financeiro, gerir=podeGerir(), vc=veCusto();
+  const linhaVar=(m,v,vid)=>{ const i=infoVar(m.id,vid), [st,cls]=situacaoDe(i.saldo,v?+v.minimo||0:0,!!i.n); const por=+m.porEmbalagem||1;
+    return `<tr class="est-var ${v&&v.ativo===false?'est-inativo':''}"><td>↳ ${esc(v?v.nome:'Sem variação informada')}</td><td style="white-space:nowrap">${esc(fmtQtd(i.saldo,m.unidade))}${por>1&&i.saldo>0?`<div class="muted" style="font-size:12px">≈ ${esc(fmtQtd(i.saldo/por))} emb.</div>`:''}</td><td style="white-space:nowrap">${v?esc(fmtQtd(v.minimo||0,m.unidade)):'—'}</td>
+      ${vc?`<td style="white-space:nowrap">${i.custo?esc(fmtCusto(i.custo))+' / '+esc(m.unidade):'—'}</td><td style="white-space:nowrap">${i.custo&&i.saldo>0?esc(fmtMoney(i.saldo*i.custo)):'—'}</td>`:''}
+      <td><span class="sit ${cls}">${st}</span></td><td class="actions">${gerir?`<button class="btn-s peq" data-estaj="${m.id}" data-vid="${esc(vid)}">Ajustar</button>`:''}</td></tr>`; };
+  const linhas=lista.sort(ordem).map(m=>{ const i=infoMat(m.id), [st,cls]=situacaoMat(m), por=+m.porEmbalagem||1, tv=temVar(m);
+    let sub='';
+    if(tv){ const vs=(m.variacoes||[]); const mostrar=abertos.has(m.id)?vs:vs.filter(v=>controlado(m.id,v.id)&&(filtroVer!=='repor'||repor.some(x=>x.m===m&&x.v===v)));
+      sub=mostrar.map(v=>linhaVar(m,v,v.id)).join('')+(controlado(m.id,'')?linhaVar(m,null,''):'');
+      if(vs.length>mostrar.length || abertos.has(m.id)) sub+=`<tr class="est-var"><td colspan="7"><button class="lnk-forte" data-estabrir="${m.id}">${abertos.has(m.id)?'Mostrar só as que têm movimento':'Ver todas as '+vs.length+' variações'}</button></td></tr>`; }
+    return `<tr class="${m.ativo===false?'est-inativo':''} ${tv?'est-mae':''}"><td><strong>${esc(m.nome)}</strong><div class="muted" style="font-size:12px">${esc(m.categoria||'')}${m.embalagem?' · '+esc(m.embalagem):''}${tv?' · '+(m.variacoes||[]).length+' variações':''}</div></td>
+        <td style="white-space:nowrap">${esc(fmtQtd(i.saldo,m.unidade))}${!tv&&por>1&&i.saldo>0?`<div class="muted" style="font-size:12px">≈ ${esc(fmtQtd(i.saldo/por))} emb.</div>`:tv?'<div class="muted" style="font-size:12px">total</div>':''}</td>
+        <td style="white-space:nowrap">${tv?'<span class="muted">por variação</span>':esc(fmtQtd(m.minimo||0,m.unidade))}</td>
+        ${vc?`<td style="white-space:nowrap">${i.custo?esc(fmtCusto(i.custo))+' / '+esc(m.unidade):'—'}</td><td style="white-space:nowrap">${i.custo&&i.saldo>0?esc(fmtMoney(Object.keys(calcular().r).filter(k=>k.startsWith(m.id+'|')).reduce((s,k)=>{ const x=calcular().r[k]; return s+Math.max(x.saldo,0)*x.custo; },0))):'—'}</td>`:''}
+        <td><span class="sit ${cls}">${m.ativo===false?'Fora de uso':st}</span></td>
+        <td class="actions" style="white-space:nowrap">${gerir?`<button class="btn-s peq" data-estaj="${m.id}">Ajustar</button> <button class="btn-s peq" data-ested="${m.id}">Editar</button>`:''}</td></tr>${sub}`; }).join('');
+  return `<div class="card"><div class="pf-caixa">${kpi('Materiais cadastrados',ativos.length,'em uso')}${vc?kpi('Valor em estoque',fmtMoney(valor),'pelo custo médio das compras'):''}${kpi('Para repor',repor.length,repor.length?'abaixo do mínimo (por variação)':'tudo em ordem',repor.length?'ruim':'')}</div>
     ${!temEntradas?`<p class="est-dica">Para começar: lance as compras de material em <strong>Financeiro → Lançar despesa → Compra com itens</strong>, escolhendo "Material de consumo". Se já tem material na clínica, use <strong>Ajustar → Entrada sem compra</strong> para informar o saldo inicial.</p>`:''}
-    <div class="est-filtros"><input type="search" id="estBusca" placeholder="Buscar material" value="${esc(busca)}" aria-label="Buscar material">
+    <div class="est-filtros"><input type="search" id="estBusca" placeholder="Buscar material ou variação" value="${esc(busca)}" aria-label="Buscar material">
       <select id="estVer" aria-label="Mostrar"><option value="">Todos os materiais</option><option value="controle" ${filtroVer==='controle'?'selected':''}>Só os que têm movimento</option><option value="repor" ${filtroVer==='repor'?'selected':''}>Só os para repor</option></select>
       <select id="estCat" aria-label="Categoria"><option value="">Todas as categorias</option>${categorias().map(c=>`<option ${filtroCat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
-      <span style="flex:1"></span>${fin?'<button class="btn-s" data-estcompra>Registrar compra</button>':''}${podeGerir()?'<button class="btn-p" data-estnovo>+ Novo material</button>':''}</div>
-    <div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Saldo</th><th>Mínimo</th>${veCusto()?'<th>Custo médio</th><th>Valor</th>':''}<th>Situação</th><th></th></tr></thead><tbody>
-    ${lista.sort(ordem).map(m=>{ const i=infoMat(m.id), [st,cls]=situacao(m), por=+m.porEmbalagem||1;
-      return `<tr class="${m.ativo===false?'est-inativo':''}"><td><strong>${esc(m.nome)}</strong><div class="muted" style="font-size:12px">${esc(m.categoria||'')}${m.embalagem?' · '+esc(m.embalagem):''}</div></td>
-        <td style="white-space:nowrap">${esc(fmtQtd(i.saldo,m.unidade))}${por>1&&i.saldo>0?`<div class="muted" style="font-size:12px">≈ ${esc(fmtQtd(i.saldo/por))} emb.</div>`:''}</td>
-        <td style="white-space:nowrap">${esc(fmtQtd(m.minimo||0,m.unidade))}</td>
-        ${veCusto()?`<td style="white-space:nowrap">${i.custo?esc(fmtCusto(i.custo))+' / '+esc(m.unidade):'—'}</td><td style="white-space:nowrap">${i.custo&&i.saldo>0?esc(fmtMoney(i.saldo*i.custo)):'—'}</td>`:''}
-        <td><span class="sit ${cls}">${m.ativo===false?'Fora de uso':st}</span></td>
-        <td class="actions" style="white-space:nowrap">${podeGerir()?`<button class="btn-s peq" data-estaj="${m.id}">Ajustar</button> <button class="btn-s peq" data-ested="${m.id}">Editar</button>`:''}</td></tr>`; }).join('')||`<tr><td colspan="7" class="muted">Nenhum material encontrado.</td></tr>`}
+      <span style="flex:1"></span>${fin?'<button class="btn-s" data-estcompra>Registrar compra</button>':''}${gerir?'<button class="btn-p" data-estnovo>+ Novo material</button>':''}</div>
+    <div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Saldo</th><th>Mínimo</th>${vc?'<th>Custo médio</th><th>Valor</th>':''}<th>Situação</th><th></th></tr></thead><tbody>
+    ${linhas||`<tr><td colspan="7" class="muted">Nenhum material encontrado.</td></tr>`}
     </tbody></table></div></div>`;
 }
 function rotOrigem(mv){
@@ -431,17 +563,17 @@ function telaMov(){
     <div class="overflow"><table class="est-t"><thead><tr><th>Data</th><th>Tipo</th><th>Material</th><th>Quantidade</th>${veCusto()?'<th>Custo</th>':''}<th>Origem</th></tr></thead><tbody>
     ${l.map(mv=>{ const m=matPorId(mv.mid)||{nome:'(material excluído)',unidade:''}; const ent=mv.tipo==='entrada'||(mv.tipo==='ajuste'&&mv.qtd>0);
       return `<tr><td style="white-space:nowrap">${esc(fmtDataBR(mv.data))}</td><td><span class="sit ${ent?'sit-chegou':mv.tipo==='saida'?'sit-confirmado':'sit-nao_vem'}">${mv.tipo==='entrada'?'Entrada':mv.tipo==='saida'?'Saída':'Ajuste'}</span></td>
-      <td>${esc(m.nome)}</td><td style="white-space:nowrap">${ent?'+':'−'}${esc(fmtQtd(Math.abs(mv.qtd),m.unidade))}</td>${veCusto()?`<td style="white-space:nowrap">${mv.custoUnit?esc(fmtCusto(Math.abs(mv.qtd)*mv.custoUnit)):'—'}</td>`:''}
+      <td>${esc(m.nome)}${mv.vid?`<div class="muted" style="font-size:12px">${esc(nomeVar(m,mv.vid))}</div>`:''}</td><td style="white-space:nowrap">${ent?'+':'−'}${esc(fmtQtd(Math.abs(mv.qtd),m.unidade))}</td>${veCusto()?`<td style="white-space:nowrap">${mv.custoUnit?esc(fmtCusto(Math.abs(mv.qtd)*mv.custoUnit)):'—'}</td>`:''}
       <td style="font-size:13px">${rotOrigem(mv)}${mv.porNome?`<div class="muted" style="font-size:11.5px">${esc(mv.porNome)}</div>`:''}</td></tr>`; }).join('')||`<tr><td colspan="6" class="muted">Nenhuma movimentação ainda.</td></tr>`}
     </tbody></table></div></div>`;
 }
-function custoKit(itens){ return r2((itens||[]).reduce((s,i)=>s+(+i.qtd||0)*infoMat(i.mid).custo,0)); }
+function custoKit(itens){ return r2((itens||[]).filter(i=>!i.opc).reduce((s,i)=>s+(+i.qtd||0)*custoItem(i.mid,i.vid),0)); }
 function telaKits(){
   const procs=(state.procedimentos||[]).slice().sort((a,b)=>(a.especialidade||'').localeCompare(b.especialidade||'')||a.nome.localeCompare(b.nome));
   const vis=procs.filter(pr=>!kitBusca||normTxt(pr.nome+' '+pr.especialidade).includes(normTxt(kitBusca)));
   const grupos={}; vis.forEach(pr=>{ (grupos[pr.especialidade||'Outros']=grupos[pr.especialidade||'Outros']||[]).push(pr); });
   const k=kitDe(kitSel), pr=procs.find(x=>x.id===kitSel);
-  if(!kitEdit || kitEdit.id!==kitSel) kitEdit={id:kitSel,itens:(k?k.itens:[]).map(i=>({mid:i.mid,qtd:i.qtd}))};
+  if(!kitEdit || kitEdit.id!==kitSel) kitEdit={id:kitSel,itens:(k?k.itens:[]).map(i=>Object.assign({},i))};
   const gerir=podeGerir(), ck=custoKit(kitEdit.itens);
   const item=x=>{ const kk=kitDe(x.id); const n=kk?kk.itens.length:0; return `<button class="est-kit-it ${kitSel===x.id?'active':''}" data-estkit="${x.id}"><span>${esc(x.nome)}</span><span class="muted">${n?n+' ite'+(n===1?'m':'ns'):'sem kit'}</span></button>`; };
   return `<div class="est-kits">
@@ -450,13 +582,17 @@ function telaKits(){
       ${Object.keys(grupos).map(g=>`<div class="est-kit-grupo">${esc(g)}</div>${grupos[g].map(item).join('')}`).join('')}</div>
     <div class="card est-kit-ed">
       <h3 style="margin:0 0 2px">${kitSel===ID_CONSULTA?'Toda consulta':esc(pr?pr.nome:'Procedimento')}</h3>
-      <p class="muted" style="margin:0 0 10px;font-size:13px">${kitSel===ID_CONSULTA?'Sai uma vez em todo atendimento realizado (não sai em falta).':`Consumo médio por execução${pr&&pr.escopo==='arcada'?' <strong>por arcada</strong> (nas duas arcadas, dobra)':pr&&pr.escopo==='dente'?' por dente':''}. O dentista confere e ajusta na evolução.`}</p>
-      <div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Quantidade</th>${veCusto()?'<th>Custo</th>':''}<th></th></tr></thead><tbody>
-      ${kitEdit.itens.map((i,ix)=>{ const m=matPorId(i.mid); if(!m) return ''; return `<tr><td>${esc(m.nome)}</td><td style="white-space:nowrap">${gerir?`<input data-kitq="${ix}" inputmode="decimal" value="${esc(String(i.qtd).replace('.',','))}" style="width:80px" aria-label="Quantidade de ${esc(m.nome)}">`:esc(fmtQtd(i.qtd))} ${esc(m.unidade)}</td>${veCusto()?`<td>${infoMat(m.id).custo?esc(fmtCusto(i.qtd*infoMat(m.id).custo)):'<span class="muted">sem compra</span>'}</td>`:''}<td>${gerir?`<button class="btn-icone peq btn-perigo" data-kitrm="${ix}" aria-label="Tirar ${esc(m.nome)}">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('')||`<tr><td colspan="4" class="muted">Nenhum material neste kit.</td></tr>`}
+      <p class="muted" style="margin:0 0 10px;font-size:13px">${kitSel===ID_CONSULTA?'Sai uma vez em todo atendimento realizado (não sai em falta).':`Consumo médio por execução${pr&&pr.escopo==='arcada'?' <strong>por arcada</strong> (nas duas arcadas, dobra)':pr&&pr.escopo==='dente'?' por dente':''}. O dentista confere e ajusta na evolução.`} <strong>Opcional</strong>: aparece na evolução com 0 e só sai se o dentista preencher (ex.: troca de arco, corrente). Material com variações: deixe "escolher no atendimento" para o dentista indicar qual usou.</p>
+      <div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Quantidade</th><th title="Só sai se o dentista preencher">Opcional</th>${veCusto()?'<th>Custo</th>':''}<th></th></tr></thead><tbody>
+      ${kitEdit.itens.map((i,ix)=>{ const m=matPorId(i.mid); if(!m) return ''; const c=custoItem(m.id,i.vid);
+        return `<tr><td>${esc(m.nome)}${temVar(m)?(gerir?`<div><select data-kitv="${ix}" aria-label="Variação de ${esc(m.nome)}" style="margin-top:4px;max-width:260px">${opcoesVar(m,i.vid||'','Escolher no atendimento')}</select></div>`:`<div class="muted" style="font-size:12px">${esc(nomeVar(m,i.vid)||'escolher no atendimento')}</div>`):''}</td>
+          <td style="white-space:nowrap">${gerir?`<input data-kitq="${ix}" inputmode="decimal" value="${esc(String(i.qtd).replace('.',','))}" style="width:80px" aria-label="Quantidade de ${esc(m.nome)}">`:esc(fmtQtd(i.qtd))} ${esc(m.unidade)}</td>
+          <td style="text-align:center">${gerir?`<input type="checkbox" data-kito="${ix}" ${i.opc?'checked':''} aria-label="Opcional" style="width:auto">`:(i.opc?'sim':'')}</td>
+          ${veCusto()?`<td>${i.opc?'<span class="muted">quando usado</span>':c?esc(fmtCusto(i.qtd*c)):'<span class="muted">sem compra</span>'}</td>`:''}<td>${gerir?`<button class="btn-icone peq btn-perigo" data-kitrm="${ix}" aria-label="Tirar ${esc(m.nome)}">${ICONES.lixo}</button>`:''}</td></tr>`; }).join('')||`<tr><td colspan="5" class="muted">Nenhum material neste kit.</td></tr>`}
       </tbody></table></div>
       ${gerir?`<select id="estKitAdd" style="max-width:360px;margin-top:8px">${opcoesMateriais('')}</select>`:''}
-      ${veCusto()?`<div class="orc-resumo" style="margin-top:12px"><div><span>Custo estimado do kit</span><span>${fmtMoney(ck)}</span></div>${pr&&pr.valor?`<div><span>Valor do procedimento na tabela</span><span>${fmtMoney(pr.valor)}</span></div><div class="orc-total"><span>Material sobre o valor</span><span>${(ck/pr.valor*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span></div>`:''}</div><p class="muted" style="font-size:12px;margin:6px 0 0">Calculado pelo custo médio das compras já lançadas.</p>`:''}
-      ${gerir?`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" data-kitsalvar>Salvar kit</button>${pr&&kitBasePara(pr.nome)?'<button class="btn-s" data-kitpadrao>Voltar ao kit sugerido</button>':''}</div>`:''}
+      ${veCusto()?`<div class="orc-resumo" style="margin-top:12px"><div><span>Custo estimado do kit (sem opcionais)</span><span>${fmtMoney(ck)}</span></div>${pr&&pr.valor?`<div><span>Valor do procedimento na tabela</span><span>${fmtMoney(pr.valor)}</span></div><div class="orc-total"><span>Material sobre o valor</span><span>${(ck/pr.valor*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span></div>`:''}</div><p class="muted" style="font-size:12px;margin:6px 0 0">Calculado pelo custo médio das compras já lançadas.</p>`:''}
+      ${gerir?`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" data-kitsalvar>Salvar kit</button>${(pr&&kitBasePara(pr.nome))||kitSel===ID_CONSULTA?'<button class="btn-s" data-kitpadrao>Voltar ao kit sugerido</button>':''}</div>`:''}
     </div></div>`;
 }
 function periodo(){ const h=hojeISO(); if(custoPer==='mes') return [h.slice(0,8)+'01',h]; if(custoPer==='3m'){ const d=new Date(h+'T12:00:00'); d.setMonth(d.getMonth()-2); d.setDate(1); return [d.toISOString().slice(0,10),h]; } return [h.slice(0,4)+'-01-01',h]; }
@@ -466,11 +602,11 @@ function telaCustos(){
   const porProc={}, porMat={};
   sai.forEach(mv=>{ const c=(+mv.qtd||0)*(+mv.custoUnit||0); const k=mv.procId||'avulso';
     const x=porProc[k]||(porProc[k]={nome:mv.procNome||nomeOrigem(k)||'Incluídos à parte',total:0,evols:new Set()}); x.total+=c; x.evols.add(mv.evolId);
-    const y=porMat[mv.mid]||(porMat[mv.mid]={total:0,qtd:0}); y.total+=c; y.qtd+=(+mv.qtd||0); });
+    const km=chaveMV(mv.mid,mv.vid); const y=porMat[km]||(porMat[km]={mid:mv.mid,vid:mv.vid||'',total:0,qtd:0}); y.total+=c; y.qtd+=(+mv.qtd||0); });
   const tot=r2(sai.reduce((s,mv)=>s+(+mv.qtd||0)*(+mv.custoUnit||0),0));
   const atend=new Set(sai.map(mv=>mv.evolId)).size;
   const lp=Object.keys(porProc).map(k=>{ const x=porProc[k], pr=(state.procedimentos||[]).find(p=>p.id===k), n=x.evols.size, med=n?x.total/n:0; return {k,nome:x.nome,n,total:x.total,med,valor:pr?+pr.valor||0:0}; }).sort((a,b)=>b.total-a.total);
-  const lm=Object.keys(porMat).map(id=>({m:matPorId(id),...porMat[id]})).filter(x=>x.m).sort((a,b)=>b.total-a.total).slice(0,10);
+  const lm=Object.values(porMat).map(x=>Object.assign({m:matPorId(x.mid)},x)).filter(x=>x.m).sort((a,b)=>b.total-a.total).slice(0,12);
   const compras=(state.estoqueMov||[]).filter(mv=>mv.tipo==='entrada'&&mv.data>=ini&&mv.data<=fim).reduce((s,mv)=>s+(+mv.qtd||0)*(+mv.custoUnit||0),0);
   return `<div class="card"><div class="est-filtros"><div class="seg" role="group" aria-label="Período">${[['mes','Este mês'],['3m','Últimos 3 meses'],['ano','Este ano']].map(([v,t])=>`<button data-estper="${v}" class="${custoPer===v?'active':''}">${t}</button>`).join('')}</div></div>
     <div class="pf-caixa">${kpi('Material usado nos atendimentos',fmtMoney(tot),atend+' atendimento'+(atend===1?'':'s'))}${kpi('Custo médio por atendimento',fmtMoney(atend?tot/atend:0),'material de consumo')}${kpi('Material comprado',fmtMoney(compras),'entradas no estoque no período')}</div>
@@ -478,7 +614,7 @@ function telaCustos(){
     <div class="overflow"><table class="est-t"><thead><tr><th>Procedimento</th><th>Execuções</th><th>Custo médio</th><th>Valor na tabela</th><th>Material / valor</th><th>Total</th></tr></thead><tbody>
     ${lp.map(x=>`<tr><td>${esc(x.nome)}</td><td>${x.n}</td><td>${esc(fmtMoney(x.med))}</td><td>${x.valor?esc(fmtMoney(x.valor)):'—'}</td><td>${x.valor?(x.med/x.valor*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'—'}</td><td>${esc(fmtMoney(x.total))}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Nenhuma baixa de material no período.</td></tr>'}
     </tbody></table></div>
-    ${lm.length?`<h3 style="margin:16px 0 6px">Materiais que mais pesaram</h3><div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Usado</th><th>Custo</th></tr></thead><tbody>${lm.map(x=>`<tr><td>${esc(x.m.nome)}</td><td>${esc(fmtQtd(x.qtd,x.m.unidade))}</td><td>${esc(fmtMoney(x.total))}</td></tr>`).join('')}</tbody></table></div>`:''}
+    ${lm.length?`<h3 style="margin:16px 0 6px">Materiais que mais pesaram</h3><div class="overflow"><table class="est-t"><thead><tr><th>Material</th><th>Usado</th><th>Custo</th></tr></thead><tbody>${lm.map(x=>`<tr><td>${esc(nomeCompleto(x.m,x.vid))}</td><td>${esc(fmtQtd(x.qtd,x.m.unidade))}</td><td>${esc(fmtMoney(x.total))}</td></tr>`).join('')}</tbody></table></div>`:''}
   </div>`;
 }
 window.estoqueLigar=function(){
@@ -488,20 +624,24 @@ window.estoqueLigar=function(){
   const ct=document.getElementById('estCat'); if(ct) ct.addEventListener('change',()=>{ filtroCat=ct.value; render(); });
   document.querySelectorAll('[data-estnovo]').forEach(b=>b.addEventListener('click',()=>abrirMaterial(null)));
   document.querySelectorAll('[data-ested]').forEach(b=>b.addEventListener('click',()=>abrirMaterial(b.getAttribute('data-ested'))));
-  document.querySelectorAll('[data-estaj]').forEach(b=>b.addEventListener('click',()=>abrirAjuste(b.getAttribute('data-estaj'))));
-  document.querySelectorAll('[data-estcompra]').forEach(b=>b.addEventListener('click',()=>{ currentTab='financeiro'; financeiroSubTab='lancardespesa'; despModo='compra'; compraItens=[{nome:'',qtd:1,unit:'',destino:'estoque',mid:'',patrimonio:false,vida:10}]; render(); }));
+  document.querySelectorAll('[data-estaj]').forEach(b=>b.addEventListener('click',()=>abrirAjuste(b.getAttribute('data-estaj'),b.getAttribute('data-vid')||'')));
+  document.querySelectorAll('[data-estabrir]').forEach(b=>b.addEventListener('click',()=>{ const id=b.getAttribute('data-estabrir'); if(abertos.has(id)) abertos.delete(id); else abertos.add(id); render(); }));
+  document.querySelectorAll('[data-estcompra]').forEach(b=>b.addEventListener('click',()=>{ currentTab='financeiro'; financeiroSubTab='lancardespesa'; despModo='compra'; compraItens=[{nome:'',qtd:1,unit:'',destino:'estoque',mid:'',vid:'',patrimonio:false,vida:10}]; render(); }));
   const mm=document.getElementById('estMovMat'); if(mm) mm.addEventListener('change',()=>{ movFiltro=mm.value; render(); });
   document.querySelectorAll('[data-estper]').forEach(b=>b.addEventListener('click',()=>{ custoPer=b.getAttribute('data-estper'); render(); }));
   // kits
-  const kb=document.getElementById('estKitBusca'); if(kb) kb.addEventListener('input',()=>{ kitBusca=kb.value; const pos=kb.selectionStart; render(); const n=document.getElementById('estKitBusca'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } });
+  const lerKit=()=>{ document.querySelectorAll('[data-kitq]').forEach(inp=>{ const it=kitEdit&&kitEdit.itens[+inp.getAttribute('data-kitq')]; if(it) it.qtd=Math.max(0,num(inp.value)); });
+    document.querySelectorAll('[data-kitv]').forEach(s=>{ const it=kitEdit&&kitEdit.itens[+s.getAttribute('data-kitv')]; if(it){ if(s.value) it.vid=s.value; else delete it.vid; } });
+    document.querySelectorAll('[data-kito]').forEach(c=>{ const it=kitEdit&&kitEdit.itens[+c.getAttribute('data-kito')]; if(it){ if(c.checked) it.opc=true; else delete it.opc; } }); };
+  const kb=document.getElementById('estKitBusca'); if(kb) kb.addEventListener('input',()=>{ lerKit(); kitBusca=kb.value; const pos=kb.selectionStart; render(); const n=document.getElementById('estKitBusca'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } });
   document.querySelectorAll('[data-estkit]').forEach(b=>b.addEventListener('click',()=>{ kitSel=b.getAttribute('data-estkit'); kitEdit=null; render(); }));
-  document.querySelectorAll('[data-kitq]').forEach(inp=>inp.addEventListener('input',()=>{ const it=kitEdit&&kitEdit.itens[+inp.getAttribute('data-kitq')]; if(it) it.qtd=Math.max(0,num(inp.value)); }));
-  document.querySelectorAll('[data-kitrm]').forEach(b=>b.addEventListener('click',()=>{ kitEdit.itens.splice(+b.getAttribute('data-kitrm'),1); render(); }));
-  const ka=document.getElementById('estKitAdd'); if(ka) ka.addEventListener('change',()=>{ if(!ka.value) return; if(!kitEdit.itens.some(i=>i.mid===ka.value)) kitEdit.itens.push({mid:ka.value,qtd:1}); render(); });
-  document.querySelectorAll('[data-kitpadrao]').forEach(b=>b.addEventListener('click',()=>{ const pr=(state.procedimentos||[]).find(x=>x.id===kitSel); const base=pr&&kitBasePara(pr.nome); if(base){ kitEdit.itens=base.filter(([c])=>matPorId(idBase(c))).map(([c,q])=>({mid:idBase(c),qtd:q})); render(); } }));
+  document.querySelectorAll('[data-kitq],[data-kitv],[data-kito]').forEach(el=>el.addEventListener(el.tagName==='INPUT'&&el.type!=='checkbox'?'input':'change',lerKit));
+  document.querySelectorAll('[data-kitrm]').forEach(b=>b.addEventListener('click',()=>{ lerKit(); kitEdit.itens.splice(+b.getAttribute('data-kitrm'),1); render(); }));
+  const ka=document.getElementById('estKitAdd'); if(ka) ka.addEventListener('change',()=>{ if(!ka.value) return; lerKit(); const m=matPorId(ka.value); if(temVar(m) || !kitEdit.itens.some(i=>i.mid===ka.value)) kitEdit.itens.push({mid:ka.value,qtd:1}); render(); });
+  document.querySelectorAll('[data-kitpadrao]').forEach(b=>b.addEventListener('click',()=>{ const pr=(state.procedimentos||[]).find(x=>x.id===kitSel); const base=kitSel===ID_CONSULTA?KIT_CONSULTA:(pr&&kitBasePara(pr.nome)); if(base){ kitEdit.itens=montarKit(base); render(); } }));
   document.querySelectorAll('[data-kitsalvar]').forEach(b=>b.addEventListener('click',()=>{
-    document.querySelectorAll('[data-kitq]').forEach(inp=>{ const it=kitEdit.itens[+inp.getAttribute('data-kitq')]; if(it) it.qtd=Math.max(0,num(inp.value)); });
-    state.kits=state.kits||[]; const itens=kitEdit.itens.filter(i=>i.qtd>0).map(i=>({mid:i.mid,qtd:r4(i.qtd)}));
+    lerKit();
+    state.kits=state.kits||[]; const itens=kitEdit.itens.filter(i=>i.qtd>0).map(i=>Object.assign({mid:i.mid,qtd:r4(i.qtd)},i.vid?{vid:i.vid}:{},i.opc?{opc:true}:{}));
     const k=kitDe(kitSel); if(k){ k.itens=itens; delete k.base; } else state.kits.push({id:kitSel,itens});
     kitEdit=null; saveData(); render(); avisar('Kit salvo. As próximas evoluções já vêm com ele.'); }));
 };
@@ -509,15 +649,18 @@ window.estoqueLigar=function(){
 // ---------------------------------------------------------------------------
 // dados fictícios (ambiente de teste): compra de material, entradas e baixas dos atendimentos já feitos
 // ---------------------------------------------------------------------------
-const PRECO_FIC={luva:42,mascara:18,gorro:22,babador:28,sugador:16,copo:9,barreira:60,envelope:55,gaze:38,rolete:7,anest:150,agulha:45,acido:14,adesivo:95,resina:65,microbrush:22,tira_poli:12,lixa:48,disco:120,cunha:25,civ:85,isolamento:45,lima:38,hipoclorito:12,edta:18,guta:28,papel:22,cim_endo:120,seringa_irr:35,ponta_irr:30,prov:25,fio_sutura:110,lamina:45,soro:6,pasta_prof:18,robinson:20,fluor:28,clorex:35,braquete:95,tubo:60,fio_orto:45,ligadura:30,resina_orto:70,primer_orto:85,alginato:32,gesso:15,filme_rx:180};
+const PRECO_FIC={luva:42,mascara:18,gorro:22,babador:28,sugador:16,copo:9,barreira:60,envelope:55,gaze:38,rolete:7,anest:150,agulha:45,acido:14,adesivo:95,resina:65,microbrush:22,tira_poli:12,lixa:48,disco:120,cunha:25,civ:85,isolamento:45,lima:38,hipoclorito:12,edta:18,guta:28,papel:22,cim_endo:120,seringa_irr:35,ponta_irr:30,prov:25,fio_sutura:110,lamina:45,soro:6,pasta_prof:18,robinson:20,fluor:28,clorex:35,braquete:95,tubo:60,fio_orto:45,ligadura:30,corrente:40,resina_orto:70,primer_orto:85,alginato:32,gesso:15,filme_rx:180};
+const VAR_FIC={resina:['A2','A3'],lima:['K 1ª série (15-40)'],fio_sutura:['Seda 4-0'],braquete:['Roth'],fio_orto:['NiTi 0,014 · Superior','NiTi 0,014 · Inferior','NiTi 0,016 · Superior','NiTi 0,016 · Inferior']};
 window.estoqueFicticios=function(dia){
   if(!liberado()) return;
   garantirBase();
   state.compras=state.compras||[]; state.estoqueMov=state.estoqueMov||[]; state.fluxoFinanceiro=state.fluxoFinanceiro||[];
   if(state.compras.some(c=>c.id==='fic-cpest')) return;
   const data=dia(-40), itens=[];
-  Object.keys(PRECO_FIC).forEach(c=>{ const m=matPorId(idBase(c)); if(!m) return; const qtd=['luva','gaze','anest','rolete','sugador','babador','copo','mascara','gorro','envelope','ligadura','braquete','resina','guta','papel'].includes(c)?3:2;
-    itens.push({nome:m.nome,qtd,unit:PRECO_FIC[c],patrimonio:false,vida:10,destino:'estoque',mid:m.id}); });
+  const MUITO=['luva','gaze','anest','rolete','sugador','babador','copo','mascara','gorro','envelope','ligadura','guta','papel'];
+  Object.keys(PRECO_FIC).forEach(c=>{ const m=matPorId(idBase(c)); if(!m) return; const qtd=MUITO.includes(c)?3:2;
+    const vs=VAR_FIC[c]?VAR_FIC[c].map(n=>(varsAtivas(m).find(v=>v.nome===n)||{}).id).filter(Boolean):[''];
+    vs.forEach(vid=>itens.push({nome:nomeCompleto(m,vid),qtd:vid&&c==='fio_orto'?1:qtd,unit:PRECO_FIC[c],patrimonio:false,vida:10,destino:'estoque',mid:m.id,vid})); });
   const total=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0));
   const compra={id:'fic-cpest',ficticio:true,data,fornecedor:'Dental fictícia',nf:'0001',tipoNome:'Material odontológico',categoria:'Materiais e Insumos',itens,total,forma:'Boleto',condicao:'avista',parcelas:1,criadaEm:new Date().toISOString()};
   state.compras.push(compra);
@@ -526,9 +669,9 @@ window.estoqueFicticios=function(dia){
   state.estoqueMov.forEach(mv=>{ if(mv.compraId==='fic-cpest') mv.ficticio=true; });
   cache=null;
   // baixa dos atendimentos fictícios já confirmados
-  (state.patients||[]).filter(p=>p.ficticio).forEach(p=>(p.evolucao||[]).filter(e=>e.confirmado&&!e.falta&&!e.materiais).forEach(e=>{
-    delete rascunho[e.id]; const antes=state.estoqueMov.length; window.estoqueBaixarEvol(p,e);
-    state.estoqueMov.slice(antes).forEach(mv=>{ mv.ficticio=true; mv.data=e.data; mv.porNome=e.confirmadoPorNome||''; }); }));
+  (state.patients||[]).filter(p=>p.ficticio).forEach(p=>(p.evolucao||[]).filter(e=>e.confirmado&&!e.falta&&!e.materiais).sort((a,b)=>(a.data||'').localeCompare(b.data||'')).forEach(e=>{
+    delete rascunho[e.id]; const antes=state.estoqueMov.length; window.estoqueBaixarEvol(p,e,true);
+    state.estoqueMov.slice(antes).forEach(mv=>{ mv.ficticio=true; mv.data=e.data; mv.porNome=e.confirmadoPorNome||''; }); cache=null; }));
   cache=null;
 };
 window.estoqueRemoverFicticios=function(){

@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.25.0';
+const APP_VERSION='2.25.1';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -2349,7 +2349,7 @@ function compraFormHtml(){
   <h4 style="margin:14px 0 6px">Itens da compra</h4>
   <div class="overflow"><table class="cp-itens"><thead><tr><th>Item</th><th title="Patrimônio entra com depreciação; material de consumo entra no estoque">Destino</th><th>Qtd</th><th>Valor unitário</th><th>Total</th><th>Vida útil</th><th></th></tr></thead><tbody>
   ${compraItens.map((it,i)=>{ const dest=destinoItem(it), mat=dest==='estoque'&&it.mid&&window.estoqueMaterial?estoqueMaterial(it.mid):null;
-    return `<tr><td>${dest==='estoque'?`<select data-cpi="${i}" data-k="mid" aria-label="Material">${estoqueOpcoesCompra(it.mid)}</select>${mat?`<div class="muted" style="font-size:11.5px;margin-top:2px">${esc(mat.embalagem||'embalagem')}: ${esc(String(mat.porEmbalagem).replace('.',','))} ${esc(mat.unidade)} cada</div>`:''}`:`<input data-cpi="${i}" data-k="nome" value="${esc(it.nome)}" placeholder="${dest==='outro'?'Ex.: papel A4, toner':'Ex.: Autoclave 21 L'}" aria-label="Item">`}</td>
+    return `<tr><td>${dest==='estoque'?`<select data-cpi="${i}" data-k="mid" aria-label="Material">${estoqueOpcoesCompra(it.mid)}</select>${mat&&estoqueTemVar(mat.id)?`<select data-cpi="${i}" data-k="vid" aria-label="Variação" style="margin-top:4px">${estoqueOpcoesVarCompra(mat.id,it.vid||'')}</select>`:''}${mat?`<div class="muted" style="font-size:11.5px;margin-top:2px">${esc(mat.embalagem||'embalagem')}: ${esc(String(mat.porEmbalagem).replace('.',','))} ${esc(mat.unidade)} cada</div>`:''}`:`<input data-cpi="${i}" data-k="nome" value="${esc(it.nome)}" placeholder="${dest==='outro'?'Ex.: papel A4, toner':'Ex.: Autoclave 21 L'}" aria-label="Item">`}</td>
     <td><select data-cpi="${i}" data-k="destino" aria-label="Destino do item">${compraDestinos().map(([v,t])=>`<option value="${v}" ${dest===v?'selected':''}>${t}</option>`).join('')}</select></td>
     <td><input data-cpi="${i}" data-k="qtd" type="number" min="1" value="${esc(it.qtd)}" style="width:70px" aria-label="Quantidade">${dest==='estoque'?'<div class="muted" style="font-size:11px">embalagens</div>':''}</td>
     <td><input data-cpi="${i}" data-k="unit" inputmode="decimal" value="${esc(it.unit)}" placeholder="0,00" style="width:120px" aria-label="Valor unitário"></td>
@@ -2435,10 +2435,12 @@ function bindLancarDespesa(){
   };
   fc.querySelectorAll('[data-cpi]').forEach(el=>{ const ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
     el.addEventListener(ev,()=>{ const it=compraItens[+el.getAttribute('data-cpi')], k=el.getAttribute('data-k'); it[k]=el.type==='checkbox'?el.checked:el.value;
-      if(k==='destino'||k==='mid'){ compraRasc=lerRasc(); it.patrimonio=destinoItem(it)==='patrimonio';
+      if(k==='destino'||k==='mid'||k==='vid'){ compraRasc=lerRasc(); it.patrimonio=destinoItem(it)==='patrimonio';
         if(k==='destino' && it.destino==='estoque'){ const t=state.despesasCatalogo.find(d=>d.id===compraRasc.cpTipo); if(!t||t.categoria==='Equipamentos'){ const mt=state.despesasCatalogo.find(d=>d.categoria==='Materiais e Insumos'); if(mt) compraRasc.cpTipo=mt.id; } }
         if(k==='mid' && it.mid==='__novo'){ it.mid=''; const rasc=compraRasc; estoqueNovoMaterial('',m=>{ it.mid=m.id; it.nome=m.nome; compraRasc=rasc; render(); }); return; }
-        if(k==='mid'){ const m=it.mid&&estoqueMaterial(it.mid); it.nome=m?m.nome:''; }
+        if(k==='vid' && it.vid==='__novavar'){ it.vid=''; const rasc=compraRasc; estoqueNovaVariacao(it.mid,v=>{ it.vid=v.id; it.nome=estoqueNomeCompleto(it.mid,v.id); compraRasc=rasc; render(); }); return; }
+        if(k==='mid'){ it.vid=''; const m=it.mid&&estoqueMaterial(it.mid); it.nome=m?m.nome:''; }
+        if(k==='vid'){ it.nome=estoqueNomeCompleto(it.mid,it.vid); }
         render(); return; }
       if(k==='patrimonio'){ const s=fc.querySelector(`select[data-cpi="${el.getAttribute('data-cpi')}"][data-k="vida"]`); if(s) s.disabled=!el.checked; } atualizarResumo(); }); });
   if(compraRasc){ RASC_IDS.forEach(id=>{ const el=q(id); if(el && compraRasc[id]!==undefined){ if(el.type==='checkbox') el.checked=compraRasc[id]; else el.value=compraRasc[id]; } }); compraRasc=null; }
@@ -2448,8 +2450,9 @@ function bindLancarDespesa(){
   atualizarResumo();
   fc.addEventListener('submit',ev=>{
     ev.preventDefault();
-    const itens=compraItens.map(it=>{ const d=destinoItem(it); return {nome:String(it.nome||'').trim(),qtd:Math.max(1,parseInt(it.qtd,10)||1),unit:r2(lerValor(it.unit)||0),patrimonio:d==='patrimonio',vida:+it.vida||10,destino:d,mid:d==='estoque'?(it.mid||''):''}; }).filter(it=>it.nome||it.unit||it.mid);
+    const itens=compraItens.map(it=>{ const d=destinoItem(it); return {nome:String(it.nome||'').trim(),qtd:Math.max(1,parseInt(it.qtd,10)||1),unit:r2(lerValor(it.unit)||0),patrimonio:d==='patrimonio',vida:+it.vida||10,destino:d,mid:d==='estoque'?(it.mid||''):'',vid:d==='estoque'?(it.vid||''):''}; }).filter(it=>it.nome||it.unit||it.mid);
     if(itens.some(it=>it.destino==='estoque'&&!it.mid)){ avisar('Escolha o material de cada item que vai para o estoque.'); return; }
+    if(itens.some(it=>it.destino==='estoque'&&estoqueTemVar(it.mid)&&!it.vid)){ avisar('Escolha a variação (medida, cor ou tipo) de cada material que tem variações.'); return; }
     if(!itens.length || itens.some(it=>!it.nome||!(it.unit>0))){ avisar('Informe o nome e o valor unitário de cada item.'); return; }
     const forn=q('cpFornecedor').value.trim(); if(!forn){ avisar('Informe o fornecedor.'); return; }
     const total=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0)), ps=compraParcelas();
@@ -7079,6 +7082,7 @@ function bindEvents(){
     const e=p.evolucao.find(x=>x.id===b.getAttribute('data-confevol'));
     const eu=currentUser();
     if(!ehDentista(eu)){ avisar('Somente um dentista (com CRO cadastrado) pode confirmar a evolução.'); return; }
+    if(e && !e.confirmado && window.estoqueValidarEvol){ const msg=estoqueValidarEvol(p,e); if(msg){ avisar(msg); return; } }
     if(e && !e.confirmado){
       const ta=document.querySelector(`[data-evolobs="${e.id}"]`); if(ta) e.observacao=ta.value;
       e.confirmado=true; e.confirmadoEm=hojeISO(); e.confirmadoEmHora=new Date().toISOString();
