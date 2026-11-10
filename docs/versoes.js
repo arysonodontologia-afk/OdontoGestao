@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.27.1', data:'2026-11-10', itens:[
+    'Painel financeiro → Próximas despesas a pagar: botão "Pagar" em cada despesa, informando data (pode ser anterior) e valor pagos, forma e observação; valor maior (juros/multa) fica registrado, valor menor pode ser desconto ou pagamento parcial',
+  ]},
   {v:'2.27.0', data:'2026-11-10', itens:[
     'Relatórios → Comparativo anual (desde 2021): entradas, faturamento bruto, taxas, saídas, resultado e margem; pacientes ativos, novos e ticket médio; atendimentos, faltas, orçamentos e conversão — com a variação de cada ano sobre o anterior',
     'Gráficos de entradas, saídas e resultado por ano e de qualquer indicador mês a mês comparando os anos; quebras por categoria de despesa, forma de pagamento e especialidade; planilha (CSV) para abrir no Excel/Numbers',
