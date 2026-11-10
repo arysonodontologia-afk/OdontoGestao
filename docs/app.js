@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.26.0';
+const APP_VERSION='2.27.1';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -1738,7 +1738,7 @@ function renderPainelFinanceiro(){
     <div class="card pf-largo"><h3 style="margin:0 0 10px">Resultado dos últimos 6 meses</h3>
       <div class="pf-colunas pf-res">${meses.map(m=>`<div class="pf-col" title="${esc(m.r)}: ${fmtMoney(m.v)}"><span class="pf-v">${fmtMoney(m.v).replace(',00','').replace('R$ ','')}</span><div class="pf-col-barras"><i class="${m.v<0?'sai':'ent'}" style="height:${Math.max(2,Math.round(Math.abs(m.v)/maxM*110))}px"></i></div><span>${esc(m.r)}</span></div>`).join('')}</div></div>
     <div class="card pf-largo"><h3 style="margin:0 0 10px">Próximas despesas a pagar</h3>${(()=>{ const l=fl.filter(e=>e.tipo==='despesa'&&!e.confirmado&&e.vencimento<=per.fim).sort((a,b)=>a.vencimento.localeCompare(b.vencimento)).slice(0,12);
-      return l.length?`<div class="overflow"><table><thead><tr><th>Vencimento</th><th>Despesa</th><th>Fornecedor</th><th>Valor</th></tr></thead><tbody>${l.map(e=>`<tr${e.vencimento<hoje?' class="pf-venc"':''}><td>${fmtDataBR(e.vencimento)}${e.vencimento<hoje?' <span class="sit sit-faltou">vencida</span>':''}</td><td>${esc(e.label)}${e.estimado?' <span class="sit sit-agendado">estimado</span>':''}</td><td>${esc(e.fornecedor||'-')}</td><td>${fmtMoney(e.valor)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nada a pagar até o fim do período.</p>'; })()}</div>
+      return l.length?`<div class="overflow"><table><thead><tr><th>Vencimento</th><th>Despesa</th><th>Fornecedor</th><th>Valor</th><th></th></tr></thead><tbody>${l.map(e=>`<tr${e.vencimento<hoje?' class="pf-venc"':''}><td>${fmtDataBR(e.vencimento)}${e.vencimento<hoje?' <span class="sit sit-faltou">vencida</span>':''}</td><td>${esc(e.label)}${e.estimado?' <span class="sit sit-agendado">estimado</span>':''}</td><td>${esc(e.fornecedor||'-')}</td><td>${fmtMoney(e.valor)}</td><td class="actions"><button class="btn-p peq" data-pfpagar="${e.id}">Pagar</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nada a pagar até o fim do período.</p>'; })()}</div>
   </div>`;
 }
 function bindPainelFinanceiro(){
@@ -1925,6 +1925,7 @@ function repPacBtn(p,tab){ return `<button class="btn-s" data-reppac="${p.id}" d
 const RELATORIOS=[
   {id:'inadimplencia', label:'⏰ Inadimplência', perm:'financeiro', fn:()=>repInadimplencia()},
   {id:'fluxoprojetado', label:'📈 Fluxo de caixa projetado', perm:'financeiro', fn:()=>repFluxoProjetado()},
+  {id:'comparativo', label:'📊 Comparativo anual', perm:'financeiro', fn:()=>window.repComparativo?repComparativo():''},
   {id:'orcpendentes', label:'📝 Orçamentos pendentes', perm:'pacientes', fn:()=>repOrcPendentes()},
   {id:'tratabertos', label:'🦷 Tratamentos em aberto', perm:'pacientes', fn:()=>repTratAbertos()},
   {id:'evolpendentes', label:'✅ Evoluções pendentes', perm:'pacientes', fn:()=>repEvolPendentes()},
@@ -1994,6 +1995,43 @@ function aplicarBaixaRetro(e,data,forma,valor,obs){
     info.restanteId=novo.id; info.valorOriginal=+e.valor; e.valor=r2(valor);
   }
   e.confirmado=true; e.dataPagamento=data; if(forma) e.forma=forma; e.baixaRetro=info;
+}
+// pagar uma despesa (Painel financeiro → Próximas despesas a pagar): valor e data reais
+function abrirPagarDespesa(id){
+  const e=(state.fluxoFinanceiro||[]).find(x=>x.id===id); if(!e||e.confirmado) return;
+  const hoje=hojeISO();
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Pagar despesa</h3>
+    <p class="muted" style="margin:0 0 10px">${esc((e.label||'')+(e.fornecedor?' · '+e.fornecedor:'')+' · vencimento '+fmtDataBR(e.vencimento)+' · '+(e.estimado?'estimado ':'')+fmtMoney(e.valor))}</p>
+    <form id="fPagDesp">
+    <div class="row"><div><label for="pdData">Data do pagamento</label><input id="pdData" type="date" value="${hoje}" max="${hoje}" required></div>
+      <div><label for="pdValor">Valor pago</label><input id="pdValor" inputmode="decimal" value="${esc(String(r2(e.valor)).replace('.',','))}" required></div></div>
+    <div id="pdMenor" style="display:none;margin:4px 0 6px">
+      <label class="chk-linha"><input type="radio" name="pdModo" value="quitada" checked style="width:auto"> Conta quitada (pagou menos: desconto)</label>
+      <label class="chk-linha"><input type="radio" name="pdModo" value="parcial" style="width:auto"> Pagamento parcial: o restante continua a pagar</label>
+    </div>
+    <p class="muted" id="pdMaior" style="display:none;font-size:12.5px;margin:2px 0 6px">Valor acima do previsto (juros, multa ou reajuste): a despesa fica com o valor pago.</p>
+    <div class="row"><div><label for="pdForma">Forma de pagamento</label><select id="pdForma"><option value="">Não informada</option>${FORMAS_PAG.map(f=>`<option ${e.forma===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div><label for="pdObs">Observação</label><input id="pdObs" placeholder="Opcional"></div></div>
+    <p class="erro-campo" id="pdErro"></p>
+    <div style="margin-top:12px;text-align:right"><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Confirmar pagamento</button></div></form>`);
+  const q=s=>bg.querySelector(s), prev=+e.valor||0;
+  const ver=()=>{ const v=r2(lerValor(q('#pdValor').value)); q('#pdMenor').style.display=v>0&&v<prev-0.004?'block':'none'; q('#pdMaior').style.display=v>prev+0.004?'block':'none'; };
+  q('#pdValor').addEventListener('input',ver);
+  q('#fPagDesp').addEventListener('submit',ev=>{
+    ev.preventDefault(); const err=t=>{ q('#pdErro').textContent=t; };
+    const d=q('#pdData').value, v=r2(lerValor(q('#pdValor').value));
+    if(!d) return err('Informe a data do pagamento.'); if(d>hoje) return err('A data do pagamento não pode ser no futuro.');
+    if(!(v>0)) return err('Informe o valor pago.');
+    const u=currentUser(), modo=(bg.querySelector('input[name="pdModo"]:checked')||{}).value;
+    if(v<prev-0.004 && modo==='parcial'){
+      const novo=Object.assign({},e,{id:uid(),valor:r2(prev-v),label:(e.label||'Despesa')+' (restante)',confirmado:false,dataPagamento:''});
+      delete novo.estimado; state.fluxoFinanceiro.push(novo); e.restanteId=novo.id;
+    } else if(Math.abs(v-prev)>0.004 && !e.estimado) e.valorPrevisto=prev;
+    e.valor=v; delete e.estimado; e.confirmado=true; e.dataPagamento=d;
+    const f=q('#pdForma').value; if(f) e.forma=f; const o=q('#pdObs').value.trim(); if(o) e.obsPagamento=o;
+    e.pagoPor=u?nomeExibicao(u):''; e.pagoRegistradoEm=new Date().toISOString();
+    saveData(); bg.remove(); render(); avisarRapido('Pagamento registrado.');
+  });
 }
 function desfazerBaixaRetro(e){
   const b=e.baixaRetro||{};
@@ -7149,6 +7187,7 @@ function bindEvents(){
   repSel('repFluxoHor',el=>{ repFluxoHorizonte=parseInt(el.value,10); });
   repSel('repOrcDiasSel',el=>{ repOrcDias=parseInt(el.value,10); });
   repSel('repOrcSitSel',el=>{ repOrcSit=el.value; });
+  if(currentTab==='relatorios' && relatorioTab==='comparativo' && window.repComparativoLigar) repComparativoLigar();
   repSel('repInadBusca',el=>{ repInadBusca=el.value.trim(); });
   repSel('repInadDe',el=>{ repInadDe=el.value; });
   repSel('repInadAte',el=>{ repInadAte=el.value; });
@@ -7160,6 +7199,7 @@ function bindEvents(){
   document.querySelectorAll('[data-inadlote]').forEach(b=>b.addEventListener('click',()=>abrirBaixaRetro([...repInadSel])));
   document.querySelectorAll('[data-inadcanc]').forEach(b=>b.addEventListener('click',()=>abrirCancelarParcela(b.getAttribute('data-inadcanc'))));
   document.querySelectorAll('[data-inaddesf]').forEach(b=>b.addEventListener('click',()=>{ const e=state.fluxoFinanceiro.find(x=>x.id===b.getAttribute('data-inaddesf')); if(e && desfazerBaixaRetro(e)){ saveData(); render(); } }));
+  document.querySelectorAll('[data-pfpagar]').forEach(b=>b.addEventListener('click',()=>abrirPagarDespesa(b.getAttribute('data-pfpagar'))));
   document.querySelectorAll('[data-inadrest]').forEach(b=>b.addEventListener('click',()=>restaurarParcela(b.getAttribute('data-inadrest'))));
   repSel('repEvolDent',el=>{ repEvolDentista=el.value; });
   repSel('repRetMeses',el=>{ repRetornoMeses=parseInt(el.value,10); });
@@ -7372,7 +7412,7 @@ function bindEvents(){
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para aprovar orçamentos.'); return; }
     const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-approveorc'));
     if(orcVencido(o)){ avisar('Este orçamento venceu em '+fmtDataBR(orcVenceEm(o))+'. Faça uma nova avaliação para gerar um orçamento com os valores atuais.'); return; }
-    o.status='aprovado'; o.aprovadoPorId=currentUser().id; o.aprovadoPorNome=currentUser().nomeCompleto;
+    o.status='aprovado'; o.aprovadoEm=hojeISO(); o.aprovadoPorId=currentUser().id; o.aprovadoPorNome=currentUser().nomeCompleto;
     o.dataAprovacao=hojeISO();
     saveData(); render();
   }));

@@ -960,3 +960,23 @@ tr.pf-venc td{color:var(--danger)}
 .est-ger{border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:8px}
 .orc-vencido{background:var(--surface-2);border-left:3px solid var(--muted);padding:8px 12px;border-radius:8px;font-size:13.5px;margin:10px 0 0}
 .inad-lote{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--surface-2);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:13.5px}
+/* ---------- Comparativo anual ---------- */
+.cmp-anos{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.cmp-anos .btn-s{margin-left:auto}
+.cmp-t th,.cmp-t td{text-align:right;white-space:nowrap}
+.cmp-t th:first-child,.cmp-t td:first-child{text-align:left;white-space:normal;min-width:180px}
+.cmp-sec td{background:var(--surface-2);font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.cmp-forte td{font-weight:700}
+.cmp-var{font-size:11.5px;color:var(--muted)}
+.cmp-var.sobe{color:var(--ok)}
+.cmp-var.desce{color:var(--danger)}
+.cmp-graficos{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:6px}
+.cmp-bloco{border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.cmp-bloco h4{margin:0 0 6px;font-size:14px}
+.cmp-graf{width:100%;height:auto;display:block}
+.cmp-grade{stroke:var(--border);stroke-width:1}
+.cmp-eixo{fill:var(--muted);font-size:11px}
+.cmp-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:4px 0 8px}
+.cmp-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.cmp-mes{margin-top:6px;font-size:13px}
+.cmp-det{margin-top:10px}.cmp-det summary{cursor:pointer;font-size:13.5px;color:var(--primary)}
