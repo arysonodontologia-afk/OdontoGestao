@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.26.0';
+const APP_VERSION='2.27.0';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -1925,6 +1925,7 @@ function repPacBtn(p,tab){ return `<button class="btn-s" data-reppac="${p.id}" d
 const RELATORIOS=[
   {id:'inadimplencia', label:'⏰ Inadimplência', perm:'financeiro', fn:()=>repInadimplencia()},
   {id:'fluxoprojetado', label:'📈 Fluxo de caixa projetado', perm:'financeiro', fn:()=>repFluxoProjetado()},
+  {id:'comparativo', label:'📊 Comparativo anual', perm:'financeiro', fn:()=>window.repComparativo?repComparativo():''},
   {id:'orcpendentes', label:'📝 Orçamentos pendentes', perm:'pacientes', fn:()=>repOrcPendentes()},
   {id:'tratabertos', label:'🦷 Tratamentos em aberto', perm:'pacientes', fn:()=>repTratAbertos()},
   {id:'evolpendentes', label:'✅ Evoluções pendentes', perm:'pacientes', fn:()=>repEvolPendentes()},
@@ -7149,6 +7150,7 @@ function bindEvents(){
   repSel('repFluxoHor',el=>{ repFluxoHorizonte=parseInt(el.value,10); });
   repSel('repOrcDiasSel',el=>{ repOrcDias=parseInt(el.value,10); });
   repSel('repOrcSitSel',el=>{ repOrcSit=el.value; });
+  if(currentTab==='relatorios' && relatorioTab==='comparativo' && window.repComparativoLigar) repComparativoLigar();
   repSel('repInadBusca',el=>{ repInadBusca=el.value.trim(); });
   repSel('repInadDe',el=>{ repInadDe=el.value; });
   repSel('repInadAte',el=>{ repInadAte=el.value; });
@@ -7372,7 +7374,7 @@ function bindEvents(){
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para aprovar orçamentos.'); return; }
     const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-approveorc'));
     if(orcVencido(o)){ avisar('Este orçamento venceu em '+fmtDataBR(orcVenceEm(o))+'. Faça uma nova avaliação para gerar um orçamento com os valores atuais.'); return; }
-    o.status='aprovado'; o.aprovadoPorId=currentUser().id; o.aprovadoPorNome=currentUser().nomeCompleto;
+    o.status='aprovado'; o.aprovadoEm=hojeISO(); o.aprovadoPorId=currentUser().id; o.aprovadoPorNome=currentUser().nomeCompleto;
     o.dataAprovacao=hojeISO();
     saveData(); render();
   }));
