@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.27.2';
+const APP_VERSION='2.27.3';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -4235,6 +4235,18 @@ function abrirPaciente(id){
   anamneseOpenId=null; docFormType=null; docOpenId=null; exameOpenId=null; odontoSetupMode=null; odontoSetupMap={}; odontoToothOpenNum=null;
   render(); window.scrollTo(0,0);
 }
+// cadastrar a partir do que foi digitado na busca: nome, CPF (11 dígitos) ou telefone
+function novoPacienteDaBusca(q){
+  const u=currentUser(); if(!u||!permsDe(u).pacientes){ avisar('Seu usuário não pode cadastrar pacientes.'); return; }
+  q=String(q||'').trim(); const dig=q.replace(/\D/g,''), soNum=/^[\d\s().\-\/+]+$/.test(q);
+  currentTab='pacientes'; patientDetailId=null; buscaPaciente=''; render();
+  openPatientForm(null);
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
+  if(soNum && dig.length===11 && cpfValido(dig)) set('pCpf',dig.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4'));
+  else if(soNum && dig.length>=8) set('pTelefone',q);
+  else if(q) set('pNome',q.replace(/\s+/g,' ').replace(/(^|\s)(\S)/g,(m,a,b)=>a+b.toUpperCase()));
+}
+const textoCadastrarBusca=(q,tem)=>tem?'+ Não está na lista? Cadastrar novo paciente':'+ Cadastrar “'+esc(q)+'” como novo paciente';
 function bindBuscaGlobal(){
   const inp=document.getElementById('buscaInput'), res=document.getElementById('buscaRes'); if(!inp||!res) return;
   let lista=[], idx=0;
@@ -4244,14 +4256,16 @@ function bindBuscaGlobal(){
     lista=buscarPacientes(q); idx=Math.min(idx,Math.max(0,lista.length-1));
     res.innerHTML=lista.length?lista.map((p,i)=>`<button type="button" class="busca-item${i===idx?' sel':''}" role="option" aria-selected="${i===idx}" data-buscapac="${p.id}">${avatarHtml(p.nome,p.id)}<span><span class="busca-item-nome">${esc(p.nome)}</span><span class="busca-item-sub" style="display:block">${esc([p.telefone,p.cpf?'CPF '+p.cpf:''].filter(Boolean).join(', ')||'Sem telefone cadastrado')}</span></span></button>`).join('')
       :`<div class="busca-vazio">Nenhum paciente encontrado para “${esc(q)}”.</div>`;
+    if(permsDe(currentUser()).pacientes) res.innerHTML+=`<button type="button" class="busca-item ag-pac-novo" data-buscanovo>${textoCadastrarBusca(q,lista.length)}</button>`;
     res.hidden=false; inp.setAttribute('aria-expanded','true');
+    res.querySelectorAll('[data-buscanovo]').forEach(b=>b.addEventListener('mousedown',e=>{ e.preventDefault(); const t=inp.value; inp.value=''; res.hidden=true; novoPacienteDaBusca(t); }));
     res.querySelectorAll('[data-buscapac]').forEach(b=>b.addEventListener('mousedown',e=>{ e.preventDefault(); abrirPaciente(b.getAttribute('data-buscapac')); }));
   };
   inp.addEventListener('input',()=>{ idx=0; desenhar(); });
   inp.addEventListener('keydown',e=>{
     if(e.key==='ArrowDown'){ e.preventDefault(); idx=Math.min(idx+1,lista.length-1); desenhar(); }
     else if(e.key==='ArrowUp'){ e.preventDefault(); idx=Math.max(idx-1,0); desenhar(); }
-    else if(e.key==='Enter'){ e.preventDefault(); if(lista[idx]) abrirPaciente(lista[idx].id); }
+    else if(e.key==='Enter'){ e.preventDefault(); if(lista[idx]) abrirPaciente(lista[idx].id); else if(inp.value.trim() && permsDe(currentUser()).pacientes){ const t=inp.value; inp.value=''; res.hidden=true; novoPacienteDaBusca(t); } }
     else if(e.key==='Escape'){ inp.value=''; res.hidden=true; inp.blur(); }
   });
   inp.addEventListener('blur',()=>setTimeout(()=>{ res.hidden=true; inp.setAttribute('aria-expanded','false'); },120));
@@ -4624,6 +4638,7 @@ function renderPacientes(){
   </div>
   <div class="overflow"><table><thead><tr><th>Nome</th><th>Última consulta confirmada</th><th></th></tr></thead>
   <tbody>${rows||`<tr><td colspan="3" class="muted">${vazio}</td></tr>`}</tbody></table></div>
+  ${buscaPaciente.trim()?`<button type="button" class="btn-s" data-pacbusnovo style="margin-top:10px">${textoCadastrarBusca(buscaPaciente.trim(),lista.length)}</button>`:''}
   </div>`;
 }
 function ultimaAnamneseFinalizada(p,tipo){
@@ -6961,6 +6976,7 @@ function bindEvents(){
 
   const btnNewPatient=document.getElementById('btnNewPatient');
   if(btnNewPatient) btnNewPatient.addEventListener('click',()=>openPatientForm(null));
+  document.querySelectorAll('[data-pacbusnovo]').forEach(b=>b.addEventListener('click',()=>novoPacienteDaBusca(buscaPaciente)));
   document.querySelectorAll('[data-editpatient]').forEach(b=>b.addEventListener('click',()=>{
     openPatientForm(state.patients.find(p=>p.id===b.getAttribute('data-editpatient')));
   }));

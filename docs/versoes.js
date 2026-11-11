@@ -9,8 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
-  {v:'2.27.2', data:'2026-11-11', itens:[
+  {v:'2.27.3', data:'2026-11-11', itens:[
     'Pacientes: o formulário de novo paciente (e de edição) abre no topo da lista, com o cursor no nome; antes aparecia no fim da lista e, com muitos pacientes, parecia que o botão não funcionava',
+    'Busca do topo e busca da lista de Pacientes: quando o paciente não existe, oferecem "Cadastrar como novo paciente" (Enter também cadastra), já preenchendo o nome, o CPF ou o telefone digitado',
   ]},
   {v:'2.27.1', data:'2026-11-10', itens:[
     'Painel financeiro → Próximas despesas a pagar: botão "Pagar" em cada despesa, informando data (pode ser anterior) e valor pagos, forma e observação; valor maior (juros/multa) fica registrado, valor menor pode ser desconto ou pagamento parcial',
