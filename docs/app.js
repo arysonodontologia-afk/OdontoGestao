@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.28.0';
+const APP_VERSION='2.29.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -1557,7 +1557,7 @@ function calcParcelas(o){
     const b=calcBoleto(o), intB=parseInt(pag.intervaloDias)||30;
     let ent={label:'Entrada ('+(b.entForma==='Cartão de Débito'?'débito':'Pix')+')', valor:b.ent, vencimento:base};
     if(b.entForma==='Cartão de Débito'){ const pg2={forma:'Cartão de Débito',operadoraId:pag.operadoraId,bandeiraId:pag.bandeiraId}, pct=taxaDoCartao(pg2,1), tx=r2(b.ent*pct/100), {op,b:bd}=cartaoEscolhido(pg2);
-      ent=Object.assign(ent,{valor:r2(b.ent-tx),valorBruto:b.ent,taxaPct:pct,taxaValor:tx,cartao:[op&&op.nome,bd&&bd.nome].filter(Boolean).join(' · '),vencimento:addDaysStr(base,prazoDoCartao(pg2))}); }
+      ent=Object.assign(ent,{valor:r2(b.ent-tx),valorBruto:b.ent,taxaPct:pct,taxaValor:tx,cartao:[op&&op.nome,bd&&bd.nome].filter(Boolean).join(' · '),dataVenda:base,vencimento:addDiasUteis(base,prazoDoCartao(pg2))}); }
     else ent=aplicarTaxaSimples(ent,'Pix');
     list=[ent];
     for(let i=0;i<b.n;i++){ const v=i===b.n-1?r2(b.saldo-b.parc*(b.n-1)):b.parc; list.push(aplicarTaxaSimples({label:'Boleto '+(i+1)+'/'+b.n, valor:v, vencimento:addDaysStr(base,(i+1)*intB)},'Boleto')); }
@@ -1570,7 +1570,7 @@ function calcParcelas(o){
     const bruto=r2(total-ent), pct=taxaDoCartao(pag,n), taxa=r2(bruto*pct/100), {op,b}=cartaoEscolhido(pag);
     list=[];
     if(ent>0) list.push({label:'Entrada', valor:r2(ent), vencimento:base});
-    list.push({label:pag.forma==='Cartão de Débito'?'Cartão de débito':'Cartão de crédito '+n+'x', valor:r2(bruto-taxa), valorBruto:bruto, taxaPct:pct, taxaValor:taxa, cartao:[op&&op.nome,b&&b.nome].filter(Boolean).join(' · '), vencimento:addDaysStr(base,prazoDoCartao(pag))});
+    list.push({label:pag.forma==='Cartão de Débito'?'Cartão de débito':'Cartão de crédito '+n+'x', valor:r2(bruto-taxa), valorBruto:bruto, taxaPct:pct, taxaValor:taxa, cartao:[op&&op.nome,b&&b.nome].filter(Boolean).join(' · '), dataVenda:base, vencimento:addDiasUteis(base,prazoDoCartao(pag))});
   } else if(pag.forma) list=list.map(pc=>aplicarTaxaSimples(pc,pag.forma));
   return list;
 }
@@ -1601,6 +1601,28 @@ let fluxoViewDate=hojeISO();
 let fluxoPeriodoInicio=hojeISO();
 let fluxoPeriodoFim=hojeISO();
 let fluxoMesRef=hojeISO().slice(0,7);
+// ---- dias úteis (sábado, domingo e feriados nacionais/bancários não contam) e data em que o dinheiro cai na conta ----
+const _feriados={};
+function feriadosNacionais(ano){
+  if(_feriados[ano]) return _feriados[ano];
+  const a=ano%19,b=Math.floor(ano/100),c=ano%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451);
+  const mes=Math.floor((h+l-7*m+114)/31), dia=((h+l-7*m+114)%31)+1;
+  const pascoa=`${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+  const mov=[-48,-47,-2,60].map(n=>addDaysStr(pascoa,n).slice(5));   // carnaval (seg e ter), sexta-feira santa, Corpus Christi
+  return _feriados[ano]=new Set(['01-01','04-21','05-01','09-07','10-12','11-02','11-15','11-20','12-25'].concat(mov));
+}
+function ehDiaUtil(d){ const w=new Date(d+'T12:00:00').getDay(); return w!==0 && w!==6 && !feriadosNacionais(+d.slice(0,4)).has(d.slice(5)); }
+function proxDiaUtil(d){ let x=d; let n=0; while(!ehDiaUtil(x) && n++<15) x=addDaysStr(x,1); return x; }
+function addDiasUteis(d,n){ if(!d) return d; n=+n||0; if(n<=0) return d; let x=d, k=0, g=0; while(k<n && g++<60){ x=addDaysStr(x,1); if(ehDiaUtil(x)) k++; } return x; }
+function ehEntradaCartao(e){ return e.tipo==='receita' && !!(e.cartao || ehCartao(e.forma)); }
+// data em que o recebimento cai (ou caiu) na conta; cartão: o dia útil do repasse da operadora
+function dataCredito(e){
+  if(e.tipo!=='receita' || !e.confirmado) return null;
+  if(e.dataCredito) return e.dataCredito;
+  const pg=e.dataPagamento||e.vencimento;
+  if(!ehEntradaCartao(e)) return pg;
+  return proxDiaUtil([pg,e.vencimento].filter(Boolean).sort().pop());
+}
 function getFluxoEntriesForView(){
   const all=state.fluxoFinanceiro||[];
   if(fluxoViewMode==='dia') return all.filter(e=>e.vencimento===fluxoViewDate);
@@ -2325,7 +2347,7 @@ function renderFluxoFinanceiro(){
     const situacao=e.confirmado?'Realizado':(despesa?'Pendente':'Entrada Prevista');
     const situacaoClass=e.confirmado?'b-dent':(despesa?'b-harm':'b-recep');
     const pagCell=e.confirmado
-      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>${e.baixaRetro?`<div class="muted" style="font-size:11.5px">conferido em ${esc(fmtDataBR((e.baixaRetro.em||'').slice(0,10)))} · ${esc(e.baixaRetro.por||'')}${e.baixaRetro.obs?' · '+esc(e.baixaRetro.obs):''}</div>`:''}`
+      ? `${esc(fmtDataBR(e.dataPagamento))} <button class="btn-s" data-undoconf="${e.id}">Desfazer</button>${ehEntradaCartao(e)&&dataCredito(e)?`<div style="font-size:11.5px;margin-top:2px">${dataCredito(e)>hojeISO()?'<span class="sit sit-agendado">A creditar</span>':'<span class="sit sit-chegou">Creditado</span>'} <span class="muted">cai na conta em ${esc(fmtDataBR(dataCredito(e)))}</span></div>`:''}${e.baixaRetro?`<div class="muted" style="font-size:11.5px">conferido em ${esc(fmtDataBR((e.baixaRetro.em||'').slice(0,10)))} · ${esc(e.baixaRetro.por||'')}${e.baixaRetro.obs?' · '+esc(e.baixaRetro.obs):''}</div>`:''}`
       : `${e.estimado?`<input data-valreal="${e.id}" inputmode="decimal" placeholder="Valor real" aria-label="Valor real da conta" style="width:110px;display:inline-block"> `:''}<input type="date" data-pagdata="${e.id}" value="${esc(e.dataPagamento||'')}" style="width:140px;display:inline-block"> <button class="btn-p" data-confpag="${e.id}">Confirmar</button>`;
     return `<tr><td>${esc(fmtDataBR(e.vencimento))}</td>
     <td><span class="badge ${despesa?'b-harm':'b-dent'}">${despesa?'Saída':'Entrada'}</span></td>
@@ -2342,13 +2364,67 @@ function renderFluxoFinanceiro(){
   ${entries.length?`<div class="overflow"><table><thead><tr><th>Vencimento</th><th>Tipo</th><th>Paciente/Fornecedor</th><th>Descrição</th><th>Valor</th><th>Situação</th><th>Pagamento</th><th></th></tr></thead>
   <tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum lançamento neste período.</p>'}
   </div>
-  <div class="card"><h3 style="margin:0 0 8px 0">Resumo</h3>
-  <p><strong>Entrada Realizada:</strong> ${fmtMoney(entradaReal)} &nbsp;·&nbsp; <strong>Entrada Prevista:</strong> ${fmtMoney(entradaPrevista)}</p>
-  <p><strong>Saída Realizada:</strong> ${fmtMoney(saidaReal)} &nbsp;·&nbsp; <strong>Despesa Pendente:</strong> ${fmtMoney(saidaPendente)}</p>
-  <p><strong>Saldo Realizado:</strong> <span style="color:${saldoRealizado<0?'var(--danger)':'var(--ok)'};font-weight:700">${fmtMoney(saldoRealizado)}</span></p>
-  ${taxasPer?`<p><strong>Custo com taxas de cartão:</strong> <span style="color:var(--warn);font-weight:700">${fmtMoney(taxasPer)}</span> <span class="muted">(já descontado das entradas acima)</span></p>`:''}
+  ${resumoCaixaHtml(entries)}`;
+}
+function periodoFluxo(){ if(fluxoViewMode==='dia') return [fluxoViewDate,fluxoViewDate]; if(fluxoViewMode==='periodo') return [fluxoPeriodoInicio,fluxoPeriodoFim]; const [y,m]=fluxoMesRef.split('-').map(Number); return [fluxoMesRef+'-01', fluxoMesRef+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0')]; }
+function resumoCaixaHtml(entries){
+  const hoje=hojeISO(), [ini,fim]=periodoFluxo(), all=state.fluxoFinanceiro||[], si=(state.meta&&state.meta.saldoInicial)||null;
+  const soma=l=>r2(l.reduce((t,e)=>t+(+e.valor||0),0));
+  const credito=e=>dataCredito(e)||'';
+  // disponível: com saldo inicial = saldo do banco hoje; sem ele = o que entrou menos o que saiu no período até hoje
+  const desde=si?si.data:null, ateHoje=fim<hoje?fim:hoje;
+  const entrou=all.filter(e=>e.tipo==='receita'&&e.confirmado&&(si?(credito(e)>desde&&credito(e)<=hoje):(credito(e)>=ini&&credito(e)<=ateHoje)));
+  const saiu=all.filter(e=>e.tipo==='despesa'&&e.confirmado&&(si?((e.dataPagamento||e.vencimento)>desde&&(e.dataPagamento||e.vencimento)<=hoje):((e.dataPagamento||e.vencimento)>=ini&&(e.dataPagamento||e.vencimento)<=ateHoje)));
+  const disp=r2((si?+si.valor||0:0)+soma(entrou)-soma(saiu));
+  const aCred=all.filter(e=>e.tipo==='receita'&&e.confirmado&&credito(e)>hoje).sort((a,b)=>credito(a).localeCompare(credito(b)));
+  const porDia={}; aCred.forEach(e=>{ porDia[credito(e)]=(porDia[credito(e)]||0)+(+e.valor||0); });
+  const amanha=proxDiaUtil(addDaysStr(hoje,1));
+  const aReceber=entries.filter(e=>e.tipo==='receita'&&!e.confirmado), aRecVenc=aReceber.filter(e=>e.vencimento<hoje);
+  const aPagarPer=entries.filter(e=>e.tipo==='despesa'&&!e.confirmado), aPagarAtras=all.filter(e=>e.tipo==='despesa'&&!e.confirmado&&e.vencimento<ini);
+  const aPagarVenc=aPagarPer.filter(e=>e.vencimento<hoje).concat(aPagarAtras);
+  const aPagarTot=r2(soma(aPagarPer)+soma(aPagarAtras));
+  const previsto=r2(disp+soma(aCred.filter(e=>credito(e)<=fim))+soma(aReceber.filter(e=>e.vencimento>=hoje))-aPagarTot);
+  const bruto=r2(entries.filter(e=>e.tipo==='receita').reduce((t,e)=>t+valorQuitado(e),0)), taxas=r2(entries.filter(e=>e.tipo==='receita'&&e.taxaValor).reduce((t,e)=>t+(+e.taxaValor||0),0));
+  const bloco=(ic,rot,v,sub,cls)=>`<div class="cx-bloco ${cls||''}"><span class="cx-rot">${ic} ${rot}</span><strong>${fmtMoney(v)}</strong>${sub?`<span class="cx-sub">${sub}</span>`:''}</div>`;
+  const listaCred=Object.keys(porDia).slice(0,3).map(d=>`${d===amanha?'amanhã':fmtDataBR(d).slice(0,5)}: ${fmtMoney(porDia[d])}`).join(' · ');
+  // próximos 7 dias
+  let saldoDia=disp; const dias=[];
+  for(let k=0;k<7;k++){ const d=addDaysStr(hoje,k);
+    const ent=r2(aCred.filter(e=>credito(e)===d).reduce((t,e)=>t+(+e.valor||0),0)+all.filter(e=>e.tipo==='receita'&&!e.confirmado&&e.vencimento===d).reduce((t,e)=>t+(+e.valor||0),0));
+    const sai=r2(all.filter(e=>e.tipo==='despesa'&&!e.confirmado&&(e.vencimento===d||(k===0&&e.vencimento<hoje))).reduce((t,e)=>t+(+e.valor||0),0));
+    saldoDia=r2(saldoDia+ent-sai); dias.push({d,ent,sai,saldo:saldoDia}); }
+  const nomeDia=d=>d===hoje?'Hoje':['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][new Date(d+'T12:00:00').getDay()]+' '+fmtDataBR(d).slice(0,5);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 style="margin:0">Resumo do caixa</h3>
+    <button class="lnk-forte" data-saldoini>${si?`Saldo inicial: ${fmtMoney(si.valor)} em ${fmtDataBR(si.data)} · alterar`:'Informar saldo inicial da conta'}</button></div>
+    <div class="cx-blocos">
+      ${bloco('💰','Disponível hoje',disp,si?'na conta, considerando o saldo inicial':'entrou menos saiu no período, até hoje (informe o saldo inicial para ver o saldo da conta)',disp<0?'ruim':'bom')}
+      ${bloco('💳','A creditar do cartão',soma(aCred),aCred.length?listaCred:'nada a cair na conta')}
+      ${bloco('📥','A receber de pacientes',soma(aReceber),aRecVenc.length?`<span class="cx-alerta">${fmtMoney(soma(aRecVenc))} vencido</span>`:'no período')}
+      ${bloco('📤','A pagar',aPagarTot,aPagarVenc.length?`<span class="cx-alerta">${fmtMoney(soma(aPagarVenc))} vencido</span>`:'no período')}
+      ${bloco('🔮','Saldo previsto em '+fmtDataBR(fim).slice(0,5),previsto,'disponível + a creditar + a receber − a pagar',previsto<0?'ruim':'')}
+    </div>
+    ${taxas?`<p class="muted" style="margin:10px 0 0;font-size:13px">Recebido dos pacientes no período: <strong>${fmtMoney(bruto)}</strong> · taxas de cartão: <strong style="color:var(--warn)">−${fmtMoney(taxas)}</strong> · líquido: <strong>${fmtMoney(r2(bruto-taxas))}</strong></p>`:''}
+    <h4 style="margin:16px 0 6px">Próximos 7 dias</h4>
+    <div class="overflow"><table class="cx-dias"><thead><tr><th></th>${dias.map(x=>`<th class="${ehDiaUtil(x.d)?'':'cx-naoutil'}">${nomeDia(x.d)}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>Entra</td>${dias.map(x=>`<td>${x.ent?'<span style="color:var(--ok)">+'+fmtMoney(x.ent)+'</span>':'<span class="muted">—</span>'}</td>`).join('')}</tr>
+      <tr><td>Sai</td>${dias.map(x=>`<td>${x.sai?'<span style="color:var(--danger)">−'+fmtMoney(x.sai)+'</span>':'<span class="muted">—</span>'}</td>`).join('')}</tr>
+      <tr class="cx-saldo"><td>${si?'Saldo previsto':'Variação acumulada'}</td>${dias.map(x=>`<td style="color:${x.saldo<0?'var(--danger)':'inherit'}">${fmtMoney(x.saldo)}</td>`).join('')}</tr>
+    </tbody></table></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">Cartão cai na conta no prazo da maquininha em dias úteis (sábado, domingo e feriados nacionais não contam). "Entra" inclui o que cai do cartão e as parcelas de pacientes previstas para o dia; "Sai" inclui as despesas vencidas no primeiro dia.</p>
   </div>`;
 }
+function abrirSaldoInicial(){
+  const si=(state.meta&&state.meta.saldoInicial)||{};
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Saldo inicial da conta</h3><p class="muted" style="margin:0 0 10px">Informe quanto havia na conta da clínica (banco + caixa) no fim de um dia. A partir daí o sistema soma o que cai na conta e desconta o que foi pago, para mostrar o disponível de hoje.</p>
+    <form id="fSaldoIni"><div class="row"><div><label for="siValor">Saldo</label><input id="siValor" inputmode="decimal" value="${si.valor!=null?esc(String(si.valor).replace('.',',')):''}" required></div>
+    <div><label for="siData">No fim do dia</label><input id="siData" type="date" value="${esc(si.data||addDaysStr(hojeISO(),-1))}" max="${hojeISO()}" required></div></div>
+    <div style="margin-top:12px;display:flex;justify-content:space-between;gap:8px">${si.data?'<button type="button" class="btn-d" id="siTirar">Não usar saldo inicial</button>':'<span></span>'}<span><button type="button" class="btn-s" data-fechar>Cancelar</button> <button class="btn-p">Salvar</button></span></div></form>`);
+  const t=bg.querySelector('#siTirar'); if(t) t.addEventListener('click',()=>{ delete state.meta.saldoInicial; saveData(); bg.remove(); render(); });
+  bg.querySelector('#fSaldoIni').addEventListener('submit',ev=>{ ev.preventDefault(); const v=r2(lerValor(bg.querySelector('#siValor').value)), d=bg.querySelector('#siData').value;
+    if(!d || d>hojeISO()){ avisar('Informe uma data até hoje.'); return; } if(!isFinite(v)){ avisar('Informe o saldo.'); return; }
+    state.meta=state.meta||{}; state.meta.saldoInicial={valor:v,data:d}; saveData(); bg.remove(); render(); });
+}
+
 // =====================================================================
 // Financeiro 2: taxas de cartão, contas que se repetem, compras com itens
 // e parcelas, patrimônio com depreciação
@@ -2388,7 +2464,7 @@ function linhaTaxaHtml(e){ return e.taxaValor?`<div class="muted" style="font-si
 function aplicarTaxaSimples(pc,forma){
   const f=formaSimples(forma); if(!f || (!(+f.taxaPct>0) && !(+f.taxaFixa>0) && !(+f.prazo>0))) return pc;
   const taxa=r2(pc.valor*(+f.taxaPct||0)/100+(+f.taxaFixa||0));
-  const out=Object.assign({},pc,{vencimento:addDaysStr(pc.vencimento,+f.prazo||0)});
+  const out=Object.assign({},pc,{vencimento:addDiasUteis(pc.vencimento,+f.prazo||0)});
   if(taxa>0) Object.assign(out,{valorBruto:pc.valor,taxaPct:+f.taxaPct||0,taxaFixa:+f.taxaFixa||0,taxaValor:taxa,valor:r2(pc.valor-taxa)});
   return out;
 }
@@ -2419,8 +2495,8 @@ function renderFormasPagamento(){
   ${fp.operadoras.map((op,oi)=>`<div class="fp-op">
     <div class="row" style="align-items:flex-end">
       <div style="flex:2 1 220px"><label>Operadora</label><input data-fpo="${oi}" data-k="nome" value="${esc(op.nome)}" placeholder="Ex.: Stone, Cielo, PagSeguro"${dis}></div>
-      <div><label>Débito cai em (dias)</label><input data-fpo="${oi}" data-k="prazoDebito" type="number" min="0" max="60" value="${op.prazoDebito||0}"${dis}></div>
-      <div><label>Crédito cai em (dias)</label><input data-fpo="${oi}" data-k="prazoCredito" type="number" min="0" max="60" value="${op.prazoCredito||0}"${dis}><div class="cl-dica">Com antecipação, normalmente 1.</div></div>
+      <div><label>Débito cai em (dias úteis)</label><input data-fpo="${oi}" data-k="prazoDebito" type="number" min="0" max="60" value="${op.prazoDebito||0}"${dis}></div>
+      <div><label>Crédito cai em (dias úteis)</label><input data-fpo="${oi}" data-k="prazoCredito" type="number" min="0" max="60" value="${op.prazoCredito||0}"${dis}><div class="cl-dica">Com antecipação, normalmente 1.</div></div>
       ${pode&&fp.operadoras.length>1?`<div style="flex:0 0 auto"><button type="button" class="btn-s" data-fpodel="${oi}">Remover operadora</button></div>`:''}
     </div>
     <div class="overflow"><table class="fp-tab fp-band"><thead><tr><th>Bandeira</th><th>Débito</th>${CRED_EXEMPLO.map((_,i)=>`<th>${i+1}x</th>`).join('')}<th></th></tr></thead><tbody>
@@ -7253,6 +7329,7 @@ function bindEvents(){
   document.querySelectorAll('[data-inadlote]').forEach(b=>b.addEventListener('click',()=>abrirBaixaRetro([...repInadSel])));
   document.querySelectorAll('[data-inadcanc]').forEach(b=>b.addEventListener('click',()=>abrirCancelarParcela(b.getAttribute('data-inadcanc'))));
   document.querySelectorAll('[data-inaddesf]').forEach(b=>b.addEventListener('click',()=>{ const e=state.fluxoFinanceiro.find(x=>x.id===b.getAttribute('data-inaddesf')); if(e && desfazerBaixaRetro(e)){ saveData(); render(); } }));
+  document.querySelectorAll('[data-saldoini]').forEach(b=>b.addEventListener('click',abrirSaldoInicial));
   document.querySelectorAll('[data-pfpagar]').forEach(b=>b.addEventListener('click',()=>abrirPagarDespesa(b.getAttribute('data-pfpagar'))));
   document.querySelectorAll('[data-inadrest]').forEach(b=>b.addEventListener('click',()=>restaurarParcela(b.getAttribute('data-inadrest'))));
   repSel('repEvolDent',el=>{ repEvolDentista=el.value; });

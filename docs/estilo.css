@@ -980,3 +980,16 @@ tr.pf-venc td{color:var(--danger)}
 .cmp-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .cmp-mes{margin-top:6px;font-size:13px}
 .cmp-det{margin-top:10px}.cmp-det summary{cursor:pointer;font-size:13.5px;color:var(--primary)}
+/* ---------- Resumo do caixa ---------- */
+.cx-blocos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px}
+.cx-bloco{border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;background:var(--surface)}
+.cx-bloco strong{font-size:20px}
+.cx-bloco.bom strong{color:var(--ok)}
+.cx-bloco.ruim strong{color:var(--danger)}
+.cx-rot{font-size:12.5px;color:var(--muted);font-weight:600}
+.cx-sub{font-size:12px;color:var(--muted)}
+.cx-alerta{color:var(--danger);font-weight:600}
+.cx-dias th,.cx-dias td{text-align:right;white-space:nowrap;font-size:13px}
+.cx-dias th:first-child,.cx-dias td:first-child{text-align:left}
+.cx-dias .cx-naoutil{color:var(--muted);font-weight:400}
+.cx-saldo td{font-weight:700;border-top:1px solid var(--border)}
