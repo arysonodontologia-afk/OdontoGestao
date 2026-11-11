@@ -1,0 +1,24 @@
+# Diagnóstico de login de um usuário (só mostra existências e provedores; nada de dados pessoais).
+name: Diagnóstico de login
+on:
+  workflow_dispatch:
+    inputs:
+      hash:
+        description: 'SHA-256 do e-mail em minúsculas'
+        required: true
+      ambiente:
+        description: 'producao ou teste'
+        default: 'producao'
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Conferir
+        env:
+          CHAVE: ${{ github.event.inputs.ambiente == 'teste' && secrets.FIREBASE_SERVICE_ACCOUNT_TESTE || secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJETO: ${{ github.event.inputs.ambiente == 'teste' && 'odontogestao-teste' || 'odontogestao-c8218' }}
+          HASH: ${{ github.event.inputs.hash }}
+        run: |
+          pip install --quiet google-auth requests
+          python3 .github/diag_login.py
