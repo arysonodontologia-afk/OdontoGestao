@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.29.0';
+const APP_VERSION='2.29.1';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -3623,8 +3623,9 @@ function renderTelaNuvem(){
     <p class="muted" style="font-size:12.5px;margin:6px 0 0;text-align:center">E-mail Gmail: é só escolher a conta, sem digitar senha.</p>
     <div class="login-ou"><span>ou com e-mail e senha do OdontoGestão</span></div>
     <form id="fNvEntrar"><label>E-mail</label><input id="nvEmail" type="email" autocomplete="email" required>
-    <label>Senha</label><input id="nvSenha" type="password" autocomplete="current-password" required>
-    ${msgsNuvem()}<button class="btn-p login-btn">Entrar</button></form>
+    <div id="nvSenhaW"><label>Senha</label><input id="nvSenha" type="password" autocomplete="current-password" required></div>
+    <p id="nvDicaGoogle" class="muted" style="display:none;font-size:13px;margin:8px 0 0">Conta Google: não precisa de senha. Clique em <strong>Continuar com Google</strong> e escolha a conta.</p>
+    ${msgsNuvem()}<button class="btn-p login-btn" id="nvEntrarBtn">Entrar</button></form>
     <p class="muted" style="font-size:12.5px;margin:8px 0 0">Primeiro acesso: entre com seu e-mail e a senha inicial <strong>${SENHA_INICIAL}</strong>. Em seguida o sistema pede para você criar a sua senha.</p>
     <div class="login-links"><button class="lnk" data-nvmodo="esqueci">Esqueci minha senha</button><button class="lnk" data-nvmodo="criar">Não recebi senha inicial · criar senha</button></div>
     <div class="login-cta">Tem uma clínica e ainda não usa o OdontoGestão?<br><button class="lnk lnk-forte" data-nvmodo="cadastro">Teste grátis por ${Nuvem.diasTesteAuto} dias</button> · <a class="lnk" href="?demo=1">Ver demonstração</a></div>`);
@@ -3640,8 +3641,13 @@ function bindNuvemEvents(){
     try{ await Nuvem.entrarGoogle(); }catch(e){ nuvemErro=Nuvem.mapErro(e); render(); }
   });
   const fE=q('fNvEntrar');
+  // e-mail Gmail no formulário: esconde a senha e entra pelo Google (já sugerindo a conta)
+  const nvE=q('nvEmail'), ajustaGmail=()=>{ if(!fE||!nvE) return; const g=emailGoogle(nvE.value); q('nvSenhaW').style.display=g?'none':''; q('nvSenha').required=!g; q('nvDicaGoogle').style.display=g?'block':'none'; q('nvEntrarBtn').textContent=g?'Continuar com Google':'Entrar'; };
+  if(fE&&nvE){ nvE.addEventListener('input',ajustaGmail); nvE.addEventListener('change',ajustaGmail); }
   if(fE) fE.addEventListener('submit',async ev=>{
-    ev.preventDefault(); nuvemErro=''; nuvemInfo=''; ocupado(fE,true);
+    ev.preventDefault(); nuvemErro=''; nuvemInfo='';
+    if(emailGoogle(q('nvEmail').value)){ try{ await Nuvem.entrarGoogle(q('nvEmail').value); }catch(e){ if(e&&e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request'){ nuvemErro=Nuvem.mapErro(e); render(); } } return; }
+    ocupado(fE,true);
     try{ const sv=q('nvSenha').value; try{ if(sv===SENHA_INICIAL) sessionStorage.setItem('odonto-trocar-senha','1'); else sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
       await Nuvem.entrarEmail(q('nvEmail').value,sv); }
     catch(e){ ocupado(fE,false); nuvemErro=Nuvem.mapErro(e); render(); }

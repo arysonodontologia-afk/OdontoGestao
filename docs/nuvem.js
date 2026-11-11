@@ -74,7 +74,7 @@ function limparUsuario(u){
 function meuEmail(){ return usuario?normEmail(usuario.email):''; }
 
 const ERROS={
-  'auth/invalid-credential':'E-mail ou senha incorretos.',
+  'auth/invalid-credential':'E-mail ou senha incorretos. Se você entra com uma conta Google, use o botão "Entrar com Google" (não precisa de senha).',
   'auth/wrong-password':'E-mail ou senha incorretos.',
   'auth/user-not-found':'E-mail ou senha incorretos.',
   'auth/invalid-email':'E-mail inválido.',
@@ -158,8 +158,8 @@ async function responderFormularioPublico(token,resp){
 }
 
 // ---------- login ----------
-async function entrarGoogle(){
-  const prov=new A.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account'});
+async function entrarGoogle(dica){
+  const prov=new A.GoogleAuthProvider(); prov.setCustomParameters(Object.assign({prompt:'select_account'},dica?{login_hint:normEmail(dica)}:{}));
   try{ await A.signInWithPopup(auth,prov); }
   catch(e){
     if(e && (e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment')){ await A.signInWithRedirect(auth,prov); return; }
