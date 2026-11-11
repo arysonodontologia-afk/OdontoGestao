@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.28.0', data:'2026-11-11', itens:[
+    'Usuários: ao cadastrar alguém com e-mail que não é Gmail, o sistema já cria o acesso com a senha inicial 123456 (vale 7 dias); no primeiro acesso a pessoa confirma o e-mail e é obrigada a criar a própria senha do OdontoGestão',
+    'E-mail Gmail entra só pelo botão "Entrar com Google", escolhendo a conta, sem digitar senha',
+    'Usuários: "Renovar senha inicial" quando venceu e "Enviar link de senha" para quem esqueceu; tela de entrada explica Google e senha inicial',
+  ]},
   {v:'2.27.3', data:'2026-11-11', itens:[
     'Pacientes: o formulário de novo paciente (e de edição) abre no topo da lista, com o cursor no nome; antes aparecia no fim da lista e, com muitos pacientes, parecia que o botão não funcionava',
     'Busca do topo e busca da lista de Pacientes: quando o paciente não existe, oferecem "Cadastrar como novo paciente" (Enter também cadastra), já preenchendo o nome, o CPF ou o telefone digitado',

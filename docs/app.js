@@ -1,6 +1,8 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.27.3';
-const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
+const APP_VERSION='2.28.0';
+const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
+const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
+const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
 const DB_NAME=DEMO?'odontoGestaoDemo':'odontoGestaoDB';
@@ -3468,6 +3470,7 @@ function msgsNuvem(){
   return `${nuvemErro?`<div class="login-erro">${esc(nuvemErro)}</div>`:''}${nuvemInfo?`<div class="login-info">${esc(nuvemInfo)}</div>`:''}`;
 }
 function renderTelaNuvem(){
+  try{ const mm=sessionStorage.getItem('odonto-msg-login'); if(mm && !nuvemErro) nuvemErro=mm; }catch(e){}   // apagada na próxima tentativa de entrar
   if(view==='nuvemCarregando') return telaNuvem(`<p class="muted" style="text-align:center;margin:24px 0">${esc(nuvemMsg||'Carregando…')}</p>`);
   if(view==='nuvemVerificar'){
     const em=Nuvem.meuEmail();
@@ -3541,15 +3544,19 @@ function renderTelaNuvem(){
   return telaNuvem(`
     <h3 class="login-titulo">Entrar</h3><p class="muted" style="margin:0">Use o e-mail que a clínica cadastrou para você.</p>
     <button class="btn-google login-btn" id="nvGoogle">${G_ICON}<span>Entrar com Google</span></button>
-    <div class="login-ou"><span>ou com e-mail e senha</span></div>
+    <p class="muted" style="font-size:12.5px;margin:6px 0 0;text-align:center">E-mail Gmail: é só escolher a conta, sem digitar senha.</p>
+    <div class="login-ou"><span>ou com e-mail e senha do OdontoGestão</span></div>
     <form id="fNvEntrar"><label>E-mail</label><input id="nvEmail" type="email" autocomplete="email" required>
     <label>Senha</label><input id="nvSenha" type="password" autocomplete="current-password" required>
     ${msgsNuvem()}<button class="btn-p login-btn">Entrar</button></form>
-    <div class="login-links"><button class="lnk" data-nvmodo="esqueci">Esqueci minha senha</button><button class="lnk" data-nvmodo="criar">Primeiro acesso · criar senha</button></div>
+    <p class="muted" style="font-size:12.5px;margin:8px 0 0">Primeiro acesso: entre com seu e-mail e a senha inicial <strong>${SENHA_INICIAL}</strong>. Em seguida o sistema pede para você criar a sua senha.</p>
+    <div class="login-links"><button class="lnk" data-nvmodo="esqueci">Esqueci minha senha</button><button class="lnk" data-nvmodo="criar">Não recebi senha inicial · criar senha</button></div>
     <div class="login-cta">Tem uma clínica e ainda não usa o OdontoGestão?<br><button class="lnk lnk-forte" data-nvmodo="cadastro">Teste grátis por ${Nuvem.diasTesteAuto} dias</button> · <a class="lnk" href="?demo=1">Ver demonstração</a></div>`);
 }
 function bindNuvemEvents(){
   const q=id=>document.getElementById(id);
+  const limparMsgLogin=()=>{ try{ sessionStorage.removeItem('odonto-msg-login'); }catch(e){} };
+  document.querySelectorAll('#nvGoogle,#fNvEntrar button,[data-nvmodo]').forEach(b=>b.addEventListener('click',limparMsgLogin,true));
   document.querySelectorAll('[data-nvmodo]').forEach(b=>b.addEventListener('click',()=>{ nuvemModo=b.getAttribute('data-nvmodo'); nuvemErro=''; nuvemInfo=''; render(); }));
   const ocupado=(form,on)=>{ if(form){ const b=form.querySelector('button.btn-p'); if(b) b.disabled=on; } };
   if(q('nvGoogle')) q('nvGoogle').addEventListener('click',async()=>{
@@ -3568,6 +3575,7 @@ function bindNuvemEvents(){
     ev.preventDefault(); nuvemErro=''; nuvemInfo='';
     const em=normEmail(q('nvEmail').value), s1=q('nvSenha').value, s2=q('nvSenha2').value;
     if(!emailValido(em)){ nuvemErro='Digite um e-mail válido.'; render(); return; }
+    if(emailGoogle(em)){ nuvemErro='Este é um e-mail do Google: não precisa criar senha. Volte e use o botão "Entrar com Google".'; render(); return; }
     if(s1.length<6){ nuvemErro='A senha precisa ter pelo menos 6 caracteres.'; render(); return; }
     if(s1!==s2){ nuvemErro='As duas senhas não conferem.'; render(); return; }
     ocupado(fC,true);
@@ -3725,7 +3733,18 @@ async function aoMudarLogin(u){
   if(!u){ session=null; nuvemAcesso=null; view='nuvemLogin'; render(); return; }
   if(!u.emailVerified){ view='nuvemVerificar'; render(); return; }
   let trocar=false; try{ trocar=sessionStorage.getItem('odonto-trocar-senha')==='1'; }catch(e){}
-  if(trocar){ view='nuvemNovaSenha'; render(); return; }
+  if(trocar){
+    // senha inicial vale DIAS_SENHA_INICIAL dias a partir do cadastro do usuário
+    let ac=null; try{ ac=await Nuvem.carregarAcesso(); }catch(e){}
+    if(meu!==nuvemFluxo) return;
+    if(ac && ac.senhaInicialEm && diasEntre(ac.senhaInicialEm,hojeISO())>DIAS_SENHA_INICIAL){
+      try{ sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
+      nuvemErro=`A senha inicial venceu (vale ${DIAS_SENHA_INICIAL} dias). Peça ao responsável da clínica para renovar em Usuários, ou use "Esqueci minha senha".`;
+      try{ sessionStorage.setItem('odonto-msg-login',nuvemErro); }catch(e){}
+      try{ await Nuvem.sair(true); }catch(e){} view='nuvemLogin'; render(); return;
+    }
+    view='nuvemNovaSenha'; render(); return;
+  }
   view='nuvemCarregando'; nuvemMsg='Verificando acesso…'; nuvemErro=''; render();
   try{
     let ac=await Nuvem.carregarAcesso();
@@ -3789,11 +3808,22 @@ function conferirIndice(){
   const emails=state.users.map(x=>x.email).concat([Nuvem.meuEmail()]);
   Nuvem.reindexar(emails).then(falhas=>{ if(!falhas){ state.meta=state.meta||{}; state.meta.indiceClinica=marca; saveData(); } }).catch(e=>console.warn(e));
 }
+// cria a conta de login com a senha inicial (e-mails que não são Gmail) e avisa quem cadastrou como a pessoa entra
+async function criarAcessoInicial(u){
+  const em=normEmail(u.email); if(!em) return;
+  if(emailGoogle(em)){ avisar(`${nomeExibicao(u)} entra pelo botão "Entrar com Google", escolhendo a conta ${em}. Não precisa de senha.`); return; }
+  let r='erro'; try{ r=await Nuvem.criarContaInicial(em,SENHA_INICIAL,false); }catch(e){ console.warn(e); }
+  if(r==='criada'){ u.senhaInicialEm=hojeISO(); saveData(); render();
+    avisar(`Acesso criado. ${nomeExibicao(u)} entra com o e-mail ${em} e a senha inicial ${SENHA_INICIAL} (vale ${DIAS_SENHA_INICIAL} dias). Vai chegar um e-mail para confirmar o endereço; depois o sistema pede para criar a senha própria.`); }
+  else if(r==='existe') avisar(`O e-mail ${em} já tem senha no OdontoGestão: ${nomeExibicao(u)} entra com a senha que já usa (ou "Esqueci minha senha").`);
+  else avisar(`Não consegui criar o acesso de ${em} agora. A pessoa pode usar "Não recebi senha inicial · criar senha" na tela de entrada.`);
+}
+function senhaInicialSituacao(u){ if(!u.senhaInicialEm) return null; const d=diasEntre(u.senhaInicialEm,hojeISO()); return d>DIAS_SENHA_INICIAL?'vencida':'valida'; }
 function acessosDesejados(){
   const m=new Map();
   (state.users||[]).forEach(u=>{
     const e=normEmail(u.email); if(!e || !emailValido(e) || m.has(e)) return;
-    m.set(e,{userId:u.id, tipo:u.tipo, perms:permsBrutos(u), ativo:!u.inativo});
+    m.set(e,Object.assign({userId:u.id, tipo:u.tipo, perms:permsBrutos(u), ativo:!u.inativo},u.senhaInicialEm?{senhaInicialEm:u.senhaInicialEm}:{}));
   });
   return m;
 }
@@ -4452,7 +4482,7 @@ function userFormFields(tipo, u, isNew){
     <div><label>Telefone / WhatsApp</label><input id="fTelefone" value="${esc(u.telefone)}" required></div>
     <div><label>${NUVEM?'E-mail de acesso (login)':'Email'}</label><input id="fEmail" type="email" value="${esc(u.email)}" required ${NUVEM&&emailTravado(u)?'readonly title="Somente o Master altera o e-mail de acesso"':''}></div>
   </div>
-  ${NUVEM?'<p class="muted" style="margin:6px 0 0">A pessoa entra com este e-mail: pelo botão <strong>Entrar com Google</strong> (se for uma conta Google) ou em <strong>Primeiro acesso · criar senha</strong>.</p>':''}
+  ${NUVEM?`<p class="muted" style="margin:6px 0 0">E-mail <strong>Gmail</strong>: a pessoa entra pelo botão <strong>Entrar com Google</strong>, sem senha. Outros e-mails: o sistema cria o acesso com a senha inicial <strong>${SENHA_INICIAL}</strong> (vale ${DIAS_SENHA_INICIAL} dias); no primeiro acesso a pessoa confirma o e-mail e cria a própria senha.</p>`:''}
   ${tipo==='master'?`<label class="chk-linha" style="margin-top:14px"><input type="checkbox" id="fAtende" ${masterAtende(u)?'checked':''}> Atende pacientes como dentista (aparece na agenda e na escolha de dentista)</label>`:''}
   <div id="croWrap" style="display:${tipo==='dentista'||(tipo==='master'&&masterAtende(u))?'block':'none'}">
     <div class="row">
@@ -4479,6 +4509,7 @@ function renderUsuarios(){
     <td>${esc(u.telefone)}</td>
     <td>${esc(u.cro||'-')}</td>
     <td class="actions">
+      ${NUVEM&&podeEditarUsuario(u)&&u.email&&!emailGoogle(u.email)&&u.id!==(currentUser()||{}).id?(senhaInicialSituacao(u)==='vencida'?`<button class="btn-s" data-renovasenha="${u.id}" title="A senha inicial venceu: renovar por mais ${DIAS_SENHA_INICIAL} dias">Renovar senha inicial</button>`:`<button class="btn-s" data-linksenha="${u.id}" title="Envia para o e-mail da pessoa um link para criar uma nova senha">Enviar link de senha</button>`):''}
       ${podeEditarUsuario(u)?`<button class="btn-s" data-edituser="${u.id}">Editar</button>`:'<span class="muted">Somente o Master</span>'}
       ${podeExcluirUsuario(u)?(usuarioAtivo(u)?`<button class="btn-s" data-desativauser="${u.id}">Desativar</button>`:`<button class="btn-s" data-reativauser="${u.id}">Reativar</button>`)+`<button class="btn-d" data-deluser="${u.id}">Excluir</button>`:''}
     </td></tr>`).join('');
@@ -4578,6 +4609,7 @@ function openUserForm(u){
         if(sit==='outra'){ avisar('Este e-mail já está ligado a outra clínica no OdontoGestão. Use outro e-mail para este usuário.'); return; }
       }
     }
+    const emailNovo=NUVEM && (!u || normEmail(u.email)!==normEmail(data.email));
     const novaSenha=NUVEM?'':document.getElementById('fPassword').value;
     if(isNew && !novaSenha && !NUVEM){ avisar('Informe a senha.'); return; }
     if(novaSenha && novaSenha.length<6){ avisar('A senha precisa ter pelo menos 6 caracteres.'); return; }
@@ -4590,6 +4622,7 @@ function openUserForm(u){
       saveData();
       document.getElementById('userFormArea').innerHTML='';
       render();
+      if(NUVEM && emailNovo) criarAcessoInicial(isNew?data:u);
       if(mudouTipo) avisar(tipoVal==='master'?`${nomeExibicao(u)} agora é Master da clínica.`:`${nomeExibicao(u)} agora é ${tipoLabel(tipoVal)}.`);
     };
     if(mudouTipo && tipoVal==='master') customConfirm(`Promover ${semTitulo(u.nomeCompleto)} a Master? Ele passa a ter acesso total à clínica, inclusive usuários, financeiro e exclusões.`,gravar,'Promover a Master');
@@ -6956,6 +6989,8 @@ function bindEvents(){
 
   const btnNewUser=document.getElementById('btnNewUser');
   if(btnNewUser) btnNewUser.addEventListener('click',()=>openUserForm(null));
+  document.querySelectorAll('[data-renovasenha]').forEach(b=>b.addEventListener('click',()=>{ const u=state.users.find(x=>x.id===b.getAttribute('data-renovasenha')); if(!u) return; u.senhaInicialEm=hojeISO(); saveData(); render(); avisar(`Senha inicial renovada: ${nomeExibicao(u)} pode entrar com ${normEmail(u.email)} e a senha ${SENHA_INICIAL} até ${fmtDataBR(addDaysStr(hojeISO(),DIAS_SENHA_INICIAL))}. Se a pessoa já tinha trocado a senha, use "Enviar link de senha".`); }));
+  document.querySelectorAll('[data-linksenha]').forEach(b=>b.addEventListener('click',async()=>{ const u=state.users.find(x=>x.id===b.getAttribute('data-linksenha')); if(!u) return; try{ await Nuvem.redefinirSenha(u.email); avisar(`Link enviado para ${normEmail(u.email)}. A pessoa clica no link do e-mail (veja também o Spam) e cria uma nova senha.`); }catch(e){ avisar(Nuvem.mapErro(e)); } }));
   document.querySelectorAll('[data-edituser]').forEach(b=>b.addEventListener('click',()=>{
     openUserForm(state.users.find(u=>u.id===b.getAttribute('data-edituser')));
   }));
