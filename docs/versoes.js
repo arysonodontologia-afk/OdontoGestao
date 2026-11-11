@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.29.0', data:'2026-11-11', itens:[
+    'Fluxo de caixa: novo Resumo do caixa em blocos — disponível hoje, a creditar do cartão (com o dia em que cai), a receber de pacientes, a pagar (com vencidas em destaque) e saldo previsto no fim do período',
+    'Saldo inicial da conta (opcional), para o "Disponível hoje" bater com o banco; faixa dos próximos 7 dias com o que entra, o que sai e o saldo previsto de cada dia',
+    'Cartão: o prazo da maquininha passa a contar em dias úteis (sábado, domingo e feriados nacionais não contam); cada recebimento no cartão mostra "A creditar" ou "Creditado" e a data em que cai na conta',
+  ]},
   {v:'2.28.0', data:'2026-11-11', itens:[
     'Usuários: ao cadastrar alguém com e-mail que não é Gmail, o sistema já cria o acesso com a senha inicial 123456 (vale 7 dias); no primeiro acesso a pessoa confirma o e-mail e é obrigada a criar a própria senha do OdontoGestão',
     'E-mail Gmail entra só pelo botão "Entrar com Google", escolhendo a conta, sem digitar senha',
