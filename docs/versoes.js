@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.29.1', data:'2026-11-11', itens:[
+    'Entrada: ao digitar um e-mail Gmail no formulário, o campo de senha some e o botão vira "Continuar com Google", que abre a escolha da conta já sugerindo esse e-mail',
+    'Senha incorreta agora lembra que conta Google entra pelo botão "Entrar com Google"',
+  ]},
   {v:'2.29.0', data:'2026-11-11', itens:[
     'Fluxo de caixa: novo Resumo do caixa em blocos — disponível hoje, a creditar do cartão (com o dia em que cai), a receber de pacientes, a pagar (com vencidas em destaque) e saldo previsto no fim do período',
     'Saldo inicial da conta (opcional), para o "Disponível hoje" bater com o banco; faixa dos próximos 7 dias com o que entra, o que sai e o saldo previsto de cada dia',
