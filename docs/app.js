@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.27.1';
+const APP_VERSION='2.27.2';
 const SENHA_INICIAL='123456';   // senha inicial das bases criadas pelo administrador (trocada no 1º acesso)
 const NUVEM=!!(window.Nuvem && window.Nuvem.ativa);   // true quando firebase-config.js está preenchido
 const DEMO=!!window.ODONTO_DEMO;          // demonstração com dados fictícios (?demo=1): nada vai para a nuvem
@@ -4617,13 +4617,14 @@ function renderPacientes(){
   return `<div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center"><h2>Pacientes</h2>
   <button id="btnNewPatient" class="btn-p">+ Novo paciente</button></div>
+  <div id="patientFormArea"></div>
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
     <input id="buscaPaciente" type="search" placeholder="Buscar por nome, CPF ou telefone" value="${esc(buscaPaciente)}" style="max-width:360px">
     <span class="muted">${lista.length} de ${todos.length} paciente(s)</span>
   </div>
   <div class="overflow"><table><thead><tr><th>Nome</th><th>Última consulta confirmada</th><th></th></tr></thead>
   <tbody>${rows||`<tr><td colspan="3" class="muted">${vazio}</td></tr>`}</tbody></table></div>
-  </div><div id="patientFormArea"></div>`;
+  </div>`;
 }
 function ultimaAnamneseFinalizada(p,tipo){
   const l=(p.anamneses||[]).filter(r=>r.tipo===tipo && r.finalizado);
@@ -6762,6 +6763,8 @@ function openPatientForm(p){
   <div style="margin-top:16px"><button class="btn-p">Salvar</button> <button type="button" id="btnCancelPatient" class="btn-s">Cancelar</button></div>
   </form></div>`;
   document.getElementById('btnCancelPatient').addEventListener('click',()=>{ document.getElementById('patientFormArea').innerHTML=''; });
+  // o formulário aparece no topo da lista: leva a tela até ele e põe o cursor no nome
+  setTimeout(()=>{ const ar=document.getElementById('patientFormArea'); if(ar&&ar.scrollIntoView) ar.scrollIntoView({behavior:'smooth',block:'start'}); const n=document.getElementById('pNome'); if(n) try{ n.focus({preventScroll:true}); }catch(e){ n.focus(); } },30);
   document.getElementById('fPatient').addEventListener('submit', ev=>{
     ev.preventDefault();
     const data={
