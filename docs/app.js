@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.29.1';
+const APP_VERSION='2.30.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -700,6 +700,8 @@ function renderOrcamento(p){
     <h3 style="margin:0">Orçamento — ${esc(fmtDataBR(o.data))} <span class="badge ${aprovado?'b-dent':perdido||vencido?'b-cinza':'b-recep'}">${aprovado?'Aprovado':perdido?'Não fechado':vencido?'Vencido':'Pendente'}</span>${o.importado?' <span class="tag-pac">Sistema anterior</span>':''}</h3>
     <div>${vencido?`<button class="btn-p" data-orcaval="${o.id}">Agendar nova avaliação</button> ${master?`<button class="btn-s" data-orcreval="${o.id}">Revalidar por mais ${validadeOrcDias()} dias</button> `:''}`:''}${podeFin?`${aprovado||perdido||vencido?'':`<button class="btn-s" data-ajorc="${o.id}">Desconto / acréscimo</button> <button class="btn-p" data-approveorc="${o.id}">Aprovar</button> `}<button class="btn-d" data-delorc="${o.id}">Excluir</button>`:(vencido?'':'<span class="muted">Aprovação pelo administrativo</span>')}</div>
     </div>
+    ${(()=>{ const cm=state.meta&&state.meta.comissoes&&state.meta.comissoes.ativo; if(!cm && !o.dentistaId) return ''; const dd=state.users.find(x=>x.id===o.dentistaId); const pode=podeFin||master;
+      return `<div class="orc-dent"><span class="muted">Dentista responsável:</span> ${pode?`<select data-orcdent="${o.id}" aria-label="Dentista responsável pelo orçamento" style="width:auto;display:inline-block">${'<option value="">Escolha…</option>'+state.users.filter(x=>!x.inativo&&ehDentista(x)).map(x=>`<option value="${x.id}" ${x.id===o.dentistaId?'selected':''}>${esc(nomeExibicao(x))}</option>`).join('')}</select>`:`<strong>${esc(dd?nomeExibicao(dd):'não definido')}</strong>`}${cm?' <span class="muted" style="font-size:12px">· procedimentos ainda não executados contam na comissão dele(a)</span>':''}</div>`; })()}
     <div class="overflow"><table><thead><tr><th>Grupo</th><th>Procedimento</th><th>Referência</th><th>Valor</th></tr></thead>
     <tbody>${rows||'<tr><td colspan="4" class="muted">Nenhum item</td></tr>'}</tbody></table></div>
     ${aj?`<div class="orc-resumo"><div><span>Subtotal</span><span>${fmtMoney(sub)}</span></div><div class="${aj<0?'orc-desc':'orc-acr'}"><span>${aj<0?'Desconto':'Acréscimo'}${o.ajuste&&o.ajuste.modo==='pct'?' ('+fmtPct(o.ajuste.valor)+'%)':''}${o.ajuste&&o.ajuste.motivo?' · '+esc(o.ajuste.motivo):''}</span><span>${aj<0?'− ':'+ '}${fmtMoney(Math.abs(aj))}</span></div></div>`:''}
@@ -1950,6 +1952,7 @@ const RELATORIOS=[
   {id:'inadimplencia', label:'⏰ Inadimplência', perm:'financeiro', fn:()=>repInadimplencia()},
   {id:'fluxoprojetado', label:'📈 Fluxo de caixa projetado', perm:'financeiro', fn:()=>repFluxoProjetado()},
   {id:'comparativo', label:'📊 Comparativo anual', perm:'financeiro', fn:()=>window.repComparativo?repComparativo():''},
+  {id:'comissoes', label:'💼 Comissões', perm:'financeiro', fn:()=>window.repComissoes?repComissoes():''},
   {id:'orcpendentes', label:'📝 Orçamentos pendentes', perm:'pacientes', fn:()=>repOrcPendentes()},
   {id:'tratabertos', label:'🦷 Tratamentos em aberto', perm:'pacientes', fn:()=>repTratAbertos()},
   {id:'evolpendentes', label:'✅ Evoluções pendentes', perm:'pacientes', fn:()=>repEvolPendentes()},
@@ -2058,6 +2061,7 @@ function abrirPagarDespesa(id){
   });
 }
 function desfazerBaixaRetro(e){
+  if(window.comissaoBloqueiaDesfazer){ const m=comissaoBloqueiaDesfazer(e); if(m){ avisar(m); return false; } }
   const b=e.baixaRetro||{};
   if(b.restanteId){
     const rest=state.fluxoFinanceiro.find(x=>x.id===b.restanteId);
@@ -2269,6 +2273,7 @@ function renderConfiguracoesPrincipal(){
   if(perms.procedimentos) subTabs.push({id:'procedimentos', label:'🦷 Procedimentos'});
   subTabs.push({id:'tipodespesas', label:'🧾 Tipo de Despesas'});
   if(perms.financeiro) subTabs.push({id:'taxas', label:'💳 Formas de pagamento'});
+  if(u && u.tipo==='master' && temRecurso('financeiro') && window.comissaoConfigHtml) subTabs.push({id:'comissoes', label:'💼 Comissões'});
   if(perms.usuarios) subTabs.push({id:'backup', label:'💾 Backup'});
   if(u && u.tipo==='master' && window.waLiberado && window.waLiberado()) subTabs.push({id:'whatsapp', label:'💬 WhatsApp automático'});
   if(u && u.tipo==='master' && fichaClinica()) subTabs.push({id:'assinatura', label:'📄 Minha assinatura'});
@@ -2282,6 +2287,7 @@ function renderConfiguracoesPrincipal(){
   else if(configSubTab==='backup') body=renderBackup()+importadorCardHtml();
   else if(configSubTab==='assinatura') body=renderMinhaAssinatura();
   else if(configSubTab==='whatsapp') body=window.waTelaHtml?window.waTelaHtml():'';
+  else if(configSubTab==='comissoes') body=window.comissaoConfigHtml?comissaoConfigHtml():'';
   if(configSubTab==='clinica') body=ficticiosCardHtml()+body;
   return `<h2 style="margin:0 0 10px 0">Configurações</h2><div class="tabs">${bar}</div>${body}`;
 }
@@ -4522,6 +4528,8 @@ function renderDashboard(){
   }
   const resp=(NUVEM&&perms.pacientes)?(state.formularios||[]).filter(f=>f.status==='respondido'):[];
   if(resp.length) pend.push(`<button class="pend" data-formsresp="1"><span><span class="pend-tit">Formulários devolvidos</span><span class="pend-sub">Anamneses e termos assinados pelos pacientes, para revisar</span></span><span class="pend-num">${resp.length}</span></button>`);
+  const cmV=window.comissoesAFecharValor?comissoesAFecharValor():0;
+  if(cmV>0) pend.push(`<button class="pend" data-dashgo="rel:comissoes"><span><span class="pend-tit">Comissões a fechar</span><span class="pend-sub">Recebimentos de dias anteriores ainda sem repasse</span></span><span class="pend-num" style="font-size:15px">${fmtMoney(cmV).replace(',00','')}</span></button>`);
   const nEst=window.estoquePodeVer&&estoquePodeVer()?estoqueAbaixoMinimo():0;
   if(nEst) pend.push(`<button class="pend" data-dashgo="estoque"><span><span class="pend-tit">Materiais para repor</span><span class="pend-sub">Abaixo do estoque mínimo</span></span><span class="pend-num" style="color:var(--warn)">${nEst}</span></button>`);
   const ps=pendenciaSugestoesHtml(); if(ps) pend.push(ps);
@@ -7324,6 +7332,7 @@ function bindEvents(){
   repSel('repOrcDiasSel',el=>{ repOrcDias=parseInt(el.value,10); });
   repSel('repOrcSitSel',el=>{ repOrcSit=el.value; });
   if(currentTab==='relatorios' && relatorioTab==='comparativo' && window.repComparativoLigar) repComparativoLigar();
+  if(currentTab==='relatorios' && relatorioTab==='comissoes' && window.repComissoesLigar) repComissoesLigar();
   repSel('repInadBusca',el=>{ repInadBusca=el.value.trim(); });
   repSel('repInadDe',el=>{ repInadDe=el.value; });
   repSel('repInadAte',el=>{ repInadAte=el.value; });
@@ -7533,6 +7542,7 @@ function bindEvents(){
     if(!permsDe(currentUser()).financeiro){ avisar('Você não tem permissão para alterar valores de orçamento.'); return; }
     const o=p.orcamentos.find(x=>x.id===b.getAttribute('data-ajorc')); if(o && o.status!=='aprovado') abrirAjusteOrcamento(p,o);
   }));
+  document.querySelectorAll('[data-orcdent]').forEach(sel=>sel.addEventListener('change',()=>{ const p=state.patients.find(x=>x.id===patientDetailId); const o=p&&(p.orcamentos||[]).find(x=>x.id===sel.getAttribute('data-orcdent')); if(!o) return; o.dentistaId=sel.value; saveData(); avisarRapido('Dentista responsável salvo.'); }));
   document.querySelectorAll('[data-orcaval]').forEach(b=>b.addEventListener('click',()=>{
     const p=state.patients.find(x=>x.id===patientDetailId); const o=p&&(p.orcamentos||[]).find(x=>x.id===b.getAttribute('data-orcaval')); if(!p) return;
     currentTab='agenda'; agendaViewMode='dia'; patientDetailId=null; render();
@@ -7587,6 +7597,7 @@ function bindEvents(){
   }));
   document.querySelectorAll('[data-undoconf]').forEach(b=>b.addEventListener('click',()=>{
     const e=state.fluxoFinanceiro.find(x=>x.id===b.getAttribute('data-undoconf'));
+    if(window.comissaoBloqueiaDesfazer){ const m=comissaoBloqueiaDesfazer(e); if(m){ avisar(m); return; } }
     if(e.baixaRetro){ if(!desfazerBaixaRetro(e)) return; } else e.confirmado=false;
     saveData(); render();
   }));
@@ -7674,6 +7685,7 @@ function bindEvents(){
     configSubTab=b.getAttribute('data-consub'); render();
   }));
   if(currentTab==='configuracoes' && configSubTab==='whatsapp' && window.waTelaLigar) window.waTelaLigar();
+  if(currentTab==='configuracoes' && configSubTab==='comissoes' && window.comissaoConfigLigar) comissaoConfigLigar();
   if(currentTab==='estoque' && window.estoqueLigar) window.estoqueLigar();
   const btnNewTipoDesp=document.getElementById('btnNewTipoDesp');
   if(btnNewTipoDesp) btnNewTipoDesp.addEventListener('click',()=>openTipoDespForm(null));
@@ -7713,7 +7725,7 @@ function bindEvents(){
     const total=incluidos.reduce((s,it)=>s+(it.valor||0),0);
     p.orcamentos=p.orcamentos||[];
     p.orcamentos.push({id:uid(), data:planoDoc.data, planoId:planoDoc.id, status:'pendente',
-      itens:incluidos.map(it=>({nome:it.nome,especialidade:it.especialidade,ref:it.ref,valor:it.valor})), total});
+      itens:incluidos.map(it=>({recId:it.id,nome:it.nome,especialidade:it.especialidade,ref:it.ref,valor:it.valor})), total, dentistaId:ehDentista(currentUser())?currentUser().id:''});
     saveData();
     patientDetailTab='orcamento';
     render();
