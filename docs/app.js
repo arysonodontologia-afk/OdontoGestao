@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.30.0';
+const APP_VERSION='2.30.1';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());

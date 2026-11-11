@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.30.1', data:'2026-11-11', itens:[
+    'Comissões: linha de total com a soma da base e da comissão de cada dentista',
+    'Comissões futuras: quanto cada dentista ainda tem a receber pelas parcelas que os pacientes ainda vão pagar (com detalhe por vencimento)',
+  ]},
   {v:'2.30.0', data:'2026-11-11', itens:[
     'Comissão dos dentistas por %: o Master define a % de cada especialidade (Configurações → Comissões) e pode abrir exceções por dentista',
     'A comissão é calculada sobre o que o paciente pagou (valor cheio), na proporção dos procedimentos do orçamento; conta para quem executou o procedimento ou, antes disso, para o dentista responsável do orçamento',
