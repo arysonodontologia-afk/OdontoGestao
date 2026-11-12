@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.30.2', data:'2026-11-12', itens:[
+    'Conta Gmail com senha inicial liberada pela clínica: link "Recebi uma senha inicial da clínica" na entrada; no primeiro acesso entra sem criar senha, a senha é retirada e daí em diante entra só pelo Google',
+  ]},
   {v:'2.30.1', data:'2026-11-11', itens:[
     'Comissões: linha de total com a soma da base e da comissão de cada dentista',
     'Comissões futuras: quanto cada dentista ainda tem a receber pelas parcelas que os pacientes ainda vão pagar (com detalhe por vencimento)',
