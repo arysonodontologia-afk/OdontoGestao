@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.32.0', data:'2026-11-12', itens:[
+    'Comissão dos dentistas: agora é calculada pelo valor integral do procedimento e fica devida no atendimento (evolução confirmada), mesmo que o paciente pague parcelado. O que já tinha sido repassado por parcela é descontado, sem pagar em dobro',
+    'Comissões futuras: mostram os procedimentos dos orçamentos aprovados que ainda não foram feitos, pelo valor integral, no nome do dentista responsável',
+  ]},
   {v:'2.31.0', data:'2026-11-12', itens:[
     'Agenda: nova situação "Atendido". Vira Atendido sozinho quando a evolução é confirmada ou quando o paciente estava "Na clínica" e o horário do atendimento terminou; também pode ser marcado à mão (ex.: paciente que não foi marcado como chegou)',
     'Painel: pacientes atendidos no mês (com o número de atendimentos) e ticket médio (recebido no mês ÷ pacientes atendidos)',

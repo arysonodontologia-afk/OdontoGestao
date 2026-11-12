@@ -1,7 +1,9 @@
 // OdontoGestão · Comissão dos dentistas por percentual (definida pelo Master por especialidade, com exceção por dentista).
-// Regra: comissão sobre o RECEBIDO (valor cheio pago pelo paciente, sem descontar taxas), na proporção dos procedimentos
-// do orçamento. O dentista de cada procedimento é quem confirmou a evolução que o executou; enquanto ninguém executou,
-// vale o dentista responsável pelo orçamento. Fechamento diário: gera a despesa "Repasse de comissão" em contas a pagar.
+// Regra (2.32): comissão pelo VALOR INTEGRAL do procedimento, devida no ATENDIMENTO (evolução confirmada), mesmo que o
+// paciente pague parcelado. Valor do procedimento = sua parte no total negociado do orçamento aprovado. O dentista é quem
+// confirmou a evolução; os ainda não executados aparecem em "Comissões futuras" no nome do dentista responsável.
+// Fechamento diário: gera a despesa "Repasse de comissão" em contas a pagar e marca o item do orçamento (i.comissao).
+// Até a 2.31 a comissão era por parcela recebida (e.comissao): o que já foi repassado assim é descontado do item.
 (function(){
 'use strict';
 const CAT='Pessoal';
@@ -21,11 +23,12 @@ function recIdsDoOrc(p,o){
   const pl=(p.planosConfirmados||[]).find(x=>x.id===o.planoId); const inc=pl?(pl.itens||[]).filter(it=>it&&it.incluido!==false):[];
   return (o.itens||[]).map((i,k)=>i.recId || (inc.length===(o.itens||[]).length?inc[k].id:((inc.find(r=>r.nome===i.nome)||{}).id||null)));
 }
-function executor(p,recId){
-  if(!recId) return null; let quem=null;
-  (p.evolucao||[]).forEach(e=>{ if(e.confirmado && !e.falta && e.confirmadoPorId && (typeof refsDaEvol==='function'?refsDaEvol(e):(e.procedimentoRefs||[])).includes(recId)) quem=e.confirmadoPorId; });
-  return quem;
+function execucao(p,recId){
+  if(!recId) return null; let r=null;
+  (p.evolucao||[]).forEach(e=>{ if(e.confirmado && !e.falta && e.confirmadoPorId && (typeof refsDaEvol==='function'?refsDaEvol(e):(e.procedimentoRefs||[])).includes(recId)) r={quem:e.confirmadoPorId,data:e.data||''}; });
+  return r;
 }
+function executor(p,recId){ const r=execucao(p,recId); return r?r.quem:null; }
 function nomeDent(id){ const u=(state.users||[]).find(x=>x.id===id); return u?nomeExibicao(u):'(sem dentista)'; }
 // comissões de uma parcela recebida: [{dentId, esp, base, pct, valor, item}]
 function calcParcela(e){
@@ -34,15 +37,29 @@ function calcParcela(e){
   const itens=o.itens||[]; const tot=itens.reduce((s,i)=>s+(+i.valor||0),0); if(!(tot>0)) return [];
   const bruto=valorQuitado(e), recs=recIdsDoOrc(p,o);
   return itens.map((i,k)=>{ const base=r2(bruto*(+i.valor||0)/tot); const d=executor(p,recs[k])||o.dentistaId||''; const pct=d?pctDe(d,i.especialidade):0;
-    return {dentId:d, esp:i.especialidade||'', base, pct, valor:r2(base*pct/100), item:i.nome, executado:!!executor(p,recs[k])}; }).filter(x=>x.base>0);
+    return {k, dentId:d, esp:i.especialidade||'', base, pct, valor:r2(base*pct/100), item:i.nome, executado:!!executor(p,recs[k])}; }).filter(x=>x.base>0);
 }
-// parcelas recebidas que ainda não entraram em fechamento
+// comissão já repassada por parcela (regra antiga) para cada item do orçamento
+function legado(p,o){
+  const v={}; (state.fluxoFinanceiro||[]).forEach(e=>{ if(e.tipo==='receita' && e.comissao && e.orcamentoId===o.id && e.pacienteId===p.id) calcParcela(e).forEach(x=>{ v[x.k]=r2((v[x.k]||0)+x.valor); }); });
+  return v;
+}
+// comissões dos procedimentos de um orçamento aprovado, pelo valor integral
+function itensOrc(p,o){
+  const itens=o.itens||[]; const soma=itens.reduce((s,i)=>s+(+i.valor||0),0); if(!(soma>0)) return [];
+  const total=o.total!=null?+o.total||0:soma, recs=recIdsDoOrc(p,o), leg=legado(p,o);
+  return itens.map((i,k)=>{ const ex=execucao(p,recs[k]); const base=r2(total*(+i.valor||0)/soma); const d=(ex&&ex.quem)||o.dentistaId||''; const pct=d?pctDe(d,i.especialidade):0;
+    const cheio=r2(base*pct/100), ja=Math.min(cheio,leg[k]||0);
+    return {p,o,i,k, dentId:d, esp:i.especialidade||'', base, pct, cheio, ja, valor:r2(cheio-ja), item:i.nome, executado:!!ex, data:ex?ex.data:''}; }).filter(x=>x.base>0);
+}
+function orcsAprovados(){ const l=[]; (state.patients||[]).forEach(p=>(p.orcamentos||[]).forEach(o=>{ if(o.status==='aprovado') l.push({p,o}); })); return l; }
+// procedimentos atendidos (evolução confirmada) que ainda não entraram em fechamento
 function aFechar(ate){
   const c=cfg(); if(!c.ativo) return [];
-  return (state.fluxoFinanceiro||[]).filter(e=>e.tipo==='receita' && e.confirmado && !e.aporte && e.orcamentoId && !e.comissao && (e.dataPagamento||'')>=(c.inicio||'0000') && (e.dataPagamento||'')<=ate)
-    .map(e=>({e, linhas:calcParcela(e)})).filter(x=>x.linhas.length);
+  const l=[]; orcsAprovados().forEach(({p,o})=>itensOrc(p,o).forEach(x=>{ if(x.executado && !x.i.comissao && x.data>=(c.inicio||'0000') && x.data<=ate && x.valor>0) l.push(x); }));
+  return l;
 }
-window.comissoesAFecharValor=function(){ if(!liberado()||!podeFin()||!cfg().ativo) return 0; return r2(aFechar(addDaysStr(hojeISO(),-1)).reduce((s,x)=>s+x.linhas.reduce((t,l)=>t+l.valor,0),0)); };
+window.comissoesAFecharValor=function(){ if(!liberado()||!podeFin()||!cfg().ativo) return 0; return r2(aFechar(addDaysStr(hojeISO(),-1)).reduce((s,x)=>s+(x.dentId?x.valor:0),0)); };
 window.comissaoBloqueiaDesfazer=function(e){ if(e && e.comissao){ return 'A comissão desta parcela já entrou no repasse de '+fmtDataBR(e.comissao.ate)+'. Desfaça esse fechamento em Relatórios → Comissões antes de desfazer o pagamento.'; } return ''; };
 
 // ---- Configurações → Comissões (só Master) ----
@@ -51,10 +68,10 @@ window.comissaoConfigHtml=function(){
   if(!souMaster()) return '<div class="card"><p class="muted">Só o Master define as comissões.</p></div>';
   const c=cfg(), esps=especialidades(), ds=dentistas();
   return `<div class="card"><h3 style="margin:0 0 4px">Comissão dos dentistas</h3>
-    <p class="muted" style="margin:0 0 10px">O dentista recebe a % da especialidade sobre o que o paciente <strong>pagou</strong> (valor cheio, sem descontar taxas), na proporção de cada procedimento do orçamento. O procedimento conta para quem confirmou a evolução que o executou; antes disso, para o dentista responsável pelo orçamento. Todo dia você fecha as comissões em <strong>Relatórios → Comissões</strong> e o sistema lança o repasse em contas a pagar.</p>
+    <p class="muted" style="margin:0 0 10px">O dentista recebe a % da especialidade sobre o <strong>valor integral</strong> de cada procedimento do orçamento aprovado, no <strong>atendimento</strong> (evolução confirmada), mesmo que o paciente pague parcelado. A comissão é de quem confirmou a evolução; os procedimentos ainda não feitos aparecem como comissão futura do dentista responsável pelo orçamento. Todo dia você fecha as comissões em <strong>Relatórios → Comissões</strong> e o sistema lança o repasse em contas a pagar.</p>
     <form id="fComis">
     <div class="row"><div><label class="chk-linha" style="margin-top:6px"><input type="checkbox" id="cmAtivo" ${c.ativo?'checked':''} style="width:auto"> Calcular comissões</label></div>
-      <div><label for="cmInicio">Contar pagamentos a partir de</label><input id="cmInicio" type="date" value="${esc(c.inicio||hojeISO())}"></div></div>
+      <div><label for="cmInicio">Contar atendimentos a partir de</label><input id="cmInicio" type="date" value="${esc(c.inicio||hojeISO())}"></div></div>
     <h4 style="margin:14px 0 6px">% padrão por especialidade</h4>
     <div class="overflow"><table class="cm-t"><thead><tr><th>Especialidade</th><th>% padrão</th></tr></thead><tbody>
       ${esps.map(es=>`<tr><td>${esc(es)}</td><td><input data-cmpad="${esc(es)}" inputmode="decimal" value="${c.padrao[es]!=null?esc(String(c.padrao[es]).replace('.',',')):''}" placeholder="0" style="width:90px" aria-label="% padrão de ${esc(es)}"> %</td></tr>`).join('')}
@@ -78,38 +95,40 @@ window.comissaoConfigLigar=function(){
 
 // ---- Relatórios → Comissões (fechamento diário) ----
 let ateSel='', abertoDet=new Set(), abertoFut=new Set();
-// parcelas ainda não pagas dos orçamentos: comissão futura (a receber), calculada pelo valor da parcela
-function futuras(){ return (state.fluxoFinanceiro||[]).filter(e=>e.tipo==='receita' && !e.confirmado && !e.aporte && e.orcamentoId).map(e=>({e, linhas:calcParcela(e)})).filter(x=>x.linhas.length); }
+// procedimentos de orçamentos aprovados ainda não executados: comissão futura do dentista responsável
+function futuras(){ const l=[]; orcsAprovados().forEach(({p,o})=>itensOrc(p,o).forEach(x=>{ if(!x.executado && !x.i.comissao && x.valor>0) l.push(x); })); return l; }
 window.repComissoes=function(){
   const c=cfg();
   if(!c.ativo) return repCard('Comissões dos dentistas','As comissões ainda não estão ligadas.',``,'',`<p>${souMaster()?'Defina as % em <strong>Configurações → Comissões</strong> e marque "Calcular comissões".':'Peça ao Master para definir as comissões em Configurações → Comissões.'}</p>`);
   const hoje=hojeISO(), ate=ateSel||hoje;
   const l=aFechar(ate), por={}, semDent=[];
-  l.forEach(({e,linhas})=>linhas.forEach(x=>{ if(!x.dentId){ semDent.push({e,x}); return; } const g=por[x.dentId]||(por[x.dentId]={tot:0,base:0,lin:[]}); g.tot=r2(g.tot+x.valor); g.base=r2(g.base+x.base); g.lin.push({e,x}); }));
+  l.forEach(x=>{ if(!x.dentId){ semDent.push(x); return; } const g=por[x.dentId]||(por[x.dentId]={tot:0,base:0,lin:[]}); g.tot=r2(g.tot+x.valor); g.base=r2(g.base+x.base); g.lin.push(x); });
   const total=r2(Object.values(por).reduce((s,g)=>s+g.tot,0));
-  const filtros=`<div><label for="cmAte">Fechar recebimentos até</label><input id="cmAte" type="date" value="${esc(ate)}" max="${hoje}"></div>`;
+  const filtros=`<div><label for="cmAte">Fechar atendimentos até</label><input id="cmAte" type="date" value="${esc(ate)}" max="${hoje}"></div>`;
+  const nomeP=x=>esc(x.p.nome||'');
+  const valCel=x=>`${fmtMoney(x.valor)}${x.ja>0?` <span class="muted" style="font-size:11.5px">(${fmtMoney(x.cheio)} − ${fmtMoney(x.ja)} já repassado por parcela)</span>`:''}`;
   const blocos=Object.keys(por).sort((a,b)=>nomeDent(a).localeCompare(nomeDent(b))).map(d=>{ const g=por[d];
-    return `<details class="cm-dent" ${abertoDet.has(d)?'open':''} data-cmdet="${d}"><summary><strong>${esc(nomeDent(d))}</strong> · ${fmtMoney(g.tot)} <span class="muted">sobre ${fmtMoney(g.base)} recebidos</span></summary>
-      <div class="overflow"><table><thead><tr><th>Pago em</th><th>Paciente</th><th>Procedimento</th><th>Especialidade</th><th>Base</th><th>%</th><th>Comissão</th></tr></thead><tbody>
-      ${g.lin.sort((a,b)=>a.e.dataPagamento.localeCompare(b.e.dataPagamento)).map(({e,x})=>`<tr><td>${fmtDataBR(e.dataPagamento)}</td><td>${esc((pacPorId(e.pacienteId)||{}).nome||e.pacienteNome||'')}</td><td>${esc(x.item)}${x.executado?'':' <span class="muted" style="font-size:11.5px">(responsável)</span>'}</td><td>${esc(x.esp)}</td><td>${fmtMoney(x.base)}</td><td>${pctFmt(x.pct)}</td><td>${fmtMoney(x.valor)}</td></tr>`).join('')}
+    return `<details class="cm-dent" ${abertoDet.has(d)?'open':''} data-cmdet="${d}"><summary><strong>${esc(nomeDent(d))}</strong> · ${fmtMoney(g.tot)} <span class="muted">sobre ${fmtMoney(g.base)} em procedimentos</span></summary>
+      <div class="overflow"><table><thead><tr><th>Atendido em</th><th>Paciente</th><th>Procedimento</th><th>Especialidade</th><th>Valor do procedimento</th><th>%</th><th>Comissão</th></tr></thead><tbody>
+      ${g.lin.sort((a,b)=>a.data.localeCompare(b.data)).map(x=>`<tr><td>${fmtDataBR(x.data)}</td><td>${nomeP(x)}</td><td>${esc(x.item)}</td><td>${esc(x.esp)}</td><td>${fmtMoney(x.base)}</td><td>${pctFmt(x.pct)}</td><td>${valCel(x)}</td></tr>`).join('')}
       <tr class="cm-tot"><td colspan="4">Total</td><td>${fmtMoney(g.base)}</td><td></td><td>${fmtMoney(g.tot)}</td></tr>
       </tbody></table></div></details>`; }).join('');
-  const aviso=semDent.length?`<p class="cm-aviso">⚠️ ${semDent.length} procedimento(s) recebido(s) sem dentista definido: ${fmtMoney(r2(semDent.reduce((s,y)=>s+y.x.base,0)))}. Defina o <strong>dentista responsável</strong> no orçamento do paciente (aba Orçamento) para entrarem na comissão.${[...new Set(semDent.map(y=>y.e.pacienteId))].slice(0,6).map(pid=>{ const p=pacPorId(pid); return p?` ${repPacBtn(p,'orcamento')}`:''; }).join('')}</p>`:'';
+  const aviso=semDent.length?`<p class="cm-aviso">⚠️ ${semDent.length} procedimento(s) atendido(s) sem dentista definido: ${fmtMoney(r2(semDent.reduce((s,x)=>s+x.base,0)))}. Defina o <strong>dentista responsável</strong> no orçamento do paciente (aba Orçamento) para entrarem na comissão.${[...new Set(semDent.map(x=>x.p))].slice(0,6).map(p=>` ${repPacBtn(p,'orcamento')}`).join('')}</p>`:'';
   const fut=futuras(), porF={};
-  fut.forEach(({e,linhas})=>linhas.forEach(x=>{ if(!x.dentId) return; const g=porF[x.dentId]||(porF[x.dentId]={tot:0,base:0,lin:[]}); g.tot=r2(g.tot+x.valor); g.base=r2(g.base+x.base); g.lin.push({e,x}); }));
-  const totF=r2(Object.values(porF).reduce((t,g)=>t+g.tot,0)), baseF=r2(Object.values(porF).reduce((t,g)=>t+g.base,0)), hj=hojeISO();
-  const futHtml=Object.keys(porF).length?`<h4 style="margin:20px 0 4px">Comissões futuras</h4><p class="muted" style="margin:0 0 8px;font-size:13px">Parcelas dos orçamentos que os pacientes ainda vão pagar: é o que cada dentista ainda tem a receber, se tudo for pago. Só informativo; entra no fechamento quando o paciente pagar.</p>
-    <p style="margin:0 0 8px"><strong>Total a receber pelos dentistas:</strong> ${fmtMoney(totF)} <span class="muted">sobre ${fmtMoney(baseF)} a receber dos pacientes</span></p>`
+  fut.forEach(x=>{ if(!x.dentId) return; const g=porF[x.dentId]||(porF[x.dentId]={tot:0,base:0,lin:[]}); g.tot=r2(g.tot+x.valor); g.base=r2(g.base+x.base); g.lin.push(x); });
+  const totF=r2(Object.values(porF).reduce((t,g)=>t+g.tot,0)), baseF=r2(Object.values(porF).reduce((t,g)=>t+g.base,0));
+  const futHtml=Object.keys(porF).length?`<h4 style="margin:20px 0 4px">Comissões futuras</h4><p class="muted" style="margin:0 0 8px;font-size:13px">Procedimentos de orçamentos aprovados que ainda não foram feitos: é o que cada dentista ainda tem a receber pelo valor integral. Só informativo; entra no fechamento quando a evolução for confirmada (vale para quem confirmar).</p>
+    <p style="margin:0 0 8px"><strong>Total a receber pelos dentistas:</strong> ${fmtMoney(totF)} <span class="muted">sobre ${fmtMoney(baseF)} em procedimentos a fazer</span></p>`
     +Object.keys(porF).sort((a,b)=>nomeDent(a).localeCompare(nomeDent(b))).map(d=>{ const g=porF[d];
       return `<details class="cm-dent" ${abertoFut.has(d)?'open':''} data-cmfut="${d}"><summary><strong>${esc(nomeDent(d))}</strong> · ainda a receber ${fmtMoney(g.tot)} <span class="muted">sobre ${fmtMoney(g.base)}</span></summary>
-      <div class="overflow"><table><thead><tr><th>Vencimento</th><th>Paciente</th><th>Procedimento</th><th>Especialidade</th><th>Base</th><th>%</th><th>Comissão</th></tr></thead><tbody>
-      ${g.lin.sort((a,b)=>(a.e.vencimento||'').localeCompare(b.e.vencimento||'')).map(({e,x})=>`<tr><td>${fmtDataBR(e.vencimento)}${e.vencimento<hj?' <span class="sit sit-faltou">vencida</span>':''}</td><td>${esc((pacPorId(e.pacienteId)||{}).nome||e.pacienteNome||'')}</td><td>${esc(x.item)}${x.executado?'':' <span class="muted" style="font-size:11.5px">(responsável)</span>'}</td><td>${esc(x.esp)}</td><td>${fmtMoney(x.base)}</td><td>${pctFmt(x.pct)}</td><td>${fmtMoney(x.valor)}</td></tr>`).join('')}
+      <div class="overflow"><table><thead><tr><th>Aprovado em</th><th>Paciente</th><th>Procedimento</th><th>Especialidade</th><th>Valor do procedimento</th><th>%</th><th>Comissão</th></tr></thead><tbody>
+      ${g.lin.sort((a,b)=>(a.o.dataAprovacao||a.o.data||'').localeCompare(b.o.dataAprovacao||b.o.data||'')).map(x=>`<tr><td>${fmtDataBR(x.o.dataAprovacao||x.o.data)}</td><td>${nomeP(x)}</td><td>${esc(x.item)}</td><td>${esc(x.esp)}</td><td>${fmtMoney(x.base)}</td><td>${pctFmt(x.pct)}</td><td>${valCel(x)}</td></tr>`).join('')}
       <tr class="cm-tot"><td colspan="4">Total</td><td>${fmtMoney(g.base)}</td><td></td><td>${fmtMoney(g.tot)}</td></tr></tbody></table></div></details>`; }).join(''):'';
   const repasses=(state.fluxoFinanceiro||[]).filter(e=>e.repasse).sort((a,b)=>(b.repasse.ate||'').localeCompare(a.repasse.ate||'')||(b.repasse.em||'').localeCompare(a.repasse.em||'')).slice(0,30);
   const hist=repasses.length?`<h4 style="margin:18px 0 6px">Fechamentos anteriores</h4><div class="overflow"><table><thead><tr><th>Até</th><th>Dentista</th><th>Valor</th><th>Situação</th><th></th></tr></thead><tbody>
     ${repasses.map(e=>`<tr><td>${fmtDataBR(e.repasse.ate)}</td><td>${esc(nomeDent(e.repasse.dentistaId))}</td><td>${fmtMoney(e.valor)}</td><td>${e.confirmado?`<span class="badge b-dent">Pago em ${fmtDataBR(e.dataPagamento)}</span>`:'<span class="badge b-harm">A pagar</span>'}</td><td>${e.confirmado?'':`<button class="btn-s peq" data-cmdesf="${e.id}">Desfazer fechamento</button>`}</td></tr>`).join('')}</tbody></table></div>`:'';
-  return repCard('Comissões dos dentistas',`Comissão sobre o que os pacientes pagaram (valor cheio), pela % de cada especialidade. Feche todos os dias: o sistema lança o repasse de cada dentista em contas a pagar (categoria ${CAT}).`,filtros,
-    `<strong>A fechar até ${fmtDataBR(ate)}:</strong> ${fmtMoney(total)} &nbsp;·&nbsp; <strong>Dentistas:</strong> ${Object.keys(por).length} &nbsp;·&nbsp; <strong>Pagamentos:</strong> ${l.length}`,
+  return repCard('Comissões dos dentistas',`Comissão pelo valor integral dos procedimentos atendidos (evolução confirmada), mesmo com o paciente pagando parcelado, pela % de cada especialidade. Feche todos os dias: o sistema lança o repasse de cada dentista em contas a pagar (categoria ${CAT}).`,filtros,
+    `<strong>A fechar até ${fmtDataBR(ate)}:</strong> ${fmtMoney(total)} &nbsp;·&nbsp; <strong>Dentistas:</strong> ${Object.keys(por).length} &nbsp;·&nbsp; <strong>Procedimentos:</strong> ${l.length}`,
     aviso+(blocos||'<p class="muted">Nenhuma comissão a fechar até essa data.</p>')+(total>0&&podeFin()?`<div style="margin-top:12px"><button class="btn-p" data-cmfechar>Fechar e lançar repasses (${fmtMoney(total)})</button></div>`:'')+futHtml+hist);
 };
 window.repComissoesLigar=function(){
@@ -118,14 +137,13 @@ window.repComissoesLigar=function(){
   document.querySelectorAll('[data-cmdet]').forEach(d=>d.addEventListener('toggle',()=>{ const id=d.getAttribute('data-cmdet'); if(d.open) abertoDet.add(id); else abertoDet.delete(id); }));
   document.querySelectorAll('[data-cmfechar]').forEach(b=>b.addEventListener('click',()=>{
     const ate=ateSel||hojeISO(), l=aFechar(ate); if(!l.length) return;
-    const por={}; l.forEach(({linhas})=>linhas.forEach(x=>{ if(x.dentId) por[x.dentId]=r2((por[x.dentId]||0)+x.valor); }));
+    const por={}; l.forEach(x=>{ if(x.dentId) por[x.dentId]=r2((por[x.dentId]||0)+x.valor); });
     const tot=r2(Object.values(por).reduce((s,v)=>s+v,0));
-    confirmarAcao(`Fechar as comissões recebidas até ${fmtDataBR(ate)} e lançar ${Object.keys(por).length} repasse(s), total ${fmtMoney(tot)}, em contas a pagar?`,'Fechar',()=>{
+    confirmarAcao(`Fechar as comissões dos atendimentos até ${fmtDataBR(ate)} e lançar ${Object.keys(por).length} repasse(s), total ${fmtMoney(tot)}, em contas a pagar?`,'Fechar',()=>{
       const em=new Date().toISOString(), ids={};
       Object.keys(por).forEach(d=>{ if(!(por[d]>0)) return; const id=uid(); ids[d]=id;
         state.fluxoFinanceiro.push({id,tipo:'despesa',categoria:CAT,label:'Repasse de comissão · '+nomeDent(d)+' · até '+fmtDataBR(ate),fornecedor:nomeDent(d),valor:por[d],vencimento:ate>hojeISO()?hojeISO():ate,confirmado:false,dataPagamento:'',repasse:{dentistaId:d,ate,em}}); });
-      l.forEach(({e,linhas})=>{ const v={}; linhas.forEach(x=>{ if(x.dentId) v[x.dentId]=r2((v[x.dentId]||0)+x.valor); });
-        if(!Object.keys(v).length) return; e.comissao={ate,em,valores:v,repasses:Object.keys(v).map(d=>ids[d]).filter(Boolean)}; });
+      l.forEach(x=>{ if(x.dentId && ids[x.dentId]) x.i.comissao={ate,em,dentistaId:x.dentId,valor:x.valor,base:x.base,pct:x.pct,repasse:ids[x.dentId]}; });
       saveData(); render(); avisarRapido('Repasses lançados em contas a pagar.'); });
   }));
   document.querySelectorAll('[data-cmdesf]').forEach(b=>b.addEventListener('click',()=>{
@@ -137,6 +155,7 @@ window.repComissoesLigar=function(){
       const set=new Set(irmaos.map(x=>x.id));
       state.fluxoFinanceiro=state.fluxoFinanceiro.filter(x=>!set.has(x.id));
       state.fluxoFinanceiro.forEach(x=>{ if(x.comissao&&x.comissao.em===em) delete x.comissao; });
+      (state.patients||[]).forEach(p=>(p.orcamentos||[]).forEach(o=>(o.itens||[]).forEach(i=>{ if(i.comissao&&i.comissao.em===em) delete i.comissao; })));
       saveData(); render(); });
   }));
 };

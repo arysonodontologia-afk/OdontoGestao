@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.31.0';
+const APP_VERSION='2.32.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -4548,7 +4548,7 @@ function renderDashboard(){
   const resp=(NUVEM&&perms.pacientes)?(state.formularios||[]).filter(f=>f.status==='respondido'):[];
   if(resp.length) pend.push(`<button class="pend" data-formsresp="1"><span><span class="pend-tit">Formulários devolvidos</span><span class="pend-sub">Anamneses e termos assinados pelos pacientes, para revisar</span></span><span class="pend-num">${resp.length}</span></button>`);
   const cmV=window.comissoesAFecharValor?comissoesAFecharValor():0;
-  if(cmV>0) pend.push(`<button class="pend" data-dashgo="rel:comissoes"><span><span class="pend-tit">Comissões a fechar</span><span class="pend-sub">Recebimentos de dias anteriores ainda sem repasse</span></span><span class="pend-num" style="font-size:15px">${fmtMoney(cmV).replace(',00','')}</span></button>`);
+  if(cmV>0) pend.push(`<button class="pend" data-dashgo="rel:comissoes"><span><span class="pend-tit">Comissões a fechar</span><span class="pend-sub">Atendimentos de dias anteriores ainda sem repasse</span></span><span class="pend-num" style="font-size:15px">${fmtMoney(cmV).replace(',00','')}</span></button>`);
   const nEst=window.estoquePodeVer&&estoquePodeVer()?estoqueAbaixoMinimo():0;
   if(nEst) pend.push(`<button class="pend" data-dashgo="estoque"><span><span class="pend-tit">Materiais para repor</span><span class="pend-sub">Abaixo do estoque mínimo</span></span><span class="pend-num" style="color:var(--warn)">${nEst}</span></button>`);
   const ps=pendenciaSugestoesHtml(); if(ps) pend.push(ps);
