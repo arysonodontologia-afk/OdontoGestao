@@ -1061,3 +1061,20 @@ button.sb-sistema:hover{background:var(--nav-hover);border-radius:8px}
 .um-sair{color:var(--danger,#B42318)}
 .um-sair:hover{background:var(--danger-soft)}
 @media (max-width:1100px){ .um-quem{display:none} .um-btn{padding:3px} .um-seta{display:none} }
+/* Agenda: semana em grade (2.34) */
+.gs .gr-dent.gs-dia{background:none;border:none;border-left:1px solid var(--border);border-radius:0;margin:0;cursor:pointer;text-align:left;color:var(--text);font-weight:400}
+.gs .gr-dent.gs-dia:hover{background:var(--surface-2)}
+.gs-num{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;background:var(--surface-3);color:var(--text);flex-shrink:0}
+.gs-dia-hoje .gs-num{background:var(--primary);color:var(--primary-ink)}
+.gs-dia-hoje .gr-dent-nome{color:var(--nav-active-ink)}
+.gr-col.gs-hoje{background-color:color-mix(in srgb,var(--primary) 4%,transparent)}
+.gs-bloco{padding:4px 7px;font-size:12px}
+.gs-bloco .gb-linha{display:flex;gap:5px;align-items:baseline;min-width:0}
+.gs-bloco .gb-linha strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-bloco .gb-motivo{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-dent{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:11.5px;min-width:0}
+.gs-dent span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-av{width:18px!important;height:18px!important;font-size:8.5px!important;flex-shrink:0}
+.gs-agora{position:absolute;left:0;right:0;border-top:2px solid var(--danger-strong);pointer-events:none;z-index:2}
+.gs-agora::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--danger-strong)}
+.legenda.legenda-linha{flex-direction:row;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-left:16px}

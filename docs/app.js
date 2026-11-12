@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.33.1';
+const APP_VERSION='2.34.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -1059,6 +1059,7 @@ function renderAgendaLembretes(){
   ${lista.length?`<div class="overflow"><table><thead><tr><th>Horário</th><th>Paciente</th><th>Telefone</th><th>Dentista</th><th>Situação</th><th>Resposta do paciente</th><th>Lembrete</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nenhum atendimento a lembrar neste dia.</p>'}
   </div>`;
 }
+let agendaSemModo='grade';
 let agendaSelId=null, agendaDiaModo='grade', agDentFiltro='', agendaGradePor='dentista';
 function rotuloPeriodoAgenda(){
   if(agendaViewMode==='lembretes'){ if(!agendaLembData) agendaLembData=addDaysStr(hojeISO(),1); return fmtDiaSemana(agendaLembData)+', '+fmtDataLonga(agendaLembData); }
@@ -1195,9 +1196,57 @@ function miniCalendarioHtml(iso){
   <div class="mini-cal">${['S','T','Q','Q','S','S','D'].map(d=>`<span class="mc-sem">${d}</span>`).join('')}
   ${dias.map(d=>d?`<button class="mc-dia${d===iso?' mc-sel':''}${d===hoje?' mc-hoje':''}" data-gotodia="${d}" aria-label="${fmtDataBR(d)}">${parseInt(d.slice(8),10)}${com.has(d)?'<i></i>':''}</button>`:'<span></span>').join('')}</div>`;
 }
+// Semana em grade: uma coluna por dia; o dentista aparece dentro de cada atendimento
+function renderAgendaSemanaGrade(modos){
+  const week=weekDates(agendaViewDate), hoje=hojeISO();
+  const ativos=(state.agendamentos||[]).filter(a=>week.includes(a.data) && statusAg(a)!=='cancelado');
+  const its=ativos.map(a=>({a,ini:hhmmParaMin(a.horario),fim:hhmmParaMin(a.horario)+duracaoDe(a)}));
+  let ini=24*60, fim=0;
+  week.forEach(d=>{ const hc=horarioDoDia(d); if(hc&&hc.aberto){ ini=Math.min(ini,Math.floor(hhmmParaMin(hc.ini)/60)*60); fim=Math.max(fim,Math.ceil(hhmmParaMin(hc.fim)/60)*60); } });
+  if(fim<=ini){ ini=8*60; fim=18*60; }
+  its.forEach(i=>{ ini=Math.min(ini,Math.floor(i.ini/60)*60); fim=Math.max(fim,Math.ceil(i.fim/60)*60); });
+  ini=Math.max(0,ini); fim=Math.min(24*60,fim);
+  const pxMin=SLOT_PX/SLOT_MIN, altura=(fim-ini)*pxMin;
+  const horas=[]; for(let m=ini;m<fim;m+=60) horas.push(`<div class="gr-hora" style="height:${60*pxMin}px">${minParaHHMM(m)}</div>`);
+  const iv=(state.clinic&&state.clinic.intervalo)||{};
+  const cols=week.map(d=>{
+    const hc=horarioDoDia(d), fechado=hc && !hc.aberto;
+    const meus=faixasSobrepostas(its.filter(i=>i.a.data===d));
+    const blocos=meus.map(i=>{
+      const a=i.a, st=statusAgExib(a), top=(i.ini-ini)*pxMin+2, h=Math.max(22,(i.fim-i.ini)*pxMin-4);
+      const larg=100/i.nFaixas, esq=i.faixa*larg, curto=h<64, dn=a.dentistaNome||'';
+      const dent=dn?`<span class="gs-dent" title="${esc(dn)}">${avatarHtml(dn,a.dentistaId,"gs-av")}<span>${esc(nomeSaudacao(dn))}</span></span>`:'';
+      return `<button class="gr-bloco gs-bloco gb-${st}${curto?' gr-curto':''}${agendaSelId===a.id?' gr-sel':''}" data-agsel="${a.id}" style="top:${top}px;height:${h}px;left:calc(${esq}% + 3px);width:calc(${larg}% - 6px)" aria-label="${esc(a.horario+' '+a.pacienteNome+', '+motivoAg(a)+', '+dn+', '+AG_STATUS[st][0])}" title="${esc(a.horario+' · '+a.pacienteNome+' · '+motivoAg(a)+(dn?' · '+dn:''))}">
+        <span class="gb-linha">${h<56&&dn?avatarHtml(dn,a.dentistaId,"gs-av"):''}<span class="gb-h">${esc(a.horario)}</span><strong>${pacNomeBloco(a)}</strong></span>${h>=34?`<span class="gb-proc gb-motivo">${esc(motivoAg(a))}</span>`:''}${h>=56?dent:''}
+      </button>`;
+    }).join('');
+    let pausa='';
+    if(iv.ini && iv.fim && !fechado){ const a1=Math.max(ini,hhmmParaMin(iv.ini)), a2=Math.min(fim,hhmmParaMin(iv.fim)); if(a2>a1) pausa=`<div class="gr-pausa" style="top:${(a1-ini)*pxMin}px;height:${(a2-a1)*pxMin}px"><span>Intervalo</span></div>`; }
+    let fora='';
+    if(fechado) fora=`<div class="gr-fora" style="top:0;height:${altura}px"></div>`;
+    else if(hc && hc.aberto){ const ab=hhmmParaMin(hc.ini), fe=hhmmParaMin(hc.fim); if(ab>ini) fora+=`<div class="gr-fora" style="top:0;height:${(ab-ini)*pxMin}px"></div>`; if(fe<fim) fora+=`<div class="gr-fora" style="top:${(fe-ini)*pxMin}px;height:${(fim-fe)*pxMin}px"></div>`; }
+    let agora='';
+    if(d===hoje){ const m=hhmmParaMin(agoraHHMM()); if(m>=ini && m<=fim) agora=`<div class="gs-agora" style="top:${(m-ini)*pxMin}px" aria-hidden="true"></div>`; }
+    return `<div class="gr-col${d===hoje?' gs-hoje':''}" data-agcol="dia:${d}" data-agini="${ini}" style="height:${altura}px;background-size:100% ${SLOT_PX}px" title="Clique num horário livre para agendar">${fora}${pausa}${blocos}${agora}</div>`;
+  }).join('');
+  const cab=week.map(d=>{ const n=ativos.filter(a=>a.data===d).length, hc=horarioDoDia(d);
+    return `<button type="button" class="gr-dent gs-dia${d===hoje?' gs-dia-hoje':''}" data-gotodia="${d}" title="Abrir o dia ${fmtDataBR(d)}"><span class="gs-num">${parseInt(d.slice(8),10)}</span><div><div class="gr-dent-nome">${esc(fmtDiaSemana(d))}</div><div class="muted">${hc&&!hc.aberto?'Fechado':n?n+' atendimento'+(n===1?'':'s'):'Livre'}</div></div></button>`; }).join('');
+  const tpl=`64px repeat(7,minmax(130px,1fr))`;
+  const sel=agendaSelId?ativos.find(a=>a.id===agendaSelId):null;
+  return `${sel?`<section class="bloco" style="margin-bottom:14px"><div class="bloco-cab"><h2>Atendimento selecionado · ${esc(fmtDiaSemana(sel.data))}, ${fmtDataBR(sel.data)}</h2><button class="btn-icone peq" data-agsel="" aria-label="Fechar" style="margin-left:auto">✕</button></div><div class="bloco-corpo ag-sel-corpo">${agendaCardsList([sel])}</div></section>`:''}
+  <section class="bloco" aria-label="Grade da semana">
+    <div class="bloco-cab"><h2>${ativos.length} atendimento${ativos.length===1?'':'s'} na semana</h2><div class="legenda legenda-linha">${['confirmado','agendado','chegou','nao_vem','faltou','atendido'].map(st=>`<span><i class="gb-${st}"></i>${AG_STATUS[st][0]}</span>`).join('')}</div><div style="margin-left:auto">${modos}</div></div>
+    <div class="gr-rolagem"><div class="gr gs" style="min-width:${64+7*130}px">
+      <div class="gr-topo" style="grid-template-columns:${tpl}"><div></div>${cab}</div>
+      <div class="gr-corpo" style="grid-template-columns:${tpl}"><div class="gr-horas">${horas.join('')}</div>${cols}</div>
+    </div></div>
+  </section>`;
+}
 function renderAgendaSemana(){
+  const modos=`<div class="seg" role="group" aria-label="Modo"><button data-agsemmodo="grade" class="${agendaSemModo==='grade'?'active':''}">Grade</button><button data-agsemmodo="lista" class="${agendaSemModo==='lista'?'active':''}">Lista</button></div>`;
+  if(agendaSemModo==='grade') return renderAgendaSemanaGrade(modos);
   const week=weekDates(agendaViewDate);
-  return week.map(dt=>{
+  return `<div style="display:flex;justify-content:flex-end;margin-bottom:10px">${modos}</div>`+week.map(dt=>{
     const list=(state.agendamentos||[]).filter(a=>a.data===dt).sort((a,b)=>a.horario.localeCompare(b.horario));
     const n=list.filter(a=>statusAg(a)!=='cancelado').length, hoje=dt===hojeISO();
     return `<section class="bloco" style="margin-bottom:14px;${hoje?'border-color:var(--primary)':''}">
@@ -7340,6 +7389,7 @@ function bindEvents(){
   const btnTopNovoAg=document.getElementById('btnTopNovoAg');
   if(btnTopNovoAg) btnTopNovoAg.addEventListener('click',()=>{ currentTab='agenda'; patientDetailId=null; if(agendaViewMode==='lembretes') agendaViewMode='dia'; render(); openAgendamentoForm(null); });
   document.querySelectorAll('[data-agsel]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); const id=b.getAttribute('data-agsel'); agendaSelId=id&&agendaSelId!==id?id:null; render(); }));
+  document.querySelectorAll('[data-agsemmodo]').forEach(b=>b.addEventListener('click',()=>{ agendaSemModo=b.getAttribute('data-agsemmodo'); render(); }));
   document.querySelectorAll('[data-agdiamodo]').forEach(b=>b.addEventListener('click',()=>{ agendaDiaModo=b.getAttribute('data-agdiamodo'); render(); }));
   document.querySelectorAll('[data-aggradepor]').forEach(b=>b.addEventListener('click',()=>{ agendaGradePor=b.getAttribute('data-aggradepor'); render(); }));
   document.querySelectorAll('[data-agdent]').forEach(b=>b.addEventListener('click',()=>{ agDentFiltro=b.getAttribute('data-agdent'); render(); }));
@@ -7352,11 +7402,13 @@ function bindEvents(){
     if(e.target!==col) return;
     const ini=parseInt(col.getAttribute('data-agini'),10), y=e.offsetY;
     const m=ini+Math.floor(y/SLOT_PX)*SLOT_MIN;
+    const colId0=col.getAttribute('data-agcol'); if(colId0.indexOf('dia:')===0) agendaViewDate=colId0.slice(4);
     openAgendamentoForm(null);
     const h=document.getElementById('agHorarioForm'), d=document.getElementById('agDentista');
     if(h) h.value=minParaHHMM(m);
     const colId=col.getAttribute('data-agcol');
-    if(colId.indexOf('cad:')===0){ const c=document.getElementById('agCadeira'); if(c) c.value=colId.slice(4); }
+    if(colId.indexOf('dia:')===0){}
+    else if(colId.indexOf('cad:')===0){ const c=document.getElementById('agCadeira'); if(c) c.value=colId.slice(4); }
     else if(d && [...d.options].some(o=>o.value===colId)) d.value=colId;
     const area=document.getElementById('agendaFormArea'); if(area) area.scrollIntoView({behavior:'smooth',block:'start'});
   }));
