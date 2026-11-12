@@ -995,3 +995,69 @@ tr.pf-venc td{color:var(--danger)}
 .cx-saldo td{font-weight:700;border-top:1px solid var(--border)}
 .cm-t td{padding:5px 8px}.cm-dent{border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0}.cm-dent summary{cursor:pointer}.cm-aviso{background:var(--warn-soft);border-radius:10px;padding:8px 12px;font-size:13.5px}.orc-dent{margin:8px 0 4px;font-size:13.5px}
 .cm-tot td{font-weight:700;border-top:2px solid var(--border)}
+
+/* ===== Menu lateral 2.33: marca da clínica, recolher, sistema no rodapé, menu do usuário ===== */
+.sidebar{transition:width .22s ease,padding .22s ease;gap:20px}
+.sb-clinica-marca{display:flex;align-items:center;gap:12px;padding:12px 10px;border-radius:14px;background:linear-gradient(135deg,var(--nav-active) 0%,transparent 120%);border:1px solid var(--nav-line);position:relative;overflow:hidden}
+.sb-clinica-marca::after{content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;background:var(--primary);opacity:.07;pointer-events:none}
+.sbc-logo{width:46px;height:46px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.sbc-img{background:#fff;box-shadow:0 1px 3px rgba(15,26,36,.12);padding:3px;box-sizing:border-box}
+.sbc-img img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.sbc-mono{background:linear-gradient(140deg,var(--primary),var(--nav-active-ink));color:var(--primary-ink);font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:600;letter-spacing:.04em;box-shadow:0 2px 8px rgba(11,107,102,.25)}
+.sbc-txt{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.sbc-sobre{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--nav-active-ink);margin-bottom:2px}
+.sbc-nome{font-family:Georgia,"Times New Roman",serif;font-size:16.5px;font-weight:600;color:var(--nav-ink-strong);letter-spacing:-.005em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sb-grupo-rot{font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;padding:0 12px 6px}
+.sidebar nav button{position:relative;transition:background .15s ease,color .15s ease,padding .15s ease}
+.sidebar nav button .sb-ico{transition:transform .18s ease}
+.sidebar nav button:hover .sb-ico{transform:scale(1.12)}
+.sidebar nav button.active::before{content:"";position:absolute;left:-14px;top:7px;bottom:7px;width:4px;border-radius:0 4px 4px 0;background:var(--nav-active-ink)}
+.sidebar nav button.active .sb-ico{color:var(--nav-active-ink)}
+.sb-rot{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-rodape{gap:8px}
+.sb-recolher{display:flex;align-items:center;gap:10px;background:none;border:none;color:var(--nav-muted);font-size:13px;font-weight:500;padding:7px 10px;border-radius:8px;cursor:pointer;width:100%;text-align:left}
+.sb-recolher:hover{background:var(--nav-hover);color:var(--nav-ink-strong)}
+.sb-recolher svg{width:18px;height:18px;flex-shrink:0;transition:transform .22s ease}
+button.sb-sistema{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-top:1px solid var(--nav-line);border-radius:0;margin-top:2px;text-decoration:none!important}
+button.sb-sistema:hover{background:var(--nav-hover);border-radius:8px}
+.sb-sis-logo{width:26px;height:26px;border-radius:7px;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sb-sis-logo svg{width:15px;height:15px;color:var(--primary-ink)}
+.sb-sistema .sb-rot{display:flex;flex-direction:column;line-height:1.25}
+.sb-sis-nome{font-size:12.5px;font-weight:700;color:var(--nav-ink-strong);letter-spacing:-.01em}
+.sb-sis-ver{font-size:11px;color:var(--nav-muted);font-weight:500}
+/* recolhido */
+.sidebar.sb-mini{width:76px;padding-left:12px;padding-right:12px}
+.sb-mini .sb-rot,.sb-mini .sb-grupo-rot,.sb-mini .sb-cont,.sb-mini .sb-embreve{display:none}
+.sb-mini .sb-grupo{border-top:1px solid var(--nav-line);padding-top:10px}
+.sb-mini nav .sb-grupo:first-child{border-top:none;padding-top:0}
+.sb-mini .sb-clinica-marca{padding:4px;justify-content:center;background:none;border:none}
+.sb-mini .sb-clinica-marca::after{display:none}
+.sb-mini nav button{justify-content:center;padding:10px 0}
+.sb-mini nav button.active::before{left:-12px}
+.sb-mini .sb-recolher,.sb-mini button.sb-sistema{justify-content:center;padding-left:0;padding-right:0}
+.sb-mini .sb-recolher svg{transform:rotate(180deg)}
+/* menu do usuário (canto superior direito) */
+.um-wrap{position:relative}
+.um-btn{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px 10px 4px 4px;cursor:pointer;color:var(--text);margin:0;transition:box-shadow .15s ease,border-color .15s ease}
+.um-btn:hover,.um-btn[aria-expanded="true"]{border-color:var(--primary);box-shadow:0 0 0 3px var(--nav-active)}
+.um-btn .avatar{width:32px;height:32px;font-size:12.5px}
+.um-quem{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;max-width:150px}
+.um-quem .um-nome{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.um-quem .um-tipo{font-size:11px;color:var(--text-2)}
+.um-seta{width:16px;height:16px;color:var(--text-2);transition:transform .18s ease}
+.um-btn[aria-expanded="true"] .um-seta{transform:rotate(180deg)}
+.um-menu{position:absolute;right:0;top:calc(100% + 8px);width:290px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 32px rgba(15,26,36,.16);padding:8px;z-index:30;animation:umEntra .16s ease}
+@keyframes umEntra{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.um-topo{display:flex;gap:11px;align-items:center;padding:8px 8px 12px;border-bottom:1px solid var(--border)}
+.um-topo .um-av{width:42px;height:42px;font-size:15px;flex-shrink:0}
+.um-topo .um-nome{font-weight:700;font-size:14px}
+.um-topo .um-tipo,.um-topo .um-email{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.um-sec{padding:10px 8px;border-bottom:1px solid var(--border)}
+.um-rot{font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--text-2);margin-bottom:6px}
+.um-item{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;text-align:left;padding:9px 10px;margin:4px 0 0;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--text);cursor:pointer}
+.um-item svg{width:18px;height:18px;flex-shrink:0}
+.um-item:hover{background:var(--surface-2,var(--nav-hover))}
+.um-ver{margin-left:auto;font-size:11.5px;color:var(--text-2)}
+.um-sair{color:var(--danger,#B42318)}
+.um-sair:hover{background:var(--danger-soft)}
+@media (max-width:1100px){ .um-quem{display:none} .um-btn{padding:3px} .um-seta{display:none} }

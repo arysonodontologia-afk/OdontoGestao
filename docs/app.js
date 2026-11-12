@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.32.0';
+const APP_VERSION='2.33.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -4404,6 +4404,45 @@ function bindBuscaGlobal(){
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey) && (e.key==='k'||e.key==='K')){ const i=document.getElementById('buscaInput'); if(i){ e.preventDefault(); i.focus(); i.select(); } }
 });
+// ---- Menu lateral: marca da clínica, modo recolhido e menu do usuário (2.33) ----
+function sbMini(){ try{ return localStorage.getItem('odonto-sb-mini')==='1'; }catch(e){ return false; } }
+function partesNomeClinica(nome){
+  const n=String(nome||'').trim(); const m=n.match(/^(cl[ií]nica|consult[oó]rio|odontologia|centro odontol[oó]gico|instituto)\s+(.+)$/i);
+  if(!m) return {sobre:'',nome:n};
+  const t=m[1].toLowerCase(); const sobre=t.startsWith('cl')?'Clínica':t.startsWith('consult')?'Consultório':t.startsWith('odonto')?'Odontologia':t.startsWith('centro')?'Centro Odontológico':'Instituto';
+  return {sobre, nome:m[2]};
+}
+function monogramaClinica(nome){
+  const ps=partesNomeClinica(nome).nome.split(/\s+/).filter(w=>w && !/^(dr|dra|dr\.|dra\.|de|da|do|das|dos|e)$/i.test(w));
+  return ((ps[0]||'O')[0]+(ps.length>1?ps[ps.length-1][0]:'')).toUpperCase();
+}
+function marcaClinicaHtml(){
+  const c=state.clinic||{}, pn=partesNomeClinica(c.nome);
+  const img=c.logo?`<span class="sbc-logo sbc-img"><img src="${c.logo}" alt=""></span>`:`<span class="sbc-logo sbc-mono" aria-hidden="true">${esc(monogramaClinica(c.nome))}</span>`;
+  return `<div class="sb-clinica-marca" title="${esc(c.nome||'')}">${img}<div class="sbc-txt sb-rot">${pn.sobre?`<span class="sbc-sobre">${esc(pn.sobre)}</span>`:''}<span class="sbc-nome">${esc(pn.nome||'Minha clínica')}</span></div></div>`;
+}
+let menuUsuarioAberto=false;
+function menuUsuarioHtml(u){
+  const c=state.clinic||{};
+  return `<div class="um-wrap"><button type="button" class="um-btn" id="btnUserMenu" aria-haspopup="menu" aria-expanded="${menuUsuarioAberto}" title="${esc(nomeExibicao(u))}">${avatarHtml(u.nomeCompleto,u.id)}<span class="um-quem"><span class="um-nome">${esc(nomeExibicao(u))}</span><span class="um-tipo">${tipoLabel(u.tipo)}</span></span><svg class="um-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="um-menu" role="menu" ${menuUsuarioAberto?'':'hidden'}>
+      <div class="um-topo">${avatarHtml(u.nomeCompleto,u.id,'um-av')}<div style="min-width:0"><div class="um-nome">${esc(nomeExibicao(u))}</div><div class="um-tipo">${tipoLabel(u.tipo)} · ${esc(c.nome||'')}</div>${u.email?`<div class="um-email">${esc(u.email)}</div>`:''}</div></div>
+      <div class="um-sec"><div class="um-rot">Aparência</div>${temaSegHtml()}</div>
+      <button type="button" class="um-item" role="menuitem" data-novidades><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg><span>Novidades da versão</span><span class="um-ver">${esc(APP_VERSION)}</span></button>
+      <button type="button" class="um-item um-sair" role="menuitem" id="btnLogout">${ICONES.sair}<span>Sair</span></button>
+    </div></div>`;
+}
+function ligarMenuLateral(){
+  const r=document.getElementById('sbRecolher');
+  if(r) r.addEventListener('click',()=>{ try{ localStorage.setItem('odonto-sb-mini',sbMini()?'0':'1'); }catch(e){} render(); });
+  const b=document.getElementById('btnUserMenu'); if(!b) return;
+  const menu=b.parentNode.querySelector('.um-menu');
+  const abrir=v=>{ menuUsuarioAberto=v; menu.hidden=!v; b.setAttribute('aria-expanded',String(v)); };
+  b.addEventListener('click',e=>{ e.stopPropagation(); abrir(menu.hidden); });
+  menu.addEventListener('click',e=>{ if(e.target.closest('[data-tema]')){ e.stopPropagation(); return; } abrir(false); });
+}
+document.addEventListener('click',e=>{ if(!menuUsuarioAberto) return; if(e.target.closest && e.target.closest('.um-wrap')) return; menuUsuarioAberto=false; const m=document.querySelector('.um-menu'); if(m) m.hidden=true; const b=document.getElementById('btnUserMenu'); if(b) b.setAttribute('aria-expanded','false'); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && menuUsuarioAberto){ menuUsuarioAberto=false; const m=document.querySelector('.um-menu'); if(m) m.hidden=true; } });
 function renderApp(){
   const u=currentUser();
   if(!u){
@@ -4415,7 +4454,7 @@ function renderApp(){
   if(!items.find(i=>i.id===currentTab)) currentTab=items[0].id;
   const nAgHoje=(state.agendamentos||[]).filter(a=>a.data===hojeISO() && statusAg(a)!=='cancelado').length;
   const grupos=[]; items.forEach(i=>{ let g=grupos.find(x=>x.nome===i.grupo); if(!g){ g={nome:i.grupo,itens:[]}; grupos.push(g); } g.itens.push(i); });
-  const botao=i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}"${currentTab===i.id?' aria-current="page"':''}><span class="sb-ico">${ICONES[i.id]||''}</span>${esc(i.label)}${i.id==='agenda'&&nAgHoje?`<span class="sb-cont">${nAgHoje}</span>`:''}${i.stub?'<span class="sb-embreve">em breve</span>':''}</button>`;
+  const botao=i=>`<button data-tab="${i.id}" class="${currentTab===i.id?'active':''} ${i.stub?'stub':''}"${currentTab===i.id?' aria-current="page"':''} title="${esc(i.label)}"><span class="sb-ico">${ICONES[i.id]||''}</span><span class="sb-rot">${esc(i.label)}</span>${i.id==='agenda'&&nAgHoje?`<span class="sb-cont">${nAgHoje}</span>`:''}${i.stub?'<span class="sb-embreve">em breve</span>':''}</button>`;
   const sidebar=grupos.map(g=>`<div class="sb-grupo"><div class="sb-grupo-rot">${esc(g.nome)}</div>${g.itens.map(botao).join('')}</div>`).join('');
   let content='';
   if(currentTab==='dashboard') content=renderDashboard();
@@ -4451,18 +4490,18 @@ function renderApp(){
     </div>`;
   }
   return `${demo}<div class="layout">
-    <aside class="sidebar">
-      <div class="sb-marca"><span class="sb-logo">${ICONES.dente}</span><div style="min-width:0"><div class="sb-nome">OdontoGestão</div><div class="sb-clinica" title="${esc(state.clinic.nome)}">${esc(state.clinic.nome)}</div></div></div>
+    <aside class="sidebar${sbMini()?' sb-mini':''}">
+      ${marcaClinicaHtml()}
       <nav aria-label="Menu principal">${sidebar}</nav>
-      <div class="sb-rodape">${temaSegHtml()}
-        <div class="sb-usuario">${avatarHtml(u.nomeCompleto,u.id)}<div style="min-width:0;flex:1"><div class="sb-usuario-nome">${esc(nomeExibicao(u))}</div><div class="sb-usuario-tipo">${tipoLabel(u.tipo)}</div></div><button id="btnLogout" class="btn-icone peq" aria-label="Sair" title="Sair">${ICONES.sair}</button></div>
-        <button class="sb-versao" data-novidades title="Novidades e histórico de versões">${esc(NUVEM?rotuloVersao():"Versão "+APP_VERSION)}</button>
+      <div class="sb-rodape">
+        <button type="button" class="sb-recolher" id="sbRecolher" aria-label="${sbMini()?'Expandir menu':'Recolher menu'}" title="${sbMini()?'Expandir menu':'Recolher menu'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg><span class="sb-rot">Recolher menu</span></button>
+        <button type="button" class="sb-sistema sb-versao" data-novidades title="OdontoGestão · novidades e histórico de versões"><span class="sb-sis-logo">${ICONES.dente}</span><span class="sb-rot"><span class="sb-sis-nome">OdontoGestão</span><span class="sb-sis-ver">${esc(NUVEM?rotuloVersao():"Versão "+APP_VERSION)}</span></span></button>
       </div>
     </aside>
     <div class="main">
       <header class="topbar">
         ${permsDe(u).pacientes?buscaHtml():'<div style="flex:1"></div>'}
-        <div class="topbar-dir">${statusNuvemHtml()}${bellHtml(u)}<button class="btn-p btn-acao" id="btnTopNovoAg">${ICONES.mais}Novo agendamento</button></div>
+        <div class="topbar-dir">${statusNuvemHtml()}${bellHtml(u)}<button class="btn-p btn-acao" id="btnTopNovoAg">${ICONES.mais}Novo agendamento</button>${menuUsuarioHtml(u)}</div>
       </header>
       <div class="wrap">${currentTab==='dashboard'?'':lembreteBackupHtml()}${content}</div>
     </div>
@@ -7082,6 +7121,7 @@ function bindEvents(){
     session=u.id; try{sessionStorage.setItem('odontoSession',JSON.stringify(session));}catch(e){}
     view='home'; currentTab='dashboard'; render();
   });
+  ligarMenuLateral();
   const btnLogout=document.getElementById('btnLogout');
   if(btnLogout) btnLogout.addEventListener('click',async()=>{
     if(NUVEM){

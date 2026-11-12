@@ -9,6 +9,11 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.33.0', data:'2026-11-12', itens:[
+    'Menu lateral novo: logotipo e nome da clínica no topo (sem logotipo, aparece um monograma com as iniciais), item ativo destacado e opção de recolher o menu para ganhar espaço',
+    'OdontoGestão e a versão do sistema foram para o rodapé do menu',
+    'Menu do usuário no canto superior direito: aparência (claro, escuro, automático), novidades da versão e Sair',
+  ]},
   {v:'2.32.0', data:'2026-11-12', itens:[
     'Comissão dos dentistas: agora é calculada pelo valor integral do procedimento e fica devida no atendimento (evolução confirmada), mesmo que o paciente pague parcelado. O que já tinha sido repassado por parcela é descontado, sem pagar em dobro',
     'Comissões futuras: mostram os procedimentos dos orçamentos aprovados que ainda não foram feitos, pelo valor integral, no nome do dentista responsável',
