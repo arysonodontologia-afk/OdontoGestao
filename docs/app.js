@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.30.1';
+const APP_VERSION='2.30.2';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -3630,7 +3630,7 @@ function renderTelaNuvem(){
     <div class="login-ou"><span>ou com e-mail e senha do OdontoGestão</span></div>
     <form id="fNvEntrar"><label>E-mail</label><input id="nvEmail" type="email" autocomplete="email" required>
     <div id="nvSenhaW"><label>Senha</label><input id="nvSenha" type="password" autocomplete="current-password" required></div>
-    <p id="nvDicaGoogle" class="muted" style="display:none;font-size:13px;margin:8px 0 0">Conta Google: não precisa de senha. Clique em <strong>Continuar com Google</strong> e escolha a conta.</p>
+    <p id="nvDicaGoogle" class="muted" style="display:none;font-size:13px;margin:8px 0 0">Conta Google: não precisa de senha. Clique em <strong>Continuar com Google</strong> e escolha a conta. <a href="#" class="lnk" id="nvComSenha" role="button">Recebi uma senha inicial da clínica</a></p>
     ${msgsNuvem()}<button class="btn-p login-btn" id="nvEntrarBtn">Entrar</button></form>
     <p class="muted" style="font-size:12.5px;margin:8px 0 0">Primeiro acesso: entre com seu e-mail e a senha inicial <strong>${SENHA_INICIAL}</strong>. Em seguida o sistema pede para você criar a sua senha.</p>
     <div class="login-links"><button class="lnk" data-nvmodo="esqueci">Esqueci minha senha</button><button class="lnk" data-nvmodo="criar">Não recebi senha inicial · criar senha</button></div>
@@ -3648,11 +3648,13 @@ function bindNuvemEvents(){
   });
   const fE=q('fNvEntrar');
   // e-mail Gmail no formulário: esconde a senha e entra pelo Google (já sugerindo a conta)
-  const nvE=q('nvEmail'), ajustaGmail=()=>{ if(!fE||!nvE) return; const g=emailGoogle(nvE.value); q('nvSenhaW').style.display=g?'none':''; q('nvSenha').required=!g; q('nvDicaGoogle').style.display=g?'block':'none'; q('nvEntrarBtn').textContent=g?'Continuar com Google':'Entrar'; };
+  let comSenha=false;
+  const nvE=q('nvEmail'), ajustaGmail=()=>{ if(!fE||!nvE) return; const g=emailGoogle(nvE.value)&&!comSenha; q('nvSenhaW').style.display=g?'none':''; q('nvSenha').required=!g; q('nvDicaGoogle').style.display=g?'block':'none'; q('nvEntrarBtn').textContent=g?'Continuar com Google':'Entrar'; };
   if(fE&&nvE){ nvE.addEventListener('input',ajustaGmail); nvE.addEventListener('change',ajustaGmail); }
+  if(q('nvComSenha')) q('nvComSenha').addEventListener('click',ev=>{ ev.preventDefault(); comSenha=true; ajustaGmail(); q('nvDicaGoogle').style.display='none'; q('nvSenha').focus(); });
   if(fE) fE.addEventListener('submit',async ev=>{
     ev.preventDefault(); nuvemErro=''; nuvemInfo='';
-    if(emailGoogle(q('nvEmail').value)){ try{ await Nuvem.entrarGoogle(q('nvEmail').value); }catch(e){ if(e&&e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request'){ nuvemErro=Nuvem.mapErro(e); render(); } } return; }
+    if(emailGoogle(q('nvEmail').value) && !comSenha){ try{ await Nuvem.entrarGoogle(q('nvEmail').value); }catch(e){ if(e&&e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request'){ nuvemErro=Nuvem.mapErro(e); render(); } } return; }
     ocupado(fE,true);
     try{ const sv=q('nvSenha').value; try{ if(sv===SENHA_INICIAL) sessionStorage.setItem('odonto-trocar-senha','1'); else sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
       await Nuvem.entrarEmail(q('nvEmail').value,sv); }
@@ -3821,6 +3823,12 @@ async function aoMudarLogin(u){
   if(!u){ session=null; nuvemAcesso=null; view='nuvemLogin'; render(); return; }
   if(!u.emailVerified){ view='nuvemVerificar'; render(); return; }
   let trocar=false; try{ trocar=sessionStorage.getItem('odonto-trocar-senha')==='1'; }catch(e){}
+  if(trocar && emailGoogle(u.email)){
+    // conta Gmail liberada uma vez com a senha inicial: não cria senha do sistema; tira a senha e segue só pelo Google
+    try{ sessionStorage.removeItem('odonto-trocar-senha'); }catch(e){}
+    try{ await Nuvem.soGoogle(); }catch(e){ console.warn('senha inicial (Gmail)',e); }
+    trocar=false; const msgG='Acesso liberado! Das próximas vezes entre pelo botão "Entrar com Google", escolhendo a conta '+normEmail(u.email)+'. Não precisa de senha.'; setTimeout(()=>{ try{ avisar(msgG); }catch(e){} },1500);
+  }
   if(trocar){
     // senha inicial vale DIAS_SENHA_INICIAL dias a partir do cadastro do usuário
     let ac=null; try{ ac=await Nuvem.carregarAcesso(); }catch(e){}

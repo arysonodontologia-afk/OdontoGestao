@@ -9,6 +9,9 @@ on:
       ambiente:
         description: 'producao ou teste'
         default: 'producao'
+      acao:
+        description: 'diagnostico ou senha-inicial-google'
+        default: 'diagnostico'
 jobs:
   diag:
     runs-on: ubuntu-latest
@@ -21,4 +24,5 @@ jobs:
           HASH: ${{ github.event.inputs.hash }}
         run: |
           pip install --quiet google-auth requests
+          if [ "${{ github.event.inputs.acao }}" = "senha-inicial-google" ]; then python3 .github/senha_inicial_google.py; fi
           python3 .github/diag_login.py

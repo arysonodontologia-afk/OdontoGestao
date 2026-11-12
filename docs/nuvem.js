@@ -394,6 +394,9 @@ function waOuvir(col,cb){
 }
 async function tokenId(){ if(!usuario) throw new Error('Sessão encerrada. Entre de novo.'); return usuario.getIdToken(); }
 async function trocarSenha(nova){ if(!auth.currentUser) throw new Error('Entre de novo.'); await A.updatePassword(auth.currentUser,nova); }
+// conta Google que entrou uma vez com a senha inicial: tira a senha, para dali em diante entrar só pelo Google
+async function soGoogle(){ const u=auth.currentUser; if(!u || !A.unlink) return false; const pv=(u.providerData||[]).map(p=>p.providerId);
+  if(!pv.includes('google.com') || !pv.includes('password')) return false; await A.unlink(u,'password'); return true; }
 async function atualizarClinica(cid,mud){
   const d=Object.assign({},mud);
   if(typeof d.testeAte==='number') d.testeAte=F.Timestamp.fromMillis(d.testeAte);
@@ -719,7 +722,7 @@ async function apagarImagensExceto(manter){
 }
 
 window.Nuvem={
-  ativa:ATIVA, iniciar, tokenId, waLer, waGravar, waApagar, waOuvir, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
+  ativa:ATIVA, iniciar, tokenId, waLer, waGravar, waApagar, waOuvir, autoCadastrarClinica, salvarPedidoCobranca, ouvirCobranca, diasTesteAuto:DIAS_TESTE_AUTO, entrarGoogle, soGoogle, entrarEmail, criarConta, criarClinicaOutro, criarContaInicial, trocarSenha, reenviarVerificacao, verificarDeNovo,
   redefinirSenha, sair, carregarAcesso, criarDono, conectar, lerClinicaServidor,
   criarFormulario, apagarFormulario, iniciarPublico, lerFormularioPublico, responderFormularioPublico, salvar, aguardarEnvio,
   salvarImagem, urlDaImagem, removerImagem, todasImagens, enviarImagensBackup, apagarImagensExceto,
