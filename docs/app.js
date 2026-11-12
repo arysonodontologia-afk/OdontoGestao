@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.30.2';
+const APP_VERSION='2.31.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -794,9 +794,13 @@ function conflitosAgenda(novo){
 }
 function statusAg(a){ return a.status||'agendado'; }
 function evolDoAgendamento(a){ const pc=pacPorId(a.pacienteId); return pc?(pc.evolucao||[]).find(e=>e.agendamentoId===a.id):null; }
+// "Atendido": evolução confirmada, marcado à mão, ou "Na clínica" depois que o horário do atendimento terminou
+function agHorarioPassou(a){ const h=hojeISO(); if(a.data<h) return true; if(a.data>h) return false; return hhmmParaMin(a.horario)+duracaoDe(a)<=hhmmParaMin(agoraHHMM()); }
 function statusAgExib(a){
   const st=statusAg(a); if(st==='cancelado'||st==='faltou') return st;
   const ev=evolDoAgendamento(a); if(ev && ev.confirmado && !ev.falta) return 'atendido';
+  if(st==='atendido') return 'atendido';
+  if(st==='chegou' && agHorarioPassou(a)) return 'atendido';
   return st;
 }
 const AG_STATUS={agendado:['Sem confirmação','b-recep'],confirmado:['Confirmado','b-dent'],chegou:['Na clínica','b-dent'],atendido:['Atendido','b-adm'],faltou:['Faltou','b-red'],cancelado:['Cancelado','b-cinza'],nao_vem:['Não vem, contatar','b-red']};
@@ -1001,8 +1005,8 @@ function botaoMusicaHtml(a){
   return `<button class="btn-s btn-musica" data-agmusica="${a.id}" title="Tocar no app de música da clínica: ${esc(musicaTexto(p))}">🎵 Música</button>`;
 }
 function agStatusSelect(a){
-  const atual=statusAg(a), travado=statusAgExib(a)==='atendido';
-  return `<select class="ag-status-sel" data-agstatus="${a.id}" ${travado?'disabled title="Atendimento já registrado no prontuário"':''}>${[['agendado','Sem confirmação'],['confirmado','Confirmado'],['chegou','Na clínica'],['nao_vem','Não vem'],['faltou','Faltou'],['cancelado','Cancelado']].map(([v,t])=>`<option value="${v}" ${atual===v?'selected':''}>${t}</option>`).join('')}</select>`;
+  const ev=evolDoAgendamento(a), travado=!!(ev && ev.confirmado && !ev.falta), atual=statusAgExib(a)==='atendido'?'atendido':statusAg(a);
+  return `<select class="ag-status-sel" data-agstatus="${a.id}" ${travado?'disabled title="Atendimento já registrado no prontuário"':''}>${[['agendado','Sem confirmação'],['confirmado','Confirmado'],['chegou','Na clínica'],['atendido','Atendido'],['nao_vem','Não vem'],['faltou','Faltou'],['cancelado','Cancelado']].map(([v,t])=>`<option value="${v}" ${atual===v?'selected':''}>${t}</option>`).join('')}</select>`;
 }
 function podeChegou(a){ const st=statusAgExib(a); return (st==='agendado'||st==='confirmado') && a.data===hojeISO(); }
 function agendaCardsList(list){
@@ -4509,6 +4513,13 @@ function renderDashboard(){
     venc=fl.filter(e=>e.tipo==='receita' && !e.confirmado && e.vencimento && e.vencimento<hoje);
     const nomeMes=new Date().toLocaleDateString('pt-BR',{month:'long'});
     ks.push(kpi('Recebido em '+nomeMes,fmtMoney(rec).replace(',00',''),prev?fmtMoney(prev).replace(',00','')+' ainda previstos no mês':'Nada mais previsto no mês','fin'));
+    // pacientes atendidos no mês (agenda "Atendido" ou evolução confirmada) e ticket médio = recebido ÷ pacientes atendidos
+    const atendSet=new Set(); let atendN=0;
+    (state.agendamentos||[]).forEach(a=>{ if((a.data||'').slice(0,7)===mes && a.data<=hoje && statusAgExib(a)==='atendido'){ atendN++; if(a.pacienteId) atendSet.add(a.pacienteId); } });
+    state.patients.forEach(p=>(p.evolucao||[]).forEach(e=>{ if(e.confirmado && !e.falta && (e.data||'').slice(0,7)===mes && !e.agendamentoId){ atendN++; atendSet.add(p.id); } }));
+    const recBruto=fl.filter(e=>e.tipo==='receita' && e.confirmado && !e.aporte && (e.dataPagamento||e.vencimento||'').slice(0,7)===mes).reduce((s,e)=>s+valorQuitado(e),0);
+    ks.push(kpi('Pacientes atendidos em '+nomeMes,atendSet.size,atendN+' atendimento'+(atendN===1?'':'s')+' no mês','rel:faltas'));
+    ks.push(kpi('Ticket médio',atendSet.size?fmtMoney(recBruto/atendSet.size):'—',atendSet.size?'Recebido no mês ÷ pacientes atendidos':'Sem pacientes atendidos no mês','fin'));
     ks.push(kpi('Parcelas vencidas',venc.length,venc.length?fmtMoney(venc.reduce((s,e)=>s+(e.valor||0),0)).replace(',00','')+' em atraso':'Nenhuma em atraso','rel:inadimplencia',venc.length?'var(--danger)':''));
   } else if(perms.pacientes && temRecurso('prontuario')){
     ks.push(kpi('Evoluções a confirmar',evs.length,evs.length?'Prontuários aguardando o dentista':'Prontuários em dia','rel:evolpendentes'));

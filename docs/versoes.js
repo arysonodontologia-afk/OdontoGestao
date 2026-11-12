@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.31.0', data:'2026-11-12', itens:[
+    'Agenda: nova situação "Atendido". Vira Atendido sozinho quando a evolução é confirmada ou quando o paciente estava "Na clínica" e o horário do atendimento terminou; também pode ser marcado à mão (ex.: paciente que não foi marcado como chegou)',
+    'Painel: pacientes atendidos no mês (com o número de atendimentos) e ticket médio (recebido no mês ÷ pacientes atendidos)',
+  ]},
   {v:'2.30.2', data:'2026-11-12', itens:[
     'Conta Gmail com senha inicial liberada pela clínica: link "Recebi uma senha inicial da clínica" na entrada; no primeiro acesso entra sem criar senha, a senha é retirada e daí em diante entra só pelo Google',
   ]},
