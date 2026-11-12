@@ -44,7 +44,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:10
 body{margin:0;font-family:var(--font);font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);min-height:100%;-webkit-font-smoothing:antialiased}
 a{color:var(--primary)}
 ::selection{background:var(--primary-soft)}
-.wrap{max-width:1280px;margin:0;padding:24px 32px 40px}
+.wrap{max-width:none;margin:0;padding:24px 32px 40px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
 h1,h2,h3,h4{margin:0 0 12px 0;letter-spacing:-.012em;line-height:1.25}
 h2{font-size:20px;font-weight:600}

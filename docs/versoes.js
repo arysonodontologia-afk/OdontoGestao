@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.33.1', data:'2026-11-12', itens:[
+    'No computador, o sistema ocupa a largura inteira da tela, com o menu aberto ou recolhido',
+  ]},
   {v:'2.33.0', data:'2026-11-12', itens:[
     'Menu lateral novo: logotipo e nome da clínica no topo (sem logotipo, aparece um monograma com as iniciais), item ativo destacado e opção de recolher o menu para ganhar espaço',
     'OdontoGestão e a versão do sistema foram para o rodapé do menu',

@@ -1,7 +1,7 @@
 // OdontoGestão — service worker: deixa o app instalável e abre a tela mesmo com internet ruim.
 // Arquivos do próprio site: busca sempre a versão mais nova; usa a cópia guardada só se estiver sem internet.
-const CACHE='odontogestao-v2.33.0';
-const ARQUIVOS=['./','index.html','estilo.css?v=2.33.0','app.js?v=2.33.0','ia-radiografia.js?v=2.33.0','whatsapp.js?v=2.33.0','estoque.js?v=2.33.0','comparativo.js?v=2.33.0','comissoes.js?v=2.33.0','nuvem.js?v=2.33.0','firebase-config.js?v=2.33.0','versoes.js?v=2.33.0','datas.js?v=2.33.0','manifest.json','icones/icone-192.png'];
+const CACHE='odontogestao-v2.33.1';
+const ARQUIVOS=['./','index.html','estilo.css?v=2.33.1','app.js?v=2.33.1','ia-radiografia.js?v=2.33.1','whatsapp.js?v=2.33.1','estoque.js?v=2.33.1','comparativo.js?v=2.33.1','comissoes.js?v=2.33.1','nuvem.js?v=2.33.1','firebase-config.js?v=2.33.1','versoes.js?v=2.33.1','datas.js?v=2.33.1','manifest.json','icones/icone-192.png'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ARQUIVOS)).catch(()=>{})); self.skipWaiting(); });
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 self.addEventListener('fetch',e=>{
