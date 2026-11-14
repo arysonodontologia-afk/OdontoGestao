@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.34.0';
+const APP_VERSION='2.35.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -1690,7 +1690,9 @@ function ensureFluxoTipos(){
     if(e.confirmado===undefined){ e.confirmado=e.status==='pago'; e.dataPagamento=e.dataPagamento||(e.confirmado?e.vencimento:''); }
   });
 }
-const CATEGORIAS_DESPESA=['Instalações','Contas e Utilidades','Pessoal','Materiais e Insumos','Equipamentos','Serviços','Impostos e Taxas','Marketing','Outros'];
+const CATEGORIAS_DESPESA=['Instalações','Contas e Utilidades','Pessoal','Materiais e Insumos','Equipamentos','Serviços','Impostos e Taxas','Marketing','Capacitação','Outros'];
+// tipos de despesa acrescentados depois do catálogo inicial (entram também nas bases que já existem)
+const DESPESAS_NOVAS=[['Capacitação','Cursos e Especializações'],['Capacitação','Congressos e Eventos'],['Capacitação','Viagens e Hospedagem para Cursos'],['Capacitação','Livros e Assinaturas Científicas']];
 function seedDespesasCatalogo(){
   return [
     {id:uid(),categoria:'Instalações',nome:'Aluguel'},
@@ -1718,10 +1720,18 @@ function seedDespesasCatalogo(){
     {id:uid(),categoria:'Impostos e Taxas',nome:'Anuidade CRO'},
     {id:uid(),categoria:'Marketing',nome:'Redes Sociais / Publicidade'},
     {id:uid(),categoria:'Marketing',nome:'Site'},
+    ...DESPESAS_NOVAS.map(([categoria,nome])=>({id:uid(),categoria,nome})),
     {id:uid(),categoria:'Outros',nome:'Despesas Diversas'},
   ];
 }
-function ensureDespesasCatalogo(){ if(NUVEM && !(currentUser() && permsDe(currentUser()).financeiro)) return; if(!state.despesasCatalogo || !state.despesasCatalogo.length){ state.despesasCatalogo=seedDespesasCatalogo(); saveData(); } }
+function ensureDespesasCatalogo(){ if(NUVEM && !(currentUser() && permsDe(currentUser()).financeiro)) return; if(!state.despesasCatalogo || !state.despesasCatalogo.length){ state.despesasCatalogo=seedDespesasCatalogo(); state.meta=state.meta||{}; state.meta.despesasVersao=2; saveData(); return; }
+  state.meta=state.meta||{};
+  if((state.meta.despesasVersao||1)<2){
+    const tem=new Set(state.despesasCatalogo.map(d=>normTxt(d.nome)));
+    DESPESAS_NOVAS.forEach(([categoria,nome])=>{ if(!tem.has(normTxt(nome))) state.despesasCatalogo.push({id:uid(),categoria,nome}); });
+    state.meta.despesasVersao=2; saveData();
+  }
+}
 // =====================================================================
 // Painel financeiro: saldo em caixa, despesas a pagar e saúde do período
 // =====================================================================
