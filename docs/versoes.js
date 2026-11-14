@@ -9,6 +9,9 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.35.0', data:'2026-11-14', itens:[
+    'Nova categoria de despesa "Capacitação", para os cursos e eventos dos dentistas pagos pelo consultório: Cursos e Especializações, Congressos e Eventos, Viagens e Hospedagem para Cursos, Livros e Assinaturas Científicas. Ela aparece também nos relatórios e no comparativo anual',
+  ]},
   {v:'2.34.0', data:'2026-11-12', itens:[
     'Agenda semanal em grade, como a do dia: uma coluna por dia da semana, com horários, intervalo, dias fechados e linha da hora atual. Cada atendimento mostra o paciente, o procedimento e o dentista; clique para ver os detalhes ou num horário livre para agendar naquele dia. A lista por dia continua disponível no botão "Lista"',
   ]},
