@@ -1078,3 +1078,5 @@ button.sb-sistema:hover{background:var(--nav-hover);border-radius:8px}
 .gs-agora{position:absolute;left:0;right:0;border-top:2px solid var(--danger-strong);pointer-events:none;z-index:2}
 .gs-agora::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--danger-strong)}
 .legenda.legenda-linha{flex-direction:row;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-left:16px}
+.parc-ed td:first-child,.parc-ed button{white-space:nowrap}
+.parc-ed td{padding-top:6px;padding-bottom:6px}
