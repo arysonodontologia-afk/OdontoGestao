@@ -1,5 +1,5 @@
 const KEY='odontoGestaoData';            // formato antigo (localStorage) — usado só para migrar
-const APP_VERSION='2.35.0';
+const APP_VERSION='2.36.0';
 const SENHA_INICIAL='123456';   // senha inicial (bases novas e usuários cadastrados pela clínica), trocada no 1º acesso
 const DIAS_SENHA_INICIAL=7;     // a senha inicial de um usuário novo vale 7 dias
 const emailGoogle=e=>/@(gmail|googlemail)\.com$/i.test(String(e||'').trim());
@@ -2615,8 +2615,8 @@ function bindFormasPagamento(){
   });
 }
 // ---- contas que se repetem (fixas ou variáveis) e compras com itens ----
-let despModo='conta', compraItens=null, compraRasc=null;
-const RASC_IDS=['cpTipo','cpFornecedor','cpData','cpNf','cpForma','cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga'];
+let despModo='conta', compraItens=null, compraRasc=null, compraParcAjuste=null;
+const RASC_IDS=['cpTipo','cpFornecedor','cpData','cpNf','cpForma','cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga','cpAjustar'];
 function lerRasc(){ const r={}; RASC_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) r[id]=el.type==='checkbox'?el.checked:el.value; }); return r; }
 const FORMAS_PAG=['Pix','Boleto','Cartão de Crédito','Cartão de Débito','Transferência','Dinheiro','Débito automático'];
 function garantirTipoEquipamento(){
@@ -2688,6 +2688,7 @@ function compraFormHtml(){
     <div><label for="cpPrim">1ª parcela vence em</label><input id="cpPrim" type="date" value="${addDaysStr(hojeISO(),30)}"></div>
     <div><label for="cpInt">Intervalo</label><select id="cpInt"><option value="30">Mensal</option><option value="15">A cada 15 dias</option></select></div>
   </div>
+  <div id="cpAjWrap" style="display:none;margin-top:4px"><label class="chk-linha"><input type="checkbox" id="cpAjustar"> Ajustar o valor e a data de cada parcela (parcelas com valores diferentes)</label><div id="cpAjTab"></div></div>
   <div class="row" id="cpVistaWrap"><div><label for="cpVenc">Vencimento</label><input id="cpVenc" type="date" value="${hojeISO()}"></div><div style="align-self:flex-end"><label class="chk-linha"><input type="checkbox" id="cpVistaPaga"> Já foi paga</label></div></div>
   <div class="orc-resumo" id="cpResumo"></div>
   <div style="margin-top:12px"><button class="btn-p">Salvar compra</button></div>
@@ -2696,7 +2697,26 @@ function compraFormHtml(){
 function destinoItem(it){ return it.destino||(it.patrimonio?'patrimonio':'outro'); }
 function compraDestinos(){ return [['patrimonio','Patrimônio (equipamento)']].concat(window.estoqueLiberado&&estoqueLiberado()?[['estoque','Material de consumo (estoque)']]:[]).concat([['outro','Outro (escritório, sem estoque)']]); }
 function compraTotal(){ return r2((compraItens||[]).reduce((s,it)=>s+(+it.qtd||0)*(lerValor(it.unit)||0),0)); }
+// tabela de parcelas editável (valor e vencimento de cada uma); usada na compra nova e na edição de uma compra
+function parcelasEditorHtml(ps,pref){
+  return `<div class="overflow parc-ed"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor (R$)</th><th></th></tr></thead><tbody>${ps.map((p,i)=>p.travada
+    ?`<tr class="muted"><td>${esc(p.label)}</td><td>${fmtDataBR(p.vencimento)}</td><td>${fmtMoney(p.valor)}</td><td><span class="sit sit-chegou">Pago</span></td></tr>`
+    :`<tr><td>${esc(p.label)}</td><td><input type="date" data-${pref}i="${i}" data-k="vencimento" value="${esc(p.vencimento)}" aria-label="Vencimento ${esc(p.label)}"></td><td><input inputmode="decimal" data-${pref}i="${i}" data-k="valor" value="${esc(fmtNumBR(p.valor))}" aria-label="Valor ${esc(p.label)}" style="max-width:130px"></td>
+      <td>${i<ps.length-1?`<button type="button" class="btn-s peq" data-${pref}rep="${i}" title="Usar este valor nas parcelas seguintes">Repetir ↓</button>`:''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function ligarParcelasEditor(raiz,ps,pref,aoMudar,aoRedesenhar){
+  raiz.querySelectorAll(`[data-${pref}i]`).forEach(el=>{ const ev=()=>{ const p=ps[+el.getAttribute(`data-${pref}i`)], k=el.getAttribute('data-k');
+      if(k==='valor'){ const v=r2(lerValor(el.value)); p.valor=isNaN(v)?0:v; } else p.vencimento=el.value; aoMudar(); };
+    el.addEventListener('input',ev); el.addEventListener('change',ev); });
+  raiz.querySelectorAll(`[data-${pref}rep]`).forEach(b=>b.addEventListener('click',()=>{ const i=+b.getAttribute(`data-${pref}rep`); for(let j=i+1;j<ps.length;j++) if(!ps[j].travada) ps[j].valor=ps[i].valor; aoRedesenhar(); }));
+}
+function fmtNumBR(v){ return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function compraParcelas(){
+  const base=compraParcelasBase(), aj=document.getElementById('cpAjustar');
+  if(!(aj && aj.checked && document.getElementById('cpCond').value!=='avista') || !compraParcAjuste || compraParcAjuste.length!==base.length) return base;
+  return base.map((p,i)=>Object.assign({},p,{valor:compraParcAjuste[i].valor,vencimento:compraParcAjuste[i].vencimento}));
+}
+function compraParcelasBase(){
   const q=id=>document.getElementById(id), total=compraTotal(), cond=q('cpCond').value;
   if(cond==='avista') return [{label:'Pagamento único',valor:total,vencimento:q('cpVenc').value,pago:q('cpVistaPaga').checked}];
   const lista=[]; let saldo=total;
@@ -2744,9 +2764,14 @@ function bindLancarDespesa(){
     compraItens.forEach((it,i)=>{ const c=fc.querySelector(`[data-cptot="${i}"]`); if(c) c.textContent=fmtMoney((+it.qtd||0)*(lerValor(it.unit)||0)); });
     const cond=q('cpCond').value;
     q('cpEntWrap').style.display=cond==='parc_com'?'flex':'none'; q('cpParcWrap').style.display=cond==='avista'?'none':'flex'; q('cpVistaWrap').style.display=cond==='avista'?'flex':'none';
-    const ps=compraParcelas();
-    q('cpResumo').innerHTML=`<div><span>Total da compra</span><span>${fmtMoney(compraTotal())}</span></div>`+ps.slice(0,4).map(p=>`<div><span>${esc(p.label)} · ${fmtDataBR(p.vencimento)}${p.pago?' · paga':''}</span><span>${fmtMoney(p.valor)}</span></div>`).join('')+(ps.length>4?`<div class="muted"><span>… e mais ${ps.length-4} parcela(s) até ${fmtDataBR(ps[ps.length-1].vencimento)}</span><span></span></div>`:'');
+    q('cpAjWrap').style.display=cond==='avista'?'none':'block';
+    if(cond!=='avista' && q('cpAjustar').checked){ const base=compraParcelasBase();
+      if(!compraParcAjuste || compraParcAjuste.length!==base.length || !q('cpAjTab').innerHTML){ if(!compraParcAjuste || compraParcAjuste.length!==base.length) compraParcAjuste=base.map(p=>({label:p.label,valor:p.valor,vencimento:p.vencimento})); desenharAjuste(); } }
+    else { q('cpAjTab').innerHTML=''; }
+    const ps=compraParcelas(), somaP=r2(ps.reduce((s,p)=>s+(+p.valor||0),0)), dif=r2(somaP-compraTotal());
+    q('cpResumo').innerHTML=`<div><span>Total da compra</span><span>${fmtMoney(compraTotal())}</span></div>`+(cond!=='avista'&&q('cpAjustar').checked?`<div class="${Math.abs(dif)>=0.01?'orc-desc':''}"><span>Soma das parcelas${Math.abs(dif)>=0.01?(dif>0?` (R$ ${fmtNumBR(dif)} a mais que o total: juros/acréscimo)`:` (R$ ${fmtNumBR(-dif)} a menos que o total)`):' (confere com o total)'}</span><span>${fmtMoney(somaP)}</span></div>`:'')+ps.slice(0,4).map(p=>`<div><span>${esc(p.label)} · ${fmtDataBR(p.vencimento)}${p.pago?' · paga':''}</span><span>${fmtMoney(p.valor)}</span></div>`).join('')+(ps.length>4?`<div class="muted"><span>… e mais ${ps.length-4} parcela(s) até ${fmtDataBR(ps[ps.length-1].vencimento)}</span><span></span></div>`:'');
   };
+  const desenharAjuste=()=>{ q('cpAjTab').innerHTML=parcelasEditorHtml(compraParcAjuste,'cpaj'); ligarParcelasEditor(q('cpAjTab'),compraParcAjuste,'cpaj',atualizarResumo,()=>{ desenharAjuste(); atualizarResumo(); }); };
   fc.querySelectorAll('[data-cpi]').forEach(el=>{ const ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
     el.addEventListener(ev,()=>{ const it=compraItens[+el.getAttribute('data-cpi')], k=el.getAttribute('data-k'); it[k]=el.type==='checkbox'?el.checked:el.value;
       if(k==='destino'||k==='mid'||k==='vid'){ compraRasc=lerRasc(); it.patrimonio=destinoItem(it)==='patrimonio';
@@ -2760,7 +2785,8 @@ function bindLancarDespesa(){
   if(compraRasc){ RASC_IDS.forEach(id=>{ const el=q(id); if(el && compraRasc[id]!==undefined){ if(el.type==='checkbox') el.checked=compraRasc[id]; else el.value=compraRasc[id]; } }); compraRasc=null; }
   fc.querySelectorAll('[data-cprm]').forEach(b=>b.addEventListener('click',()=>{ compraRasc=lerRasc(); compraItens.splice(+b.getAttribute('data-cprm'),1); render(); }));
   q('cpAdd').addEventListener('click',()=>{ compraRasc=lerRasc(); compraItens.push({nome:'',qtd:1,unit:'',patrimonio:true,vida:10}); render(); setTimeout(()=>{ const l=fc.ownerDocument.querySelectorAll('[data-k="nome"]'); if(l.length) l[l.length-1].focus(); },0); });
-  ['cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga'].forEach(id=>{ const el=q(id); if(el){ el.addEventListener('input',atualizarResumo); el.addEventListener('change',atualizarResumo); } });
+  ['cpEntrada','cpEntData','cpN','cpPrim','cpInt'].forEach(id=>{ const el=q(id); if(el) el.addEventListener('change',()=>{ if(q('cpAjustar').checked){ compraParcAjuste=null; } }); });
+  ['cpCond','cpEntrada','cpEntData','cpEntPaga','cpN','cpPrim','cpInt','cpVenc','cpVistaPaga','cpAjustar'].forEach(id=>{ const el=q(id); if(el){ el.addEventListener('input',atualizarResumo); el.addEventListener('change',atualizarResumo); } });
   atualizarResumo();
   fc.addEventListener('submit',ev=>{
     ev.preventDefault();
@@ -2772,14 +2798,19 @@ function bindLancarDespesa(){
     const total=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0)), ps=compraParcelas();
     if(q('cpCond').value==='parc_com'){ const ent=ps[0].valor; if(!(ent>0)||ent>=total){ avisar('A entrada precisa ser maior que zero e menor que o total.'); return; } }
     if(ps.some(p=>!p.vencimento)){ avisar('Informe as datas de pagamento.'); return; }
+    if(ps.some(p=>!(+p.valor>0))){ avisar('Todas as parcelas precisam ter valor maior que zero.'); return; }
+    const somaP=r2(ps.reduce((s,p)=>s+p.valor,0)), totalItens=r2(itens.reduce((s,it)=>s+it.qtd*it.unit,0));
+    if(Math.abs(somaP-totalItens)>=0.01 && !fc._difOk){ customConfirm(`As parcelas somam ${fmtMoney(somaP)} e o total da compra é ${fmtMoney(totalItens)} (${somaP>totalItens?'diferença de '+fmtMoney(r2(somaP-totalItens))+' a mais, como juros':'diferença de '+fmtMoney(r2(totalItens-somaP))+' a menos'}). Salvar assim mesmo?`,()=>{ fc._difOk=true; fc.requestSubmit(); }); return; }
+    fc._difOk=false;
     const tipo=state.despesasCatalogo.find(d=>d.id===q('cpTipo').value), dataC=q('cpData').value||hojeISO(), id=uid();
     state.compras=state.compras||[]; state.patrimonio=state.patrimonio||[]; state.fluxoFinanceiro=state.fluxoFinanceiro||[];
     const compra={id,data:dataC,fornecedor:forn,nf:q('cpNf').value.trim(),tipoNome:tipo?tipo.nome:'',categoria:tipo?tipo.categoria:'',itens,total,forma:q('cpForma').value,condicao:q('cpCond').value,parcelas:ps.length,criadaEm:new Date().toISOString()};
+    if(Math.abs(somaP-total)>=0.01) compra.totalParcelas=somaP;
     state.compras.push(compra);
     const nEst=window.estoqueEntradasDaCompra?estoqueEntradasDaCompra(compra,itens):0;
     ps.forEach(p=>state.fluxoFinanceiro.push({id:uid(),tipo:'despesa',categoria:tipo?tipo.categoria:'',fornecedor:forn,label:(tipo?tipo.nome:'Compra')+' · '+p.label,valor:p.valor,vencimento:p.vencimento,confirmado:!!p.pago,dataPagamento:p.pago?p.vencimento:'',forma:q('cpForma').value,compraId:id}));
     itens.filter(it=>it.patrimonio).forEach(it=>state.patrimonio.push({id:uid(),compraId:id,nome:it.nome,qtd:it.qtd,custo:r2(it.qtd*it.unit),dataCompra:dataC,vidaAnos:it.vida,fornecedor:forn}));
-    compraItens=null; saveData(); financeiroSubTab='fluxo'; render();
+    compraItens=null; compraParcAjuste=null; saveData(); financeiroSubTab='fluxo'; render();
     avisar(`Compra de ${fmtMoney(total)} lançada: ${ps.length} pagamento(s) no Financeiro${itens.some(it=>it.patrimonio)?', '+itens.filter(it=>it.patrimonio).length+' item(ns) no Patrimônio':''}${nEst?', '+nEst+' material(is) no Estoque':''}.`);
   });
 }
@@ -2790,10 +2821,11 @@ function abrirCompra(id){
   const bg=modalPlat(`<h3 style="margin:0 0 4px">Compra · ${esc(c.fornecedor)}</h3>
     <p class="muted" style="margin:0 0 10px">${esc(fmtDataBR(c.data))}${c.nf?' · NF '+esc(c.nf):''} · ${esc(c.tipoNome||'')} · ${esc(c.forma||'')}</p>
     <div class="overflow"><table><thead><tr><th>Item</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${c.itens.map(it=>`<tr><td>${esc(it.nome)}${it.patrimonio?' <span class="sit sit-chegou">patrimônio</span>':it.destino==='estoque'?' <span class="sit sit-confirmado">estoque</span>':''}</td><td>${it.qtd}</td><td>${fmtMoney(it.unit)}</td><td>${fmtMoney(it.qtd*it.unit)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="orc-resumo"><div><span>Total da compra</span><span>${fmtMoney(c.total)}</span></div><div class="orc-desc"><span>Já pago</span><span>${fmtMoney(pago)}</span></div><div class="orc-total"><span>Falta pagar</span><span>${fmtMoney(r2(c.total-pago))}</span></div></div>
+    <div class="orc-resumo"><div><span>Total da compra</span><span>${fmtMoney(c.total)}</span></div>${c.totalParcelas!=null?`<div><span>Total das parcelas</span><span>${fmtMoney(c.totalParcelas)}</span></div>`:''}<div class="orc-desc"><span>Já pago</span><span>${fmtMoney(pago)}</span></div><div class="orc-total"><span>Falta pagar</span><span>${fmtMoney(r2(fl.filter(e=>!e.confirmado).reduce((s,e)=>s+(+e.valor||0),0)))}</span></div></div>
     <h4 style="margin:12px 0 6px">Pagamentos</h4>
     <div class="overflow" style="max-height:220px"><table><tbody>${fl.map(e=>`<tr><td>${esc(e.label.split(' · ').pop())}</td><td>${fmtDataBR(e.vencimento)}</td><td>${fmtMoney(e.valor)}</td><td>${e.confirmado?'<span class="sit sit-chegou">Pago</span>':'<span class="sit sit-agendado">A pagar</span>'}</td></tr>`).join('')}</tbody></table></div>
-    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn-d" data-cpexc>Excluir compra</button><button class="btn-p" data-fechar>Fechar</button></div>`);
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn-d" data-cpexc>Excluir compra</button><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-s" data-cpedit>Editar parcelas e tipo</button><button class="btn-p" data-fechar>Fechar</button></span></div>`);
+  bg.querySelector('[data-cpedit]').addEventListener('click',()=>{ bg.remove(); editarParcelasCompra(id); });
   bg.querySelector('[data-cpexc]').addEventListener('click',()=>{
     const pend=fl.filter(e=>!e.confirmado).length, pagas=fl.length-pend;
     customConfirm(`Excluir esta compra? ${pend} pagamento(s) a pagar serão apagados${pagas?` e os ${pagas} já pagos ficam no Financeiro`:''}. Os itens saem do Patrimônio${(state.estoqueMov||[]).some(m=>m.compraId===id)?' e as entradas saem do Estoque':''}.`,()=>{
@@ -2801,6 +2833,33 @@ function abrirCompra(id){
       state.compras=state.compras.filter(x=>x.id!==id); state.patrimonio=(state.patrimonio||[]).filter(p=>p.compraId!==id);
       if(window.estoqueApagarCompra) estoqueApagarCompra(id);
       saveData(); bg.remove(); render(); });
+  });
+}
+// Editar uma compra já lançada: valor e vencimento das parcelas a pagar e o tipo de despesa (categoria)
+function editarParcelasCompra(id){
+  const c=(state.compras||[]).find(x=>x.id===id); if(!c) return;
+  const fl=(state.fluxoFinanceiro||[]).filter(e=>e.compraId===id).sort((a,b)=>(a.vencimento||'').localeCompare(b.vencimento||''));
+  const ps=fl.map(e=>({id:e.id,label:e.label.split(' · ').pop(),valor:+e.valor||0,vencimento:e.vencimento,travada:!!e.confirmado}));
+  const tipoAtual=(state.despesasCatalogo||[]).find(d=>d.nome===c.tipoNome && d.categoria===c.categoria);
+  const bg=modalPlat(`<h3 style="margin:0 0 4px">Editar compra · ${esc(c.fornecedor)}</h3>
+    <p class="muted" style="margin:0 0 10px">Ajuste o valor e o vencimento das parcelas que ainda não foram pagas. As já pagas não mudam.</p>
+    <label for="epTipo">Tipo de despesa</label><select id="epTipo">${opcoesTipoDespesa(tipoAtual?tipoAtual.id:'')}</select>
+    <div id="epTab" style="margin-top:10px;max-height:340px;overflow:auto"></div>
+    <div class="orc-resumo" id="epRes"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button class="btn-s" data-fechar>Cancelar</button><button class="btn-p" data-epsalvar>Salvar alterações</button></div>`);
+  const res=()=>{ const soma=r2(ps.reduce((s,p)=>s+(+p.valor||0),0)), dif=r2(soma-c.total);
+    bg.querySelector('#epRes').innerHTML=`<div><span>Total da compra</span><span>${fmtMoney(c.total)}</span></div><div class="${Math.abs(dif)>=0.01?'orc-desc':''}"><span>Soma das parcelas${Math.abs(dif)>=0.01?(dif>0?` (${fmtMoney(dif)} a mais: juros/acréscimo)`:` (${fmtMoney(-dif)} a menos)`):' (confere com o total)'}</span><span>${fmtMoney(soma)}</span></div>`; };
+  const desenhar=()=>{ const t=bg.querySelector('#epTab'); t.innerHTML=parcelasEditorHtml(ps,'ep'); ligarParcelasEditor(t,ps,'ep',res,()=>{ desenhar(); res(); }); };
+  desenhar(); res();
+  bg.querySelector('[data-epsalvar]').addEventListener('click',()=>{
+    if(ps.some(p=>!p.travada && (!(+p.valor>0) || !p.vencimento))){ avisar('Cada parcela a pagar precisa de valor maior que zero e vencimento.'); return; }
+    const tipo=(state.despesasCatalogo||[]).find(d=>d.id===bg.querySelector('#epTipo').value);
+    ps.forEach(p=>{ const e=state.fluxoFinanceiro.find(x=>x.id===p.id); if(!e) return;
+      if(!p.travada){ e.valor=r2(p.valor); e.vencimento=p.vencimento; }
+      if(tipo){ e.categoria=tipo.categoria; e.label=tipo.nome+' · '+p.label; } });
+    if(tipo){ c.tipoNome=tipo.nome; c.categoria=tipo.categoria; }
+    const soma=r2(ps.reduce((s,p)=>s+(+p.valor||0),0)); if(Math.abs(soma-c.total)>=0.01) c.totalParcelas=soma; else delete c.totalParcelas;
+    saveData(); bg.remove(); render(); avisar('Compra atualizada.');
   });
 }
 // ---- patrimônio: depreciação linear (só para consulta) ----

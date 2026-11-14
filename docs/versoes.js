@@ -9,6 +9,10 @@
 // Ao publicar uma versão nova, acrescente a entrada NO TOPO.
 // =====================================================================
 window.NOTAS_VERSAO = [
+  {v:'2.36.0', data:'2026-11-14', itens:[
+    'Compras parceladas com valores diferentes: marque "Ajustar o valor e a data de cada parcela" e edite cada parcela (o botão "Repetir ↓" copia o valor para as seguintes). O sistema mostra a soma das parcelas e a diferença para o total (juros ou desconto)',
+    'Compras já lançadas: em "Ver compra" → "Editar parcelas e tipo" dá para corrigir o valor e o vencimento das parcelas ainda não pagas e trocar o tipo de despesa (por exemplo, para Capacitação)',
+  ]},
   {v:'2.35.0', data:'2026-11-14', itens:[
     'Nova categoria de despesa "Capacitação", para os cursos e eventos dos dentistas pagos pelo consultório: Cursos e Especializações, Congressos e Eventos, Viagens e Hospedagem para Cursos, Livros e Assinaturas Científicas. Ela aparece também nos relatórios e no comparativo anual',
   ]},
